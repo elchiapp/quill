@@ -11,12 +11,14 @@ actor TranscriptionCoordinator {
     enum Status: Sendable {
         case idle
         case transcribing(session: String, queued: Int)
+        case diarizing(session: String, queued: Int)
         case failed(session: String)
     }
 
     private var queue: [URL] = []
     private var draining = false
     private var engine: TranscriptionEngine?
+    private var diarizer: SpeakerDiarizationEngine?
     private var lastFailure: String?
     private var statusHandler: (@Sendable (Status) -> Void)?
 
@@ -90,6 +92,8 @@ actor TranscriptionCoordinator {
         }
         await engine?.release()
         engine = nil
+        diarizer?.release()
+        diarizer = nil
         publish(lastFailure.map { .failed(session: $0) } ?? .idle)
         draining = false
         // An enqueue that landed between the loop exiting and the release
@@ -101,7 +105,9 @@ actor TranscriptionCoordinator {
         let meta = try SessionMeta.read(from: dir)
         let engine = try await preparedEngine()
 
-        var merged: [Transcript.Segment] = []
+        var merged: [TranscriptDocument.Segment] = []
+        var detectedRemoteSpeakers: Set<String> = []
+        var usedDiarization = false
         for track in meta.tracks {
             let audio = dir.appendingPathComponent(track.file)
             guard FileManager.default.fileExists(atPath: audio.path) else {
@@ -118,25 +124,65 @@ actor TranscriptionCoordinator {
                 log(dir, "skipping \(track.file): \(error)")
                 continue
             }
+
+            var speakerTurns: [DetectedSpeakerTurn] = []
+            if track.speaker == "them", Config.diarizationEnabled() {
+                publish(.diarizing(session: dir.lastPathComponent, queued: queue.count))
+                log(dir, "diarizing \(track.file) (\(Config.diarizationEngine()))")
+                do {
+                    speakerTurns = try await preparedDiarizer().diarize(audio)
+                    detectedRemoteSpeakers.formUnion(speakerTurns.map(\.speaker))
+                    usedDiarization = !speakerTurns.isEmpty
+                    log(
+                        dir,
+                        "diarization found \(detectedRemoteSpeakers.count) remote speaker(s)"
+                    )
+                } catch {
+                    log(dir, "diarization unavailable; using \"them\": \(error)")
+                }
+            }
+
             let offset = TimeInterval(track.offsetMs) / 1000
             merged += segments.map {
-                Transcript.Segment(
-                    speaker: track.speaker,
-                    start_ms: Int(($0.start + offset) * 1000),
-                    end_ms: Int(($0.end + offset) * 1000),
+                let speaker = track.speaker == "them"
+                    ? SpeakerAssignment.speaker(
+                        for: $0,
+                        turns: speakerTurns,
+                        fallback: track.speaker
+                    )
+                    : track.speaker
+                return TranscriptDocument.Segment(
+                    speaker: speaker,
+                    startMs: Int(($0.start + offset) * 1000),
+                    endMs: Int(($0.end + offset) * 1000),
                     text: $0.text
                 )
             }
         }
-        merged.sort { $0.start_ms < $1.start_ms }
+        merged.sort { $0.startMs < $1.startMs }
 
-        let transcript = Transcript(
+        let transcript = TranscriptDocument(
             engine: engine.name,
             model: engine.model,
-            created_at: ISO8601DateFormatter().string(from: Date()),
-            segments: merged
+            createdAt: ISO8601DateFormatter().string(from: Date()),
+            segments: merged,
+            diarization: usedDiarization
+                ? TranscriptDocument.DiarizationInfo(
+                    engine: preparedDiarizerName,
+                    model: preparedDiarizerModel,
+                    track: "system",
+                    speakerCount: detectedRemoteSpeakers.count
+                )
+                : nil
         )
-        try transcript.write(to: dir)
+        let savedTitle = try? String(
+            contentsOf: dir.appendingPathComponent("title.txt"),
+            encoding: .utf8
+        ).trimmingCharacters(in: .whitespacesAndNewlines)
+        try transcript.write(
+            to: dir,
+            title: savedTitle.flatMap { $0.isEmpty ? nil : $0 } ?? dir.lastPathComponent
+        )
         log(dir, "done — \(merged.count) segments")
     }
 
@@ -152,6 +198,28 @@ actor TranscriptionCoordinator {
         try await engine.prepare()
         self.engine = engine
         return engine
+    }
+
+    private var preparedDiarizerName: String {
+        "offline-vbx"
+    }
+
+    private var preparedDiarizerModel: String {
+        "pyannote-community-1-wespeaker-vbx-coreml"
+    }
+
+    private func preparedDiarizer() async throws -> SpeakerDiarizationEngine {
+        if let diarizer { return diarizer }
+        let configured = Config.diarizationEngine()
+        if configured != preparedDiarizerName {
+            FileHandle.standardError.write(Data(
+                "warning: unknown diarization engine \"\(configured)\" — using offline-vbx\n".utf8
+            ))
+        }
+        let diarizer = SpeakerDiarizationEngine()
+        try await diarizer.prepare()
+        self.diarizer = diarizer
+        return diarizer
     }
 
     /// Fires the configured on_stop shell command with the session directory
@@ -226,50 +294,5 @@ private struct SessionMeta {
             tracks.append(Track(file: system, speaker: "them", offsetMs: offsets["system"] ?? 0))
         }
         return SessionMeta(tracks: tracks)
-    }
-}
-
-/// Canonical transcript. Property names are the JSON schema — this struct
-/// exists to be serialized.
-private struct Transcript: Codable {
-    struct Segment: Codable {
-        let speaker: String
-        let start_ms: Int
-        let end_ms: Int
-        let text: String
-    }
-
-    let engine: String
-    let model: String
-    let created_at: String
-    let segments: [Segment]
-
-    /// Write transcript.json and render transcript.md. Both writes are atomic
-    /// (temp file + rename), so a partially written transcript never exists on
-    /// disk — resumePending treats presence of transcript.json as "done".
-    func write(to dir: URL) throws {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try encoder.encode(self)
-            .write(to: dir.appendingPathComponent("transcript.json"), options: .atomic)
-        try Data(rendered(title: dir.lastPathComponent).utf8)
-            .write(to: dir.appendingPathComponent("transcript.md"), options: .atomic)
-    }
-
-    private func rendered(title: String) -> String {
-        var lines = ["# \(title)", "", "engine: \(engine) (\(model))", ""]
-        for seg in segments {
-            lines.append("**[\(Self.clock(seg.start_ms))] \(seg.speaker):** \(seg.text)")
-            lines.append("")
-        }
-        return lines.joined(separator: "\n")
-    }
-
-    private static func clock(_ ms: Int) -> String {
-        let total = ms / 1000
-        let h = total / 3600, m = (total % 3600) / 60, s = total % 60
-        return h > 0
-            ? String(format: "%d:%02d:%02d", h, m, s)
-            : String(format: "%d:%02d", m, s)
     }
 }

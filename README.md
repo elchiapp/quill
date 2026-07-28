@@ -1,21 +1,23 @@
-# quill
+# Quill
 
-A minimal, fully local macOS meeting recorder + transcriber. One menu-bar
-click records your mic and all system audio as two separate tracks; when you
-stop, quill transcribes both on-device and writes a speaker-tagged transcript.
-Nothing ever leaves the machine.
-
-Named for the feather. Sibling of [parrot](../parrot/), same skeleton: single
-Swift binary, menu-bar tray, no app bundle.
+A private, local-first macOS meeting workspace. Quill records microphone and
+system audio as separate tracks, transcribes both on-device, presents a
+speaker-tagged transcript library, and lets you chat with one or all meetings
+through a local LLM. Audio, transcripts, and chat threads sync through the
+user's iCloud Drive; inference never leaves the Mac.
 
 ## Install
 
+Build a signed, double-clickable app bundle and a distributable disk image:
+
 ```sh
-cd quill
-swift build -c release
-sudo cp .build/release/quill /usr/local/bin/quill
-quill install --launch-at-login   # optional — runs in the background on login
+scripts/package-macos.sh
+open dist/Quill.app
 ```
+
+The generated artifacts are `dist/Quill.app` and `dist/Quill.dmg`. By default,
+the app is ad-hoc signed for local use. Set `SIGN_IDENTITY` to a Developer ID
+or Apple Development signing identity when a persistent identity is required.
 
 **Requires:** macOS 15+ (Core Audio process taps for system audio — no
 virtual device, no kernel extension). Apple Silicon recommended for
@@ -23,16 +25,16 @@ transcription speed.
 
 ## How to use
 
-1. **Run it** (`quill` in a terminal, or the LaunchAgent).
-2. **Click the feather in the menu bar → Start recording.** First use prompts
-   for microphone and System Audio Recording permissions. While recording, the
-   icon turns red with a running elapsed counter, and macOS shows the purple
-   recording indicator.
-3. **Click → Stop recording** when the meeting ends. Transcription starts
-   automatically (the menu shows progress); a notification fires when the
-   transcript is ready.
+1. Open `Quill.app` and click **New recording**. First use prompts for
+   microphone and System Audio Recording permissions.
+2. Stop from the window or feather menu-bar item. Quill transcribes the two
+   tracks locally and adds the speaker-tagged result to the library.
+3. Open **Ask Quill**, start a conversation, and choose either **All
+   recordings** or one meeting as its scope. Numbered source cards beneath an
+   answer open the cited recording at the matching transcript timestamp.
 
-Each session lands in `~/Recordings/<yyyy.MM.dd-HHmm>/`:
+Each session lands in
+`iCloud Drive/Quill/Recordings/<yyyy.MM.dd-HHmm>/` by default:
 
 | File | Contents |
 |---|---|
@@ -44,10 +46,11 @@ Each session lands in `~/Recordings/<yyyy.MM.dd-HHmm>/`:
 | `transcribe.log` | transcription progress/errors for this session |
 
 Two tracks on purpose: speech models do better on clean single-source audio,
-and mic-vs-system is free two-party diarization — `me` vs `them` with no
-speaker-identification model. CAF on purpose: unlike m4a, it needs no
-finalization pass — if the process dies mid-meeting, everything already
-written is still readable.
+and the microphone is a trusted `me` channel. Quill runs local speaker
+diarization on the system track, labeling remote voices as `speaker_1`,
+`speaker_2`, and so on. CAF on purpose: unlike m4a, it needs no finalization
+pass — if the process dies mid-meeting, everything already written is still
+readable.
 
 ## Transcription
 
@@ -68,21 +71,51 @@ on next launch (the filesystem is the queue: a session with `meta.json` but no
 The engine sits behind a small protocol; a Whisper engine (WhisperKit
 large-v3-turbo) is planned as the fallback / re-transcription option.
 
+## Speaker diarization
+
+Completed system-audio tracks run through FluidAudio's offline
+Pyannote/WeSpeaker/VBx pipeline. It determines speaker count automatically and
+aligns its voice turns with Parakeet's timed transcript segments. The
+microphone track always remains `You`; only remote/system audio is clustered.
+
+Diarization is enabled by default and downloads its Core ML models once on
+first use. If model preparation or diarization fails, transcription still
+finishes with the fallback `them` label and records the failure in
+`transcribe.log`.
+
+## Local AI
+
+Quill talks to OpenAI-compatible servers on localhost and auto-detects:
+
+- LM Studio at `http://127.0.0.1:1234/v1`
+- llama.cpp or `mlx_lm.server` at `http://127.0.0.1:8080/v1`
+- another local endpoint configured in Settings
+
+Chat never uploads a transcript. Quill chunks and ranks transcript passages
+locally, shows a dedicated retrieval state, sends only the relevant excerpts
+to the selected local model, and asks the model for numbered citations.
+Structured source fragments are saved on each assistant message and link back
+to the closest transcript segment. Threads persist in
+`iCloud Drive/Quill/Threads/threads.json`.
+
 ## Config
 
 Optional, at `~/.config/quill/config.json`:
 
 ```json
 {
-  "recordings_dir": "~/Recordings",
+  "recordings_dir": "~/Library/Mobile Documents/com~apple~CloudDocs/Quill/Recordings",
   "transcription": { "enabled": true, "engine": "parakeet" },
+  "diarization": { "enabled": true, "engine": "offline-vbx" },
   "on_stop": "my-hook"
 }
 ```
 
 - `recordings_dir` — where sessions land. Resolution order: `--out` flag >
-  config > `~/Recordings`.
+  config > iCloud Drive when available > `~/Recordings`.
 - `transcription.enabled` — set `false` to just record.
+- `diarization.enabled` — set `false` to keep the original two-channel
+  `me`/`them` labeling without remote-speaker detection.
 - `mic_voice_processing` — Apple's echo cancellation on the mic (default off).
   Set `true` when recording meetings through the speakers, so playback doesn't
   bleed into the mic track and get transcribed twice as "me". The trade: while
@@ -97,8 +130,8 @@ Optional, at `~/.config/quill/config.json`:
 ## CLI
 
 ```sh
-quill                        # run the menu-bar daemon (^C to quit)
-quill run --out <dir>        # custom recordings root (default ~/Recordings)
+quill                        # open the desktop app (^C to quit when run here)
+quill run --out <dir>        # open with a custom recordings root
 quill doctor                 # check permissions, recordings folder, models
 quill install --launch-at-login
 quill install --uninstall
@@ -112,7 +145,9 @@ quill install --uninstall
 - **AVAudioEngine** — mic capture
 - **AVAudioFile** — streaming AAC encode into CAF
 - **FluidAudio / Parakeet** — on-device Core ML transcription
-- **NSStatusItem** — the whole UI
+- **SwiftUI + AppKit** — recording library, transcript reader, and chat threads
+- **OpenAI-compatible localhost API** — LM Studio, llama.cpp, and MLX chat
+- **NSStatusItem** — quick recording controls alongside the full window
 
 ## Gotchas
 
@@ -123,5 +158,13 @@ quill install --uninstall
   Screen & System Audio Recording.
 - Parakeet v2 is English-only. Other languages will come with the Whisper
   engine.
-- The binary embeds its Info.plist (`__TEXT,__info_plist`) so TCC can
-  attribute permissions to quill itself when running as a LaunchAgent.
+- iCloud Drive storage uses the visible `Quill` folder, not a hidden app
+  container, so recordings remain directly accessible in Finder.
+
+## License status
+
+The upstream repository currently has no explicit software license. Public
+GitHub visibility permits viewing and forking through GitHub, but does not
+grant general commercial-use or redistribution rights. See
+[`LICENSE_STATUS.md`](LICENSE_STATUS.md) and resolve the legal blocker in
+[`TODO.md`](TODO.md) before commercial use.

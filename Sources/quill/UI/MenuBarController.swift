@@ -10,6 +10,7 @@ final class MenuBarController {
     private let transcriptionLabel: NSMenuItem
     private let toggleItem: NSMenuItem
 
+    var onShow: (() -> Void)?
     var onToggle: (() -> Void)?
     var onOpenFolder: (() -> Void)?
     var onQuit: (() -> Void)?
@@ -19,6 +20,14 @@ final class MenuBarController {
 
         let menu = NSMenu()
         menu.autoenablesItems = false
+
+        let show = NSMenuItem(
+            title: "Open Quill",
+            action: #selector(showClicked),
+            keyEquivalent: ""
+        )
+        menu.addItem(show)
+        menu.addItem(.separator())
 
         stateLabel = NSMenuItem(title: "idle", action: nil, keyEquivalent: "")
         stateLabel.isEnabled = false
@@ -54,7 +63,7 @@ final class MenuBarController {
         )
         menu.addItem(quit)
 
-        for item in [toggleItem, openFolder, quit] {
+        for item in [show, toggleItem, openFolder, quit] {
             item.target = self
         }
 
@@ -108,6 +117,7 @@ final class MenuBarController {
         return image
     }
 
+    @objc private func showClicked() { onShow?() }
     @objc private func toggleClicked() { onToggle?() }
     @objc private func openFolderClicked() { onOpenFolder?() }
     @objc private func quitClicked() { onQuit?() }

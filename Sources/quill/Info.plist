@@ -5,7 +5,12 @@
     <key>CFBundleIdentifier</key>
     <string>com.digimata.quill</string>
     <key>CFBundleName</key>
-    <string>quill</string>
+    <string>Quill</string>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
     <key>NSMicrophoneUsageDescription</key>
     <string>quill records your microphone during meetings so you can transcribe them later. Audio never leaves this Mac.</string>
     <key>NSAudioCaptureUsageDescription</key>

@@ -6,7 +6,7 @@ import Foundation
 struct Quill: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "quill",
-        abstract: "Local meeting recorder + transcriber. Records mic and system audio as two tracks, then transcribes on-device.",
+        abstract: "Private local meeting workspace with recording, transcription, and local-AI chat.",
         subcommands: [Run.self, Doctor.self, Install.self],
         defaultSubcommand: Run.self
     )
@@ -15,7 +15,7 @@ struct Quill: ParsableCommand {
 struct Run: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "run",
-        abstract: "Run the menu-bar daemon (default)."
+        abstract: "Open the Quill desktop app (default)."
     )
 
     @Option(name: .long, help: "Recordings root directory (overrides the config file).")
@@ -41,9 +41,10 @@ struct Run: ParsableCommand {
         }
 
         let app = NSApplication.shared
-        app.setActivationPolicy(.accessory)
+        app.setActivationPolicy(.regular)
 
         let controller = AppController(root: root)
+        app.delegate = controller
 
         let sigint = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
         sigint.setEventHandler {
@@ -54,7 +55,7 @@ struct Run: ParsableCommand {
         signal(SIGINT, SIG_IGN)
 
         FileHandle.standardError.write(Data(
-            "quill up · recordings → \(root.path) · ^C to quit\n".utf8
+            "quill up · iCloud library → \(root.path) · ^C to quit\n".utf8
         ))
         app.run()
     }
@@ -74,112 +75,61 @@ struct Doctor: ParsableCommand {
     }
 }
 
-/// Owns the menu bar, the current recording session, and the elapsed-time
-/// ticker. All state transitions happen on the main actor.
 @MainActor
-final class AppController {
-    private let root: URL
+final class AppController: NSObject, NSApplicationDelegate {
+    private let model: AppModel
     private let menuBar = MenuBarController()
-    private let transcription = TranscriptionCoordinator()
-    private var session: RecordingSession?
-    private var ticker: Timer?
+    private lazy var mainWindow = QuillWindowController(model: model)
 
     init(root: URL) {
-        self.root = root
-        menuBar.onToggle = { [weak self] in self?.toggle() }
-        menuBar.onOpenFolder = { [weak self] in self?.openFolder() }
+        model = AppModel(root: root)
+        super.init()
+
+        menuBar.onShow = { [weak self] in self?.showWindow() }
+        menuBar.onToggle = { [weak self] in self?.model.toggleRecording() }
+        menuBar.onOpenFolder = { [weak self] in self?.model.openRecordingsFolder() }
         menuBar.onQuit = { [weak self] in self?.shutdown() }
         menuBar.update(recording: false, elapsed: nil)
 
-        Task { [transcription, root] in
-            await transcription.setStatusHandler { status in
-                Task { @MainActor [weak self] in
-                    self?.showTranscription(status)
-                }
-            }
-            await transcription.resumePending(root: root)
+        model.onRecordingStateChange = { [weak self] recording, elapsed in
+            self?.menuBar.update(recording: recording, elapsed: elapsed)
+        }
+        model.onTranscriptionStateChange = { [weak self] status in
+            self?.menuBar.updateTranscription(status)
         }
     }
 
-    /// Stop any live session cleanly (finalizing files) and exit.
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        model.startServices()
+        showWindow()
+    }
+
+    func applicationShouldHandleReopen(
+        _ sender: NSApplication,
+        hasVisibleWindows flag: Bool
+    ) -> Bool {
+        showWindow()
+        return true
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(
+        _ sender: NSApplication
+    ) -> Bool {
+        false
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        model.shutdown()
+    }
+
+    func showWindow() {
+        mainWindow.showWindow(nil)
+        mainWindow.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
     func shutdown() {
-        stopSession()
+        model.shutdown()
         NSApp.terminate(nil)
-    }
-
-    private func toggle() {
-        if session == nil {
-            startSession()
-        } else {
-            stopSession()
-        }
-    }
-
-    private func startSession() {
-        do {
-            let newSession = try RecordingSession(root: root)
-            try newSession.start()
-            session = newSession
-            FileHandle.standardError.write(Data("● recording → \(newSession.dir.path)\n".utf8))
-        } catch {
-            FileHandle.standardError.write(Data("recording start failed: \(error)\n".utf8))
-            notifyUser(title: "quill — recording failed", body: "\(error)")
-            return
-        }
-
-        menuBar.update(recording: true, elapsed: "0:00")
-        ticker = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.tick() }
-        }
-    }
-
-    private func stopSession() {
-        guard let session else { return }
-        session.stop()
-        let elapsed = Self.format(Date().timeIntervalSince(session.startedAt))
-        FileHandle.standardError.write(Data(
-            "○ stopped · \(elapsed) · \(session.dir.path)\n".utf8
-        ))
-        self.session = nil
-        ticker?.invalidate()
-        ticker = nil
-        menuBar.update(recording: false, elapsed: nil)
-
-        let dir = session.dir
-        Task { [transcription] in await transcription.enqueue(dir) }
-    }
-
-    private func showTranscription(_ status: TranscriptionCoordinator.Status) {
-        switch status {
-        case .idle:
-            menuBar.updateTranscription(nil)
-        case .transcribing(let name, let queued):
-            menuBar.updateTranscription(
-                queued > 0 ? "transcribing \(name) · \(queued) queued" : "transcribing \(name)"
-            )
-        case .failed(let name):
-            menuBar.updateTranscription("transcription failed · \(name)")
-        }
-    }
-
-    private func tick() {
-        guard let session else { return }
-        menuBar.update(
-            recording: true,
-            elapsed: Self.format(Date().timeIntervalSince(session.startedAt))
-        )
-    }
-
-    private func openFolder() {
-        try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        NSWorkspace.shared.open(root)
-    }
-
-    private static func format(_ interval: TimeInterval) -> String {
-        let total = Int(interval)
-        let h = total / 3600, m = (total % 3600) / 60, s = total % 60
-        return h > 0
-            ? String(format: "%d:%02d:%02d", h, m, s)
-            : String(format: "%d:%02d", m, s)
     }
 }

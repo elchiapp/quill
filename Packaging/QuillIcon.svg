@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="background" x1="128" y1="64" x2="896" y2="960" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4361EE"/>
+      <stop offset="0.52" stop-color="#5E3FD3"/>
+      <stop offset="1" stop-color="#241451"/>
+    </linearGradient>
+    <linearGradient id="feather" x1="310" y1="720" x2="770" y2="210" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F5F0FF"/>
+      <stop offset="1" stop-color="#FFFFFF"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="28" stdDeviation="26" flood-color="#14072E" flood-opacity="0.34"/>
+    </filter>
+  </defs>
+  <rect x="64" y="64" width="896" height="896" rx="210" fill="url(#background)"/>
+  <path d="M744 216c-83-45-193-22-263 48L314 431c-31 31-48 72-48 116v177c0 17 13 30 30 30h177c44 0 85-17 116-48l167-167c89-89 84-236-12-323Z"
+        fill="url(#feather)" filter="url(#shadow)"/>
+  <path d="M718 310 252 776" fill="none" stroke="#382276" stroke-width="38" stroke-linecap="round"/>
+  <path d="M663 468H488M574 586H371" fill="none" stroke="#6F57B5" stroke-width="30" stroke-linecap="round"/>
+  <path d="M252 776 194 834" fill="none" stroke="#F5F0FF" stroke-width="38" stroke-linecap="round"/>
+</svg>

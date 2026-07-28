@@ -5,20 +5,40 @@ import Foundation
 ///     {
 ///       "recordings_dir": "~/Recordings",
 ///       "transcription": { "enabled": true, "engine": "parakeet" },
+///       "diarization": { "enabled": true, "engine": "offline-vbx" },
 ///       "mic_voice_processing": true,
 ///       "on_stop": "my-hook"
 ///     }
 ///
 /// Resolution order for the recordings root: --out flag > config file >
-/// ~/Recordings. `on_stop` is a shell command spawned with the session
+/// iCloud Drive when available > ~/Recordings. `on_stop` is a shell command spawned with the session
 /// directory as its argument — after the transcript is written, or right
 /// after recording when transcription is disabled.
 enum Config {
     static let path = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".config/quill/config.json")
 
-    static let defaultRoot = FileManager.default.homeDirectoryForCurrentUser
+    static let localRoot = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Recordings", isDirectory: true)
+
+    static let iCloudDriveRoot = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs", isDirectory: true)
+
+    /// Completed recordings live in a normal iCloud Drive folder. This keeps
+    /// the storage transparent in Finder and works without App Store
+    /// container entitlements. Macs without iCloud Drive fall back locally.
+    static var defaultRoot: URL {
+        if FileManager.default.fileExists(atPath: iCloudDriveRoot.path) {
+            return iCloudDriveRoot
+                .appendingPathComponent("Quill", isDirectory: true)
+                .appendingPathComponent("Recordings", isDirectory: true)
+        }
+        return localRoot
+    }
+
+    static var appDataRoot: URL {
+        defaultRoot.deletingLastPathComponent()
+    }
 
     /// The configured recordings root, or nil if no config file / no key.
     static func recordingsDir() -> URL? {
@@ -46,6 +66,20 @@ enum Config {
 
     private static func transcription() -> [String: Any]? {
         load()?["transcription"] as? [String: Any]
+    }
+
+    /// Remote/system audio is diarized by default. The microphone remains a
+    /// separate, trusted "me" channel and does not need speaker detection.
+    static func diarizationEnabled() -> Bool {
+        diarization()?["enabled"] as? Bool ?? true
+    }
+
+    static func diarizationEngine() -> String {
+        diarization()?["engine"] as? String ?? "offline-vbx"
+    }
+
+    private static func diarization() -> [String: Any]? {
+        load()?["diarization"] as? [String: Any]
     }
 
     /// Apple voice processing (acoustic echo cancellation) on the mic, so
