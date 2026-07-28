@@ -11,7 +11,6 @@ struct SettingsView: View {
                     .font(.title2.weight(.semibold))
                 Spacer()
                 Button("Done") {
-                    model.saveAISettings()
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
@@ -19,17 +18,9 @@ struct SettingsView: View {
 
             GroupBox("Local AI") {
                 Form {
-                    TextField("Server", text: $model.endpoint)
-                        .textFieldStyle(.roundedBorder)
-
-                    Picker("Chat model", selection: $model.selectedModel) {
-                        if model.availableModels.isEmpty {
-                            Text("No chat models found").tag("")
-                        }
-                        ForEach(model.availableModels, id: \.self) { modelName in
-                            Text(modelName).tag(modelName)
-                        }
-                    }
+                    LabeledContent("Model", value: BuiltInLLMEngine.modelDisplayName)
+                    LabeledContent("Engine", value: "Built into Quill · Apple MLX")
+                    LabeledContent("Download", value: BuiltInLLMEngine.approximateDownloadSize)
 
                     LabeledContent("Status") {
                         HStack(spacing: 7) {
@@ -39,16 +30,26 @@ struct SettingsView: View {
                             Text(statusText)
                         }
                     }
+
+                    if case .downloading(let fraction) = model.aiStatus {
+                        ProgressView(value: fraction)
+                    }
                 }
                 .formStyle(.grouped)
 
                 HStack {
-                    Text("Compatible with LM Studio, llama.cpp server, and mlx_lm.server.")
+                    Text("Quill downloads the model itself and then runs fully offline. No server or second app.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Spacer()
-                    Button("Reconnect") {
-                        model.saveAISettings()
+                    Button("Show model files") {
+                        model.openModelFolder()
+                    }
+                    if canPrepare {
+                        Button("Download model") {
+                            model.downloadBuiltInAI()
+                        }
+                        .buttonStyle(.borderedProminent)
                     }
                 }
                 .padding(.horizontal, 8)
@@ -79,20 +80,34 @@ struct SettingsView: View {
 
     private var statusColor: Color {
         switch model.aiStatus {
-        case .checking: .orange
-        case .connected: .green
-        case .offline: .red
+        case .notDownloaded: .secondary
+        case .downloading, .loading: .orange
+        case .ready: .green
+        case .failed: .red
         }
     }
 
     private var statusText: String {
         switch model.aiStatus {
-        case .checking:
-            "Checking…"
-        case .connected(let server):
-            "\(server) connected"
-        case .offline(let message):
+        case .notDownloaded:
+            "Downloads automatically when you first ask a question"
+        case .downloading(let fraction):
+            "Downloading inside Quill · \(Int(fraction * 100))%"
+        case .loading:
+            "Loading model into memory…"
+        case .ready:
+            "Ready · in-process and offline"
+        case .failed(let message):
             message
+        }
+    }
+
+    private var canPrepare: Bool {
+        switch model.aiStatus {
+        case .notDownloaded, .failed:
+            true
+        case .downloading, .loading, .ready:
+            false
         }
     }
 }

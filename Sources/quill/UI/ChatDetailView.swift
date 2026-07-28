@@ -71,7 +71,7 @@ struct ChatDetailView: View {
                     .foregroundStyle(.tint)
                 Text("Ask your recordings")
                     .font(.title2.weight(.semibold))
-                Text("Quill retrieves relevant transcript passages and asks your local model.")
+                Text("Quill retrieves relevant transcript passages and answers with its built-in local model.")
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 440)
@@ -156,7 +156,7 @@ struct ChatDetailView: View {
             .padding(12)
             .background(.background.secondary, in: RoundedRectangle(cornerRadius: 14))
 
-            Text("Nothing is sent to the cloud. Answers use \(model.selectedModel.isEmpty ? "your local model" : model.selectedModel).")
+            Text("Nothing is sent to an inference service. Answers run inside Quill with \(model.selectedModel).")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
         }
@@ -186,6 +186,15 @@ struct ChatDetailView: View {
             ""
         case .retrieving:
             "Searching \(model.recordings.count) transcript\(model.recordings.count == 1 ? "" : "s") for relevant sources…"
+        case .preparingAI:
+            switch model.aiStatus {
+            case .downloading(let fraction):
+                "Downloading Quill’s built-in model · \(Int(fraction * 100))%…"
+            case .loading:
+                "Loading Quill’s built-in model…"
+            default:
+                "Preparing Quill’s built-in model…"
+            }
         case .generating:
             "Generating locally with \(model.selectedModel)…"
         }

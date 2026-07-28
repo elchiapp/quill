@@ -23,6 +23,16 @@ This file is the product and engineering backlog. Keep it current as work lands.
 - [x] Package and validate the updated app.
 - [x] Push the work to the `elchiapp/quill` GitHub fork.
 
+## Built-in inference iteration
+
+- [x] Replace all external local-server integration with in-process MLX
+  inference.
+- [x] Download and manage model weights entirely inside Quill.
+- [x] Show model download and loading progress in chat and Settings.
+- [x] Validate transcript-grounded generation with the built-in model.
+- [x] Rebuild, sign, and install the standalone app update.
+- [x] Push the standalone app update to the fork.
+
 ## Product backlog
 
 - [ ] Let users rename detected speakers and remember voice profiles across

@@ -11,15 +11,10 @@ final class AppModel: ObservableObject {
         var id: String { rawValue }
     }
 
-    enum AIStatus: Equatable {
-        case checking
-        case connected(String)
-        case offline(String)
-    }
-
     enum ChatPipelineStage: Equatable {
         case idle
         case retrieving
+        case preparingAI
         case generating
     }
 
@@ -46,10 +41,7 @@ final class AppModel: ObservableObject {
     @Published var transcriptionStatus: String?
     @Published var appError: String?
 
-    @Published var aiStatus: AIStatus = .checking
-    @Published var availableModels: [String] = []
-    @Published var selectedModel: String
-    @Published var endpoint: String
+    @Published var aiStatus: BuiltInAIState
     @Published var showingSettings = false
 
     let root: URL
@@ -58,22 +50,22 @@ final class AppModel: ObservableObject {
     var onTranscriptionStateChange: ((String?) -> Void)?
 
     private let transcription = TranscriptionCoordinator()
-    private let llm = LocalLLMClient()
+    private let llm: BuiltInLLMEngine
     private let chatStore: ChatStore
-    private var connection: LocalLLMConnection?
     private var session: RecordingSession?
     private var ticker: Timer?
     private var recordingStartedAt: Date?
 
     init(root: URL) {
         self.root = root
+        llm = BuiltInLLMEngine(cacheRoot: Config.modelCacheRoot)
         chatStore = ChatStore(directory: root.deletingLastPathComponent().appendingPathComponent(
             "Threads",
             isDirectory: true
         ))
-        endpoint = UserDefaults.standard.string(forKey: "localLLMEndpoint")
-            ?? "http://127.0.0.1:1234/v1"
-        selectedModel = UserDefaults.standard.string(forKey: "localLLMModel") ?? ""
+        aiStatus = BuiltInLLMEngine.hasCachedModel(in: Config.modelCacheRoot)
+            ? .loading
+            : .notDownloaded
 
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         RecordingLibrary.copyLegacyRecordingsIfNeeded(to: root)
@@ -105,6 +97,14 @@ final class AppModel: ObservableObject {
         chatStage != .idle
     }
 
+    var selectedModel: String {
+        BuiltInLLMEngine.modelDisplayName
+    }
+
+    var modelCacheRoot: URL {
+        Config.modelCacheRoot
+    }
+
     var storageLabel: String {
         root.path.contains("Mobile Documents/com~apple~CloudDocs")
             ? "iCloud Drive"
@@ -117,8 +117,13 @@ final class AppModel: ObservableObject {
             await transcription.setStatusHandler { status in
                 Task { @MainActor in model.apply(status) }
             }
+            await model.llm.setStateHandler { state in
+                Task { @MainActor in model.aiStatus = state }
+            }
             await transcription.resumePending(root: root)
-            await model.refreshAIConnection()
+            if BuiltInLLMEngine.hasCachedModel(in: Config.modelCacheRoot) {
+                await model.prepareBuiltInAI()
+            }
         }
     }
 
@@ -258,12 +263,10 @@ final class AppModel: ObservableObject {
                         scope: scope
                     )
                 }.value
+                chatStage = .preparingAI
+                try await llm.prepare()
                 chatStage = .generating
-                let connection = try await ensureConnection()
-                let model = try chooseModel(from: connection.models)
                 let answer = try await llm.complete(
-                    connection: connection,
-                    model: model,
                     systemPrompt: Self.systemPrompt(chunks: chunks, scope: scope),
                     messages: conversation
                 )
@@ -285,56 +288,29 @@ final class AppModel: ObservableObject {
             } catch {
                 chatError = error.localizedDescription
                 chatStage = .idle
-                aiStatus = .offline(error.localizedDescription)
+                aiStatus = .failed(error.localizedDescription)
             }
         }
     }
 
-    func refreshAIConnection() async {
-        aiStatus = .checking
+    func prepareBuiltInAI() async {
         do {
-            let found = try await llm.discover(preferredEndpoint: endpoint)
-            connection = found
-            endpoint = found.baseURL.absoluteString
-            availableModels = Self.chatModels(from: found.models)
-            if selectedModel.isEmpty || !availableModels.contains(selectedModel) {
-                selectedModel = Self.preferredModel(from: availableModels) ?? ""
-            }
-            aiStatus = .connected(found.serverName)
-            UserDefaults.standard.set(endpoint, forKey: "localLLMEndpoint")
-            UserDefaults.standard.set(selectedModel, forKey: "localLLMModel")
+            try await llm.prepare()
         } catch {
-            connection = nil
-            availableModels = []
-            aiStatus = .offline(error.localizedDescription)
+            aiStatus = .failed(error.localizedDescription)
         }
     }
 
-    func saveAISettings() {
-        UserDefaults.standard.set(endpoint, forKey: "localLLMEndpoint")
-        UserDefaults.standard.set(selectedModel, forKey: "localLLMModel")
-        connection = nil
-        Task { await refreshAIConnection() }
+    func downloadBuiltInAI() {
+        Task { await prepareBuiltInAI() }
     }
 
-    private func ensureConnection() async throws -> LocalLLMConnection {
-        if let connection { return connection }
-        let found = try await llm.discover(preferredEndpoint: endpoint)
-        connection = found
-        availableModels = Self.chatModels(from: found.models)
-        aiStatus = .connected(found.serverName)
-        return found
-    }
-
-    private func chooseModel(from models: [String]) throws -> String {
-        let chatModels = Self.chatModels(from: models)
-        guard !chatModels.isEmpty else { throw LocalLLMClient.ClientError.noChatModel }
-        let model = chatModels.contains(selectedModel)
-            ? selectedModel
-            : Self.preferredModel(from: chatModels) ?? chatModels[0]
-        selectedModel = model
-        UserDefaults.standard.set(model, forKey: "localLLMModel")
-        return model
+    func openModelFolder() {
+        try? FileManager.default.createDirectory(
+            at: Config.modelCacheRoot,
+            withIntermediateDirectories: true
+        )
+        NSWorkspace.shared.open(Config.modelCacheRoot)
     }
 
     private func persistThreads() {
@@ -384,23 +360,6 @@ final class AppModel: ObservableObject {
     private static func threadTitle(from question: String) -> String {
         let singleLine = question.replacingOccurrences(of: "\n", with: " ")
         return singleLine.count > 48 ? String(singleLine.prefix(48)) + "…" : singleLine
-    }
-
-    private static func chatModels(from models: [String]) -> [String] {
-        models.filter {
-            let value = $0.lowercased()
-            return !value.contains("embed") && !value.contains("rerank")
-        }
-    }
-
-    private static func preferredModel(from models: [String]) -> String? {
-        models.first {
-            let value = $0.lowercased()
-            return value.contains("mlx")
-                && (value.contains("2b") || value.contains("3b") || value.contains("4b"))
-        }
-            ?? models.first { $0.lowercased().contains("mlx") }
-            ?? models.first
     }
 
     private static func systemPrompt(

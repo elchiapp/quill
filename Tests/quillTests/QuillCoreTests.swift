@@ -65,6 +65,27 @@ func speakerAssignmentUsesGreatestOverlapAndNearbyFallback() {
 }
 
 @Test
+func builtInModelCacheDetectionAndResponseCleanup() throws {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let snapshot = root
+        .appendingPathComponent(
+            "models--mlx-community--Qwen3-1.7B-4bit/snapshots/test",
+            isDirectory: true
+        )
+    try FileManager.default.createDirectory(at: snapshot, withIntermediateDirectories: true)
+    try Data("{}".utf8).write(to: snapshot.appendingPathComponent("config.json"))
+    try Data().write(to: snapshot.appendingPathComponent("model.safetensors"))
+
+    #expect(BuiltInLLMEngine.hasCachedModel(in: root))
+    #expect(
+        BuiltInLLMEngine.clean("<think>private reasoning</think>\nShip Friday. [1]")
+            == "Ship Friday. [1]"
+    )
+}
+
+@Test
 func recordingLoaderReadsCanonicalTranscriptSchema() throws {
     let root = FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString, isDirectory: true)

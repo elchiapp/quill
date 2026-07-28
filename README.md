@@ -12,16 +12,16 @@ Build a signed, double-clickable app bundle and a distributable disk image:
 
 ```sh
 scripts/package-macos.sh
-open dist/Quill.app
+open dist/Quill.dmg
 ```
 
-The generated artifacts are `dist/Quill.app` and `dist/Quill.dmg`. By default,
-the app is ad-hoc signed for local use. Set `SIGN_IDENTITY` to a Developer ID
-or Apple Development signing identity when a persistent identity is required.
+The generated artifacts are `dist/Quill.app.zip` and `dist/Quill.dmg`. By
+default, the app is ad-hoc signed for local use. Set `SIGN_IDENTITY` to a
+Developer ID or Apple Development signing identity when a persistent identity
+is required.
 
 **Requires:** macOS 15+ (Core Audio process taps for system audio — no
-virtual device, no kernel extension). Apple Silicon recommended for
-transcription speed.
+virtual device, no kernel extension) on an Apple-silicon Mac.
 
 ## How to use
 
@@ -30,8 +30,10 @@ transcription speed.
 2. Stop from the window or feather menu-bar item. Quill transcribes the two
    tracks locally and adds the speaker-tagged result to the library.
 3. Open **Ask Quill**, start a conversation, and choose either **All
-   recordings** or one meeting as its scope. Numbered source cards beneath an
-   answer open the cited recording at the matching transcript timestamp.
+   recordings** or one meeting as its scope. On the first question, Quill
+   downloads its built-in MLX chat model; subsequent inference is offline.
+   Numbered source cards beneath an answer open the cited recording at the
+   matching transcript timestamp.
 
 Each session lands in
 `iCloud Drive/Quill/Recordings/<yyyy.MM.dd-HHmm>/` by default:
@@ -85,17 +87,18 @@ finishes with the fallback `them` label and records the failure in
 
 ## Local AI
 
-Quill talks to OpenAI-compatible servers on localhost and auto-detects:
-
-- LM Studio at `http://127.0.0.1:1234/v1`
-- llama.cpp or `mlx_lm.server` at `http://127.0.0.1:8080/v1`
-- another local endpoint configured in Settings
+Inference is part of Quill itself. It uses Apple's
+[MLX Swift](https://github.com/ml-explore/mlx-swift) runtime and the quantized
+`Qwen3 1.7B` model directly in the app process. Quill downloads the roughly
+1 GB model into `~/Library/Caches/Quill/Models` on first use and manages it
+from Settings. There is no LM Studio, llama server, localhost API, Python
+runtime, terminal command, or separate application.
 
 Chat never uploads a transcript. Quill chunks and ranks transcript passages
-locally, shows a dedicated retrieval state, sends only the relevant excerpts
-to the selected local model, and asks the model for numbered citations.
-Structured source fragments are saved on each assistant message and link back
-to the closest transcript segment. Threads persist in
+locally, shows distinct retrieval, model-download/loading, and generation
+states, and passes only relevant excerpts to its in-process model. Structured
+source fragments are saved on each assistant message and link back to the
+closest transcript segment. Threads persist in
 `iCloud Drive/Quill/Threads/threads.json`.
 
 ## Config
@@ -145,8 +148,8 @@ quill install --uninstall
 - **AVAudioEngine** — mic capture
 - **AVAudioFile** — streaming AAC encode into CAF
 - **FluidAudio / Parakeet** — on-device Core ML transcription
+- **MLX Swift LM / Qwen3 1.7B 4-bit** — built-in, in-process local inference
 - **SwiftUI + AppKit** — recording library, transcript reader, and chat threads
-- **OpenAI-compatible localhost API** — LM Studio, llama.cpp, and MLX chat
 - **NSStatusItem** — quick recording controls alongside the full window
 
 ## Gotchas

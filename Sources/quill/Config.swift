@@ -40,6 +40,11 @@ enum Config {
         defaultRoot.deletingLastPathComponent()
     }
 
+    /// Large inference weights stay local and disposable rather than syncing
+    /// through iCloud with the user's recordings and chat history.
+    static let modelCacheRoot = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Library/Caches/Quill/Models", isDirectory: true)
+
     /// The configured recordings root, or nil if no config file / no key.
     static func recordingsDir() -> URL? {
         guard let dir = load()?["recordings_dir"] as? String, !dir.isEmpty else { return nil }

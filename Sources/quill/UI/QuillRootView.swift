@@ -149,20 +149,25 @@ struct QuillRootView: View {
 
     private var aiStatusColor: Color {
         switch model.aiStatus {
-        case .checking: .orange
-        case .connected: .green
-        case .offline: .red
+        case .notDownloaded: .secondary
+        case .downloading, .loading: .orange
+        case .ready: .green
+        case .failed: .red
         }
     }
 
     private var aiStatusLabel: String {
         switch model.aiStatus {
-        case .checking:
-            "Checking local AI…"
-        case .connected(let server):
-            "\(server) connected"
-        case .offline:
-            "Local AI offline"
+        case .notDownloaded:
+            "Built-in AI · on first use"
+        case .downloading(let fraction):
+            "Downloading AI · \(Int(fraction * 100))%"
+        case .loading:
+            "Loading built-in AI…"
+        case .ready:
+            "Built-in AI ready"
+        case .failed:
+            "Built-in AI needs attention"
         }
     }
 }
