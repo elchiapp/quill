@@ -21,7 +21,7 @@ This file is the product and engineering backlog. Keep it current as work lands.
   timestamp.
 - [x] Show separate retrieval and local-model generation loading states.
 - [x] Package and validate the updated app.
-- [ ] Push the work to the `elchiapp/quill` GitHub fork.
+- [x] Push the work to the `elchiapp/quill` GitHub fork.
 
 ## Product backlog
 
