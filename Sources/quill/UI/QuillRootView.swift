@@ -47,6 +47,9 @@ struct QuillRootView: View {
         .sheet(isPresented: $model.showingSettings) {
             SettingsView(model: model)
         }
+        .sheet(isPresented: $model.showingModelRecommendation) {
+            ModelRecommendationView(model: model)
+        }
         .alert(
             "Quill",
             isPresented: Binding(
@@ -63,7 +66,7 @@ struct QuillRootView: View {
     private var sidebar: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                Image(systemName: "feather")
+                Image(systemName: "pencil")
                     .font(.title2)
                     .foregroundStyle(.tint)
                 Text("Quill")
@@ -149,7 +152,7 @@ struct QuillRootView: View {
 
     private var aiStatusColor: Color {
         switch model.aiStatus {
-        case .notDownloaded: .secondary
+        case .notDownloaded, .downloaded: .secondary
         case .downloading, .loading: .orange
         case .ready: .green
         case .failed: .red
@@ -159,13 +162,15 @@ struct QuillRootView: View {
     private var aiStatusLabel: String {
         switch model.aiStatus {
         case .notDownloaded:
-            "Built-in AI · on first use"
+            "\(model.selectedModelPlan.model.name) · download on first use"
+        case .downloaded:
+            "\(model.selectedModelPlan.model.name) · ready to load"
         case .downloading(let fraction):
-            "Downloading AI · \(Int(fraction * 100))%"
+            "Downloading \(model.selectedModelPlan.model.name) · \(Int(fraction * 100))%"
         case .loading:
-            "Loading built-in AI…"
+            "Loading \(model.selectedModelPlan.model.name)…"
         case .ready:
-            "Built-in AI ready"
+            "\(model.selectedModelPlan.model.name) ready"
         case .failed:
             "Built-in AI needs attention"
         }

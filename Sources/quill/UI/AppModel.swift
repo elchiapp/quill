@@ -42,9 +42,13 @@ final class AppModel: ObservableObject {
     @Published var appError: String?
 
     @Published var aiStatus: BuiltInAIState
+    @Published var selectedModelID: String
+    @Published var selectedModelPlan: BuiltInModelPlan
     @Published var showingSettings = false
+    @Published var showingModelRecommendation = false
 
     let root: URL
+    let deviceProfile: DeviceProfile
 
     var onRecordingStateChange: ((Bool, String?) -> Void)?
     var onTranscriptionStateChange: ((String?) -> Void)?
@@ -56,15 +60,34 @@ final class AppModel: ObservableObject {
     private var ticker: Timer?
     private var recordingStartedAt: Date?
 
+    private static let selectedModelKey = "quill.builtInAI.selectedModel"
+    private static let recommendationKey = "quill.builtInAI.recommendationHandled"
+
     init(root: URL) {
+        let profile = DeviceProfile.current
+        let storedModelID = UserDefaults.standard.string(
+            forKey: Self.selectedModelKey
+        )
+        let selectedModel = AIModelCatalog.model(id: storedModelID)
+        let modelPlan = AIModelCatalog.plan(for: selectedModel, device: profile)
+
         self.root = root
-        llm = BuiltInLLMEngine(cacheRoot: Config.modelCacheRoot)
+        deviceProfile = profile
+        selectedModelID = selectedModel.id
+        selectedModelPlan = modelPlan
+        llm = BuiltInLLMEngine(
+            cacheRoot: Config.modelCacheRoot,
+            plan: modelPlan
+        )
         chatStore = ChatStore(directory: root.deletingLastPathComponent().appendingPathComponent(
             "Threads",
             isDirectory: true
         ))
-        aiStatus = BuiltInLLMEngine.hasCachedModel(in: Config.modelCacheRoot)
-            ? .loading
+        aiStatus = BuiltInLLMEngine.hasCachedModel(
+            selectedModel,
+            in: Config.modelCacheRoot
+        )
+            ? .downloaded
             : .notDownloaded
 
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -98,11 +121,34 @@ final class AppModel: ObservableObject {
     }
 
     var selectedModel: String {
-        BuiltInLLMEngine.modelDisplayName
+        selectedModelPlan.model.displayName
     }
 
     var modelCacheRoot: URL {
         Config.modelCacheRoot
+    }
+
+    var recommendedModelPlan: BuiltInModelPlan {
+        AIModelCatalog.recommendation(for: deviceProfile)
+    }
+
+    var modelPlans: [BuiltInModelPlan] {
+        AIModelCatalog.models.map {
+            AIModelCatalog.plan(for: $0, device: deviceProfile)
+        }
+    }
+
+    var modelMemoryPolicyLabel: String {
+        "Models may use up to \(recommendedModelPlan.budgetLabel) — 50% of unified memory."
+    }
+
+    var isAITransitioning: Bool {
+        switch aiStatus {
+        case .downloading, .loading:
+            true
+        case .notDownloaded, .downloaded, .ready, .failed:
+            false
+        }
     }
 
     var storageLabel: String {
@@ -121,8 +167,14 @@ final class AppModel: ObservableObject {
                 Task { @MainActor in model.aiStatus = state }
             }
             await transcription.resumePending(root: root)
-            if BuiltInLLMEngine.hasCachedModel(in: Config.modelCacheRoot) {
+            if BuiltInLLMEngine.hasCachedModel(
+                model.selectedModelPlan.model,
+                in: Config.modelCacheRoot
+            ) {
                 await model.prepareBuiltInAI()
+            }
+            if model.shouldOfferModelRecommendation {
+                model.showingModelRecommendation = true
             }
         }
     }
@@ -250,6 +302,17 @@ final class AppModel: ObservableObject {
             .map(\.content)
             .joined(separator: "\n")
         let recordingsSnapshot = recordings
+        let retrievalLimit = max(
+            10,
+            min(512, selectedModelPlan.contextTokens / 512)
+        )
+        let retrievalCharacterBudget = max(
+            16_000,
+            min(
+                600_000,
+                max(4_096, selectedModelPlan.contextTokens - 16_384) * 2
+            )
+        )
         persistThreads()
         chatStage = .retrieving
 
@@ -260,7 +323,9 @@ final class AppModel: ObservableObject {
                     TranscriptRetriever.retrieve(
                         query: retrievalQuery,
                         recordings: recordingsSnapshot,
-                        scope: scope
+                        scope: scope,
+                        limit: retrievalLimit,
+                        characterBudget: retrievalCharacterBudget
                     )
                 }.value
                 chatStage = .preparingAI
@@ -305,12 +370,87 @@ final class AppModel: ObservableObject {
         Task { await prepareBuiltInAI() }
     }
 
+    func selectModel(_ modelID: String, downloadAndUse: Bool = true) {
+        guard !isAnswering, !isAITransitioning else { return }
+        let model = AIModelCatalog.model(id: modelID)
+        let newPlan = AIModelCatalog.plan(for: model, device: deviceProfile)
+        guard newPlan.fitsMemoryBudget,
+              deviceProfile.totalMemoryBytes >= model.minimumDeviceMemoryBytes
+        else {
+            appError = "\(model.name) does not fit Quill’s 50% memory safety limit on this Mac."
+            return
+        }
+
+        selectedModelID = model.id
+        selectedModelPlan = newPlan
+        UserDefaults.standard.set(model.id, forKey: Self.selectedModelKey)
+        markRecommendationHandled()
+
+        let cached = BuiltInLLMEngine.hasCachedModel(
+            model,
+            in: Config.modelCacheRoot
+        )
+        aiStatus = cached ? .downloaded : .notDownloaded
+        Task { [weak self, llm] in
+            await llm.configure(newPlan)
+            guard let self else { return }
+            if downloadAndUse || cached {
+                await self.prepareBuiltInAI()
+            }
+        }
+    }
+
+    func keepConservativeModel() {
+        markRecommendationHandled()
+        showingModelRecommendation = false
+        if selectedModelID != AIModelCatalog.defaultModel.id {
+            selectModel(AIModelCatalog.defaultModel.id, downloadAndUse: false)
+        }
+    }
+
+    func useRecommendedModel() {
+        let recommendation = recommendedModelPlan
+        markRecommendationHandled()
+        showingModelRecommendation = false
+        selectModel(recommendation.model.id)
+    }
+
+    func reviewModelChoices() {
+        markRecommendationHandled()
+        showingModelRecommendation = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+            self?.showingSettings = true
+        }
+    }
+
+    func isModelCached(_ model: BuiltInModel) -> Bool {
+        BuiltInLLMEngine.hasCachedModel(model, in: Config.modelCacheRoot)
+    }
+
     func openModelFolder() {
         try? FileManager.default.createDirectory(
             at: Config.modelCacheRoot,
             withIntermediateDirectories: true
         )
         NSWorkspace.shared.open(Config.modelCacheRoot)
+    }
+
+    private var shouldOfferModelRecommendation: Bool {
+        let recommendation = recommendedModelPlan
+        guard recommendation.model.id != selectedModelID else { return false }
+        return UserDefaults.standard.string(forKey: Self.recommendationKey)
+            != recommendationSignature
+    }
+
+    private var recommendationSignature: String {
+        "v2:\(recommendedModelPlan.model.id):\(deviceProfile.totalMemoryBytes)"
+    }
+
+    private func markRecommendationHandled() {
+        UserDefaults.standard.set(
+            recommendationSignature,
+            forKey: Self.recommendationKey
+        )
     }
 
     private func persistThreads() {

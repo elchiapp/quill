@@ -189,9 +189,11 @@ struct ChatDetailView: View {
         case .preparingAI:
             switch model.aiStatus {
             case .downloading(let fraction):
-                "Downloading Quill’s built-in model · \(Int(fraction * 100))%…"
+                "Downloading \(model.selectedModelPlan.model.name) · \(Int(fraction * 100))%…"
             case .loading:
-                "Loading Quill’s built-in model…"
+                "Loading \(model.selectedModelPlan.model.name) into memory…"
+            case .downloaded:
+                "Preparing downloaded \(model.selectedModelPlan.model.name)…"
             default:
                 "Preparing Quill’s built-in model…"
             }

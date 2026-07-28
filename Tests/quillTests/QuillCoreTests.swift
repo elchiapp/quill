@@ -69,20 +69,58 @@ func builtInModelCacheDetectionAndResponseCleanup() throws {
     let root = FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString, isDirectory: true)
     defer { try? FileManager.default.removeItem(at: root) }
+    let model = AIModelCatalog.defaultModel
     let snapshot = root
         .appendingPathComponent(
-            "models--mlx-community--Qwen3-1.7B-4bit/snapshots/test",
+            "models--mlx-community--Qwen3.5-2B-4bit/snapshots/test",
             isDirectory: true
         )
     try FileManager.default.createDirectory(at: snapshot, withIntermediateDirectories: true)
     try Data("{}".utf8).write(to: snapshot.appendingPathComponent("config.json"))
     try Data().write(to: snapshot.appendingPathComponent("model.safetensors"))
 
-    #expect(BuiltInLLMEngine.hasCachedModel(in: root))
+    #expect(BuiltInLLMEngine.hasCachedModel(model, in: root))
     #expect(
         BuiltInLLMEngine.clean("<think>private reasoning</think>\nShip Friday. [1]")
             == "Ship Friday. [1]"
     )
+}
+
+@Test
+func deviceRecommendationsStayWithinHalfOfUnifiedMemory() {
+    let profiles = [
+        DeviceProfile(
+            chipName: "Test 16 GB",
+            totalMemoryBytes: 16 * DeviceProfile.gibibyte,
+            processorCount: 8
+        ),
+        DeviceProfile(
+            chipName: "Test 32 GB",
+            totalMemoryBytes: 32 * DeviceProfile.gibibyte,
+            processorCount: 12
+        ),
+        DeviceProfile(
+            chipName: "Test 128 GB",
+            totalMemoryBytes: 128 * DeviceProfile.gibibyte,
+            processorCount: 16
+        ),
+    ]
+    let expected = [
+        "mlx-community/Qwen3.5-2B-4bit",
+        "mlx-community/Qwen3.5-9B-4bit",
+        "mlx-community/Qwen3.6-35B-A3B-4bit",
+    ]
+
+    for (profile, expectedID) in zip(profiles, expected) {
+        let recommendation = AIModelCatalog.recommendation(for: profile)
+        #expect(recommendation.model.id == expectedID)
+        #expect(
+            recommendation.estimatedModelMemoryBytes
+                <= profile.totalMemoryBytes / 2
+        )
+        #expect(recommendation.contextTokens <= recommendation.model.nativeContextTokens)
+        #expect(recommendation.contextTokens >= 131_072)
+    }
 }
 
 @Test

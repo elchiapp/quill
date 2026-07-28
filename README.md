@@ -30,8 +30,10 @@ virtual device, no kernel extension) on an Apple-silicon Mac.
 2. Stop from the window or feather menu-bar item. Quill transcribes the two
    tracks locally and adds the speaker-tagged result to the library.
 3. Open **Ask Quill**, start a conversation, and choose either **All
-   recordings** or one meeting as its scope. On the first question, Quill
-   downloads its built-in MLX chat model; subsequent inference is offline.
+   recordings** or one meeting as its scope. Quill starts with the compact
+   Qwen3.5 2B model and offers a stronger model when the detected hardware can
+   run one safely. On the first question, Quill downloads the selected model;
+   subsequent inference is offline.
    Numbered source cards beneath an answer open the cited recording at the
    matching transcript timestamp.
 
@@ -88,11 +90,22 @@ finishes with the fallback `them` label and records the failure in
 ## Local AI
 
 Inference is part of Quill itself. It uses Apple's
-[MLX Swift](https://github.com/ml-explore/mlx-swift) runtime and the quantized
-`Qwen3 1.7B` model directly in the app process. Quill downloads the roughly
-1 GB model into `~/Library/Caches/Quill/Models` on first use and manages it
-from Settings. There is no LM Studio, llama server, localhost API, Python
-runtime, terminal command, or separate application.
+[MLX Swift](https://github.com/ml-explore/mlx-swift) runtime and current
+Qwen3.5/Qwen3.6 models directly in the app process. The conservative default is
+`Qwen3.5 2B` at 4-bit. Quill detects the chip, CPU count, and unified memory,
+then offers a stronger 4B, 9B, 27B, or 35B-A3B model when appropriate.
+
+For every model, Quill:
+
+- caps MLX at 50% of total unified memory;
+- calculates the largest context window that fits that limit, up to the
+  model's native 262K tokens;
+- shows download progress, in-memory loading, failures, and the active model;
+- downloads weights into `~/Library/Caches/Quill/Models` only after the user
+  selects the model or asks the first question.
+
+There is no LM Studio, llama server, localhost API, Python runtime, terminal
+command, or separate application.
 
 Chat never uploads a transcript. Quill chunks and ranks transcript passages
 locally, shows distinct retrieval, model-download/loading, and generation
@@ -148,7 +161,7 @@ quill install --uninstall
 - **AVAudioEngine** — mic capture
 - **AVAudioFile** — streaming AAC encode into CAF
 - **FluidAudio / Parakeet** — on-device Core ML transcription
-- **MLX Swift LM / Qwen3 1.7B 4-bit** — built-in, in-process local inference
+- **MLX Swift LM / Qwen3.5 + Qwen3.6 4-bit** — hardware-aware, in-process local inference
 - **SwiftUI + AppKit** — recording library, transcript reader, and chat threads
 - **NSStatusItem** — quick recording controls alongside the full window
 

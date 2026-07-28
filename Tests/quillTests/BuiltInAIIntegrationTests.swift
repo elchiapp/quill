@@ -10,7 +10,14 @@ import Testing
     )
 )
 func builtInMLXIntegration() async throws {
-    let engine = BuiltInLLMEngine(cacheRoot: Config.modelCacheRoot)
+    let plan = AIModelCatalog.plan(
+        for: AIModelCatalog.defaultModel,
+        device: .current
+    )
+    let engine = BuiltInLLMEngine(
+        cacheRoot: Config.modelCacheRoot,
+        plan: plan
+    )
     let answer = try await engine.complete(
         systemPrompt: """
         You are a transcript assistant. Use only the supplied excerpt and cite it as [1].

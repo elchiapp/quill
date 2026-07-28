@@ -33,6 +33,17 @@ This file is the product and engineering backlog. Keep it current as work lands.
 - [x] Rebuild, sign, and install the standalone app update.
 - [x] Push the standalone app update to the fork.
 
+## Hardware-aware local models
+
+- [x] Detect the Apple chip, CPU count, and unified memory.
+- [x] Make Qwen3.5 2B 4-bit the conservative default.
+- [x] Recommend current Qwen3.5/Qwen3.6 models from device capabilities.
+- [x] Ask before downloading a stronger recommended model.
+- [x] Enforce a hard 50% unified-memory limit for MLX.
+- [x] Maximize context within that limit, up to the native 262K window.
+- [x] Show model download, in-memory loading, ready, and failure states.
+- [x] Validate, package, install, and push the hardware-aware update.
+
 ## Product backlog
 
 - [ ] Let users rename detected speakers and remember voice profiles across
