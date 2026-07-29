@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 
 enum RecordingLibrary {
@@ -55,5 +56,57 @@ enum RecordingLibrary {
             to: directory.appendingPathComponent("notes.md"),
             options: .atomic
         )
+    }
+
+    static func importAudio(from source: URL, to root: URL) async throws -> URL {
+        let resourceValues = try? source.resourceValues(
+            forKeys: [.contentModificationDateKey]
+        )
+        let started = resourceValues?.contentModificationDate ?? Date()
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy.MM.dd-HHmm"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        let base = formatter.string(from: started)
+        var directory = root.appendingPathComponent(base, isDirectory: true)
+        var suffix = 2
+        while FileManager.default.fileExists(atPath: directory.path) {
+            directory = root.appendingPathComponent("\(base)-\(suffix)", isDirectory: true)
+            suffix += 1
+        }
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+
+        let ext = source.pathExtension.lowercased()
+        let filename = ext.isEmpty ? "imported-audio" : "imported-audio.\(ext)"
+        try FileManager.default.copyItem(
+            at: source,
+            to: directory.appendingPathComponent(filename)
+        )
+
+        let asset = AVURLAsset(url: source)
+        let duration = (try? await asset.load(.duration)).map {
+            max(0, Int(CMTimeGetSeconds($0).rounded()))
+        } ?? 0
+        let iso = ISO8601DateFormatter()
+        let meta: [String: Any] = [
+            "started": iso.string(from: started),
+            "ended": iso.string(from: started.addingTimeInterval(TimeInterval(duration))),
+            "duration_seconds": duration,
+            "files": ["system": filename],
+            "start_offset_ms": ["system": 0],
+            "imported": true,
+        ]
+        let data = try JSONSerialization.data(
+            withJSONObject: meta,
+            options: [.prettyPrinted, .sortedKeys]
+        )
+        try data.write(to: directory.appendingPathComponent("meta.json"), options: .atomic)
+        try Data(source.deletingPathExtension().lastPathComponent.utf8).write(
+            to: directory.appendingPathComponent("title.txt"),
+            options: .atomic
+        )
+        return directory
     }
 }

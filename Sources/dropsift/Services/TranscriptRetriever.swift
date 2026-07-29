@@ -7,9 +7,10 @@ struct TranscriptChunk: Sendable {
     let startMs: Int
     let endMs: Int
     let text: String
+    let locator: String?
 
     var citation: String {
-        "[\(recordingTitle) @ \(TranscriptDocument.clock(startMs))]"
+        "[\(recordingTitle) @ \(locator ?? TranscriptDocument.clock(startMs))]"
     }
 
     func source(number: Int) -> ChatSource {
@@ -19,7 +20,10 @@ struct TranscriptChunk: Sendable {
             recordingTitle: recordingTitle,
             startMs: startMs,
             endMs: endMs,
-            excerpt: text
+            excerpt: text,
+            knowledgeItemID: nil,
+            locator: locator,
+            page: nil
         )
     }
 }
@@ -93,10 +97,7 @@ enum TranscriptRetriever {
     }
 
     private static func chunks(from recording: RecordingItem) -> [TranscriptChunk] {
-        guard let segments = recording.transcript?.segments, !segments.isEmpty else {
-            return []
-        }
-
+        let segments = recording.transcript?.segments ?? []
         let groupSize = 8
         let overlap = 2
         var output: [TranscriptChunk] = []
@@ -114,11 +115,27 @@ enum TranscriptRetriever {
                     startedAt: recording.startedAt,
                     startMs: slice.first?.startMs ?? 0,
                     endMs: slice.last?.endMs ?? 0,
-                    text: text
+                    text: text,
+                    locator: nil
                 )
             )
             if end == segments.count { break }
             index += groupSize - overlap
+        }
+
+        let notes = recording.notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !notes.isEmpty {
+            output.append(
+                TranscriptChunk(
+                    recordingID: recording.id,
+                    recordingTitle: recording.title,
+                    startedAt: recording.startedAt,
+                    startMs: 0,
+                    endMs: 0,
+                    text: "User notes:\n\(notes)",
+                    locator: "Recording notes"
+                )
+            )
         }
         return output
     }

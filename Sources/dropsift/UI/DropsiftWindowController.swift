@@ -15,7 +15,7 @@ final class DropsiftWindowController: NSWindowController {
         window.title = "Dropsift"
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
-        window.minSize = NSSize(width: 980, height: 650)
+        window.minSize = NSSize(width: 1_050, height: 650)
         window.contentViewController = hostingController
         window.center()
         window.setFrameAutosaveName("DropsiftMainWindow")

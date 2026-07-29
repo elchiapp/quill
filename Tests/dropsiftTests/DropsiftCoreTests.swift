@@ -49,6 +49,33 @@ func transcriptRetrieverFindsRelevantMeetingAcrossLibrary() {
 }
 
 @Test
+func transcriptRetrieverIndexesRecordingNotes() {
+    let recording = RecordingItem(
+        id: "meeting-notes",
+        directory: URL(fileURLWithPath: "/tmp/meeting-notes"),
+        title: "Customer call",
+        startedAt: Date(),
+        endedAt: Date(),
+        durationSeconds: 60,
+        micURL: nil,
+        systemURL: nil,
+        transcript: nil,
+        notes: "The customer requested a sapphire launch theme."
+    )
+
+    let matches = TranscriptRetriever.retrieve(
+        query: "What launch theme did the customer request?",
+        recordings: [recording],
+        scope: .all
+    )
+
+    #expect(matches.count == 1)
+    #expect(matches[0].text.contains("sapphire"))
+    #expect(matches[0].locator == "Recording notes")
+    #expect(matches[0].source(number: 1).locationLabel == "Recording notes")
+}
+
+@Test
 func speakerAssignmentUsesGreatestOverlapAndNearbyFallback() {
     let turns = [
         DetectedSpeakerTurn(speaker: "speaker_1", start: 0, end: 4, confidence: 0.9),
@@ -219,4 +246,70 @@ func chatStoreRoundTripsThreads() throws {
     #expect(loaded[0].scope.recordingID == "meeting-1")
     #expect(loaded[0].messages.count == 2)
     #expect(loaded[0].messages[1].sources.first?.startMs == 4_000)
+}
+
+@Test
+func knowledgeLibraryPersistsNotesAndRetrievesTheirContents() throws {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+
+    let created = try KnowledgeLibrary.createNote(in: root)
+    try KnowledgeLibrary.saveTitle("Launch notes", for: created)
+    try KnowledgeLibrary.saveContent(
+        "# Launch\n\nThe Barcelona release is scheduled for Friday.",
+        for: created
+    )
+
+    let loaded = try #require(KnowledgeLibrary.load(from: root).first)
+    #expect(loaded.title == "Launch notes")
+    #expect(loaded.content.contains("Barcelona"))
+
+    let matches = KnowledgeRetriever.retrieve(
+        query: "When is the Barcelona release?",
+        items: [loaded]
+    )
+    #expect(matches.count == 1)
+    #expect(matches[0].text.contains("Friday"))
+    #expect(matches[0].locator == "Note")
+}
+
+@Test
+func documentImportCopiesAndExtractsPlainText() throws {
+    let base = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let source = base.appendingPathComponent("Strategy.md")
+    let items = base.appendingPathComponent("Items", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: base) }
+    try FileManager.default.createDirectory(at: items, withIntermediateDirectories: true)
+    try Data("Project Kestrel targets the education market.".utf8).write(to: source)
+
+    let imported = try KnowledgeLibrary.importFile(
+        source,
+        as: .document,
+        into: items
+    )
+
+    #expect(imported.title == "Strategy")
+    #expect(imported.assetURL != nil)
+    #expect(imported.extractedText.contains("Kestrel"))
+    #expect(imported.blocks.first?.locator == "Document")
+}
+
+@Test
+func chatSourceStillDecodesLegacyTranscriptSources() throws {
+    let json = """
+    {
+      "number": 1,
+      "recordingID": "meeting-1",
+      "recordingTitle": "Planning",
+      "startMs": 5000,
+      "endMs": 9000,
+      "excerpt": "Ship Friday."
+    }
+    """
+    let source = try JSONDecoder().decode(ChatSource.self, from: Data(json.utf8))
+    #expect(source.knowledgeItemID == nil)
+    #expect(source.locationLabel == "0:05")
 }

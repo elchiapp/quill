@@ -5,20 +5,20 @@ struct RecordingDetailView: View {
     let recording: RecordingItem
 
     @State private var title: String
+    @State private var notes: String
 
     init(model: AppModel, recording: RecordingItem) {
         self.model = model
         self.recording = recording
         _title = State(initialValue: recording.title)
+        _notes = State(initialValue: recording.notes)
     }
 
     var body: some View {
         VStack(spacing: 0) {
             header
-            if !recording.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Divider()
-                savedNotes
-            }
+            Divider()
+            savedNotes
             Divider()
             transcript
         }
@@ -79,13 +79,25 @@ struct RecordingDetailView: View {
 
     private var savedNotes: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("Notes", systemImage: "note.text")
-                .font(.headline)
-            ScrollView {
-                Text(.init(recording.notes))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            HStack {
+                Label("Notes about this recording", systemImage: "note.text")
+                    .font(.headline)
+                Spacer()
+                Label("Autosaved", systemImage: "icloud")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
+            TextEditor(text: $notes)
+                .font(.body)
+                .scrollContentBackground(.hidden)
+                .padding(6)
+                .background(
+                    Color(nsColor: .textBackgroundColor).opacity(0.8),
+                    in: RoundedRectangle(cornerRadius: 9)
+                )
+                .onChange(of: notes) {
+                    model.updateRecordingNotes(notes, recordingID: recording.id)
+                }
             .frame(minHeight: 44, maxHeight: 130)
         }
         .padding(.horizontal, 24)

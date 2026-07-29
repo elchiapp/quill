@@ -62,20 +62,36 @@ This file is the product and engineering backlog. Keep it current as work lands.
 - [x] Pulse the menu-bar Dropsift mark subtly while a recording is active.
 - [x] Add crash-safe, iCloud-synced live notes while recording.
 
+## Universal capture and timeline
+
+- [x] Add one clean Capture view with large actions for notes, documents,
+  images, existing recordings, and live recording.
+- [x] Add file-picker and drag-and-drop ingestion with visible extraction and
+  import states.
+- [x] Add iCloud-synced note, document, and image storage with extracted text
+  and optional additional notes.
+- [x] Import existing audio into the normal transcription and diarization
+  queue.
+- [x] Add one chronological Timeline with searchable, multi-select type
+  filters and type-specific previews.
+- [x] Index notes, document text, image OCR, imported-item notes, and
+  transcripts in the same chat retrieval flow.
+- [x] Link answer sources to transcript timestamps, PDF pages, and knowledge
+  items.
+- [x] Detect likely meetings locally and ask through an actionable
+  notification before recording.
+
 ## Product backlog
 
-- [ ] Introduce a first-class knowledge-item model shared by recordings,
-  notes, screenshots, images, PDFs, imported audio, and text files.
-- [ ] Add drag-and-drop and file-picker ingestion with visible extraction,
-  indexing, and failure states.
+- [ ] Migrate recordings into the same on-disk first-class item schema now
+  used by notes, images, and documents. The UI already presents all of them as
+  a shared timeline item.
 - [ ] Add a global screenshot shortcut with screen-permission onboarding,
   region/window capture, OCR, and a local visual description.
-- [ ] Replace plain live notes with a WYSIWYG Markdown editor supporting
-  headings, lists, checkboxes, links, images, and attachment drops.
-- [ ] Index notes and imported items alongside transcripts so every chat can
-  search the entire knowledge base.
-- [ ] Make source cards open the exact PDF page, image region, note block, or
-  transcript timestamp used in an answer.
+- [ ] Upgrade the Markdown write/preview editor into true rich-text WYSIWYG
+  editing with inline images and attachment drops.
+- [ ] Extend source navigation from the current transcript timestamp/PDF
+  page/item links to exact image regions and note-block highlighting.
 - [ ] Let users rename detected speakers and remember voice profiles across
   meetings.
 - [ ] Add synchronized audio playback that follows transcript timestamps.
@@ -85,4 +101,5 @@ This file is the product and engineering backlog. Keep it current as work lands.
 - [ ] Add generated meeting summaries, decisions, and action-item views.
 - [x] Add automatic multilingual transcription for 25 European languages with
   Parakeet TDT v3 and persist the detected dominant language.
-- [ ] Add import/export for existing audio and transcript files.
+- [ ] Add transcript-file import and complete knowledge-base export. Existing
+  audio import is implemented.

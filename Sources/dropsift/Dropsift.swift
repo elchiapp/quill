@@ -79,6 +79,7 @@ struct Doctor: ParsableCommand {
 final class AppController: NSObject, NSApplicationDelegate {
     private let model: AppModel
     private let menuBar = MenuBarController()
+    private let meetingNotifications = MeetingNotificationController()
     private lazy var mainWindow = DropsiftWindowController(model: model)
 
     init(root: URL) {
@@ -90,6 +91,14 @@ final class AppController: NSObject, NSApplicationDelegate {
         menuBar.onOpenFolder = { [weak self] in self?.model.openRecordingsFolder() }
         menuBar.onQuit = { [weak self] in self?.shutdown() }
         menuBar.update(recording: false, elapsed: nil)
+        meetingNotifications.onStartRecording = { [weak self] in
+            guard let self, !self.model.isRecording else { return }
+            self.model.startRecording()
+            self.showWindow()
+        }
+        model.onMeetingDetected = { [weak self] meeting in
+            self?.meetingNotifications.proposeRecording(for: meeting)
+        }
 
         model.onRecordingStateChange = { [weak self] recording, elapsed in
             self?.menuBar.update(recording: recording, elapsed: elapsed)
@@ -100,6 +109,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        meetingNotifications.configure()
         model.startServices()
         showWindow()
     }

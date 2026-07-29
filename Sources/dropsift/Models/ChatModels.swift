@@ -7,9 +7,43 @@ struct ChatSource: Codable, Identifiable, Sendable, Equatable {
     let startMs: Int
     let endMs: Int
     let excerpt: String
+    let knowledgeItemID: UUID?
+    let locator: String?
+    let page: Int?
+
+    init(
+        number: Int,
+        recordingID: String,
+        recordingTitle: String,
+        startMs: Int,
+        endMs: Int,
+        excerpt: String,
+        knowledgeItemID: UUID? = nil,
+        locator: String? = nil,
+        page: Int? = nil
+    ) {
+        self.number = number
+        self.recordingID = recordingID
+        self.recordingTitle = recordingTitle
+        self.startMs = startMs
+        self.endMs = endMs
+        self.excerpt = excerpt
+        self.knowledgeItemID = knowledgeItemID
+        self.locator = locator
+        self.page = page
+    }
 
     var id: String {
-        "\(recordingID)-\(startMs)-\(endMs)-\(number)"
+        if let knowledgeItemID {
+            return "knowledge-\(knowledgeItemID)-\(locator ?? "")-\(number)"
+        }
+        return "\(recordingID)-\(startMs)-\(endMs)-\(number)"
+    }
+
+    var isKnowledge: Bool { knowledgeItemID != nil }
+
+    var locationLabel: String {
+        locator ?? TranscriptDocument.clock(startMs)
     }
 }
 

@@ -28,7 +28,7 @@ struct ChatDetailView: View {
                 Text(thread.title)
                     .font(.title2.weight(.semibold))
                     .lineLimit(1)
-                Text("Private local AI · transcript-grounded")
+                Text("Private local AI · source-grounded")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -40,9 +40,9 @@ struct ChatDetailView: View {
                     model.setScope(.all, for: thread.id)
                 } label: {
                     if thread.scope.kind == .allRecordings {
-                        Label("All recordings", systemImage: "checkmark")
+                        Label("All knowledge", systemImage: "checkmark")
                     } else {
-                        Text("All recordings")
+                        Text("All knowledge")
                     }
                 }
 
@@ -84,9 +84,9 @@ struct ChatDetailView: View {
                 Image(systemName: "sparkles")
                     .font(.system(size: 34))
                     .foregroundStyle(.tint)
-                Text("Ask your recordings")
+                Text("Ask your knowledge")
                     .font(.title2.weight(.semibold))
-                Text("Dropsift retrieves relevant transcript passages and answers with its built-in local model.")
+                Text("Dropsift searches recordings, notes, documents, and image text with its built-in local model.")
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 440)
@@ -142,7 +142,7 @@ struct ChatDetailView: View {
 
             HStack(alignment: .center, spacing: 10) {
                 TextField(
-                    "Ask a question about your transcripts…",
+                    "Ask a question about anything in Dropsift…",
                     text: $model.chatDraft,
                     axis: .vertical
                 )
@@ -193,7 +193,7 @@ struct ChatDetailView: View {
 
     private var scopeLabel: String {
         if thread.scope.kind == .allRecordings {
-            return "All recordings"
+            return "All knowledge"
         }
         return model.recordings.first { $0.id == thread.scope.recordingID }?.title
             ?? "Selected recording"
@@ -204,7 +204,7 @@ struct ChatDetailView: View {
         case .idle:
             ""
         case .retrieving:
-            "Searching \(model.recordings.count) transcript\(model.recordings.count == 1 ? "" : "s") for relevant sources…"
+            "Searching \(model.timelineItems.count) timeline item\(model.timelineItems.count == 1 ? "" : "s") for relevant sources…"
         case .preparingAI:
             switch model.aiStatus {
             case .downloading(let fraction):
@@ -259,7 +259,7 @@ private struct ChatBubble: View {
                                             .font(.caption.weight(.semibold))
                                             .lineLimit(1)
                                         Spacer()
-                                        Text(TranscriptDocument.clock(source.startMs))
+                                        Text(source.locationLabel)
                                             .font(.caption2.monospacedDigit())
                                             .foregroundStyle(.secondary)
                                     }
@@ -279,7 +279,7 @@ private struct ChatBubble: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .help("Open this transcript at \(TranscriptDocument.clock(source.startMs))")
+                        .help("Open \(source.recordingTitle) at \(source.locationLabel)")
                     }
                 }
             }

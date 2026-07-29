@@ -26,6 +26,32 @@ struct SettingsView: View {
 
             Divider()
 
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "video.badge.checkmark")
+                    .font(.title3)
+                    .foregroundStyle(.tint)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Meeting detection")
+                        .font(.headline)
+                    Text(
+                        "Watch locally for known meeting apps or browsers using microphone input, then ask before recording. Dropsift never starts automatically."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Toggle(
+                    "",
+                    isOn: Binding(
+                        get: { model.meetingDetectionEnabled },
+                        set: { model.setMeetingDetectionEnabled($0) }
+                    )
+                )
+                .labelsHidden()
+            }
+
+            Divider()
+
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Built-in local AI")
@@ -63,7 +89,7 @@ struct SettingsView: View {
 
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Recordings and threads · \(model.storageLabel)")
+                    Text("Knowledge library · \(model.storageLabel)")
                         .font(.caption.weight(.semibold))
                     Text(model.root.path)
                         .font(.caption2.monospaced())

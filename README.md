@@ -1,10 +1,11 @@
 # Dropsift
 
-A private, local-first macOS meeting workspace. Dropsift records microphone and
-system audio as separate tracks, transcribes both on-device, presents a
-speaker-tagged transcript library, and lets you chat with one or all meetings
-through a local LLM. Audio, transcripts, and chat threads sync through the
-user's iCloud Drive; inference never leaves the Mac.
+A private, local-first memory workspace for macOS. Dropsift captures notes,
+documents, images, existing audio, microphone audio, and system audio in one
+timeline. It extracts searchable text locally, transcribes and diarizes speech
+on-device, and lets you ask questions across the entire library through its
+built-in local LLM. Knowledge items, recordings, transcripts, notes, and chat
+threads sync through the user's iCloud Drive; inference never leaves the Mac.
 
 **Drop anything in. Pull the exact source out.**
 
@@ -27,25 +28,46 @@ virtual device, no kernel extension) on an Apple-silicon Mac.
 
 ## How to use
 
-1. Open `Dropsift.app` and click **New recording**. First use prompts for
-   microphone and System Audio Recording permissions.
-2. Stop from the window or Dropsift menu-bar item. Dropsift transcribes the two
-   tracks locally and adds the speaker-tagged result to the library.
-3. Open **Ask Dropsift**, start a conversation, and choose either **All
-   recordings** or one meeting as its scope. Dropsift starts with the compact
-   Qwen3.5 2B model and offers a stronger model when the detected hardware can
-   run one safely. On the first question, Dropsift downloads the selected model;
-   subsequent inference is offline.
-   Numbered source cards beneath an answer open the cited recording at the
-   matching transcript timestamp.
+1. Open `Dropsift.app` on **Capture**. The uncluttered capture canvas provides
+   five actions: **Add note**, **Add doc**, **Add image**, **Add recording**,
+   and **Record**. Files can also be dropped directly onto the canvas.
+2. Use **Timeline** to browse everything by date. Its multi-select filter can
+   show any combination of notes, documents, images, and recordings. Each type
+   has its own preview, and every imported item can carry additional notes.
+3. Open **Ask Dropsift** to start a conversation across the full knowledge
+   base. Dropsift starts with the compact Qwen3.5 2B model and offers a stronger
+   model when the detected hardware can run one safely. On the first question,
+   Dropsift downloads the selected model; subsequent inference is offline.
+   Numbered source cards beneath an answer open the cited transcript timestamp,
+   PDF page, or knowledge item.
+
+Notes use a Markdown write/preview editor with shortcuts for headings,
+emphasis, lists, checkboxes, and links. PDF text is extracted by page, common
+text and rich-document formats are converted locally, and images are OCRed
+with Apple's Vision framework. Imported audio enters the same on-device
+transcription and diarization queue as a new recording.
 
 While recording, the main window shows a live notes editor above the current
 detail view. Notes autosave into the recording's `notes.md` in iCloud Drive,
 so they survive a crash and remain visible with the finished recording. The
 menu-bar Dropsift mark turns red and pulses gently until recording stops.
 
-Each session lands in
-`iCloud Drive/Dropsift/Recordings/<yyyy.MM.dd-HHmm>/` by default:
+Dropsift watches locally for known conferencing apps using a microphone. When
+it detects a likely Zoom, Teams, Webex, FaceTime, Slack, Discord, Skype, Lark,
+or browser meeting, it presents an actionable notification asking whether to
+record. It never starts recording without confirmation, and the heuristic can
+be disabled in Settings.
+
+The knowledge library lives in `iCloud Drive/Dropsift/` by default:
+
+- `Items/<uuid>/` contains an imported asset or Markdown note, extracted text,
+  metadata, and optional additional notes.
+- `Recordings/<yyyy.MM.dd-HHmm>/` contains captured or imported audio,
+  transcript data, and recording notes.
+- `Threads/threads.json` contains local-AI conversations and their source
+  cards.
+
+Each captured recording contains:
 
 | File | Contents |
 |---|---|
@@ -116,12 +138,12 @@ For every model, Dropsift:
 There is no LM Studio, llama server, localhost API, Python runtime, terminal
 command, or separate application.
 
-Chat never uploads a transcript. Dropsift chunks and ranks transcript passages
-locally, shows distinct retrieval, model-download/loading, and generation
-states, and passes only relevant excerpts to its in-process model. Structured
-source fragments are saved on each assistant message and link back to the
-closest transcript segment. Threads persist in
-`iCloud Drive/Dropsift/Threads/threads.json`.
+Chat never uploads knowledge. Dropsift chunks and ranks transcript passages,
+recording notes, document pages, OCR text, note content, and imported-item
+notes locally. It shows distinct retrieval, model-download/loading, and
+generation states, and passes only relevant excerpts to its in-process model.
+Structured source fragments are saved on each assistant message and link back
+to their source location.
 
 Existing Quill users are handled conservatively: if a Dropsift library,
 config, or model cache does not exist yet, the app reuses the corresponding
@@ -176,7 +198,8 @@ dropsift install --uninstall
 - **AVAudioFile** — streaming AAC encode into CAF
 - **FluidAudio / Parakeet** — on-device Core ML transcription
 - **MLX Swift LM / Qwen3.5 + Qwen3.6 4-bit** — hardware-aware, in-process local inference
-- **SwiftUI + AppKit** — recording library, transcript reader, and chat threads
+- **PDFKit + Vision** — page-aware PDF extraction and local image OCR
+- **SwiftUI + AppKit** — capture canvas, unified timeline, previews, and chat
 - **NSStatusItem** — quick recording controls alongside the full window
 
 ## Gotchas
@@ -190,7 +213,11 @@ dropsift install --uninstall
   Japanese, Arabic, and other languages outside that set still need a future
   transcription engine.
 - iCloud Drive storage uses the visible `Dropsift` folder, not a hidden app
-  container, so recordings remain directly accessible in Finder.
+  container, so knowledge items and recordings remain directly accessible in
+  Finder.
+- Meeting detection is deliberately a local heuristic. A browser using its
+  microphone may be a call or something else; the notification asks first and
+  can be turned off.
 
 ## License status
 

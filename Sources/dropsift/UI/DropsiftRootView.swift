@@ -7,14 +7,11 @@ struct DropsiftRootView: View {
         NavigationSplitView {
             sidebar
                 .navigationSplitViewColumnWidth(min: 190, ideal: 220, max: 260)
-        } content: {
-            collectionColumn
-                .navigationSplitViewColumnWidth(min: 270, ideal: 320, max: 420)
         } detail: {
             detail
         }
         .navigationSplitViewStyle(.balanced)
-        .frame(minWidth: 980, minHeight: 650)
+        .frame(minWidth: 1_050, minHeight: 680)
         .toolbar {
             ToolbarItemGroup {
                 if let status = model.transcriptionStatus {
@@ -22,19 +19,25 @@ struct DropsiftRootView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                Button {
-                    model.toggleRecording()
-                } label: {
-                    Label(
-                        model.isRecording
-                            ? "Stop \(model.recordingElapsed)"
-                            : "New recording",
-                        systemImage: model.isRecording ? "stop.fill" : "record.circle"
-                    )
+                if let state = model.ingestionState {
+                    HStack(spacing: 7) {
+                        ProgressView(value: state.progress)
+                            .frame(width: 80)
+                        Text(state.currentName)
+                            .lineLimit(1)
+                    }
+                    .foregroundStyle(.secondary)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(model.isRecording ? .red : .accentColor)
-                .help(model.isRecording ? "Stop recording" : "Start a new recording")
+
+                if model.isRecording {
+                    Button {
+                        model.stopRecording()
+                    } label: {
+                        Label("Stop \(model.recordingElapsed)", systemImage: "stop.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
+                }
 
                 Button {
                     model.showingSettings = true
@@ -93,8 +96,10 @@ struct DropsiftRootView: View {
             .padding(.bottom, 8)
 
             List(selection: $model.section) {
-                Label("Recordings", systemImage: "waveform")
-                    .tag(AppModel.Section.recordings)
+                Label("Capture", systemImage: "plus.app")
+                    .tag(AppModel.Section.capture)
+                Label("Timeline", systemImage: "clock.arrow.circlepath")
+                    .tag(AppModel.Section.timeline)
                 Label("Ask Dropsift", systemImage: "sparkles")
                     .tag(AppModel.Section.chats)
             }
@@ -125,16 +130,6 @@ struct DropsiftRootView: View {
     }
 
     @ViewBuilder
-    private var collectionColumn: some View {
-        switch model.section {
-        case .recordings:
-            RecordingsColumn(model: model)
-        case .chats:
-            ChatsColumn(model: model)
-        }
-    }
-
-    @ViewBuilder
     private var detail: some View {
         VStack(spacing: 0) {
             if model.isRecording {
@@ -148,31 +143,35 @@ struct DropsiftRootView: View {
     @ViewBuilder
     private var detailContent: some View {
         switch model.section {
-        case .recordings:
-            if let recording = model.selectedRecording {
-                RecordingDetailView(model: model, recording: recording)
-                    .id(recording.id + recording.title + "\(recording.segmentCount)")
-            } else {
-                ContentUnavailableView(
-                    "No recording selected",
-                    systemImage: "waveform",
-                    description: Text("Start a recording or select one from the library.")
-                )
-            }
+        case .capture:
+            CaptureView(model: model)
+        case .timeline:
+            TimelineView(model: model)
         case .chats:
-            if let thread = model.selectedThread {
-                ChatDetailView(model: model, thread: thread)
-                    .id(thread.id)
-            } else {
-                ContentUnavailableView {
-                    Label("Ask your meetings", systemImage: "sparkles")
-                } description: {
-                    Text("Create a private local-AI conversation across your transcripts.")
-                } actions: {
-                    Button("New conversation") { model.createThread() }
-                        .buttonStyle(.borderedProminent)
+            chatWorkspace
+        }
+    }
+
+    private var chatWorkspace: some View {
+        HSplitView {
+            ChatsColumn(model: model)
+                .frame(minWidth: 270, idealWidth: 310, maxWidth: 340)
+            Group {
+                if let thread = model.selectedThread {
+                    ChatDetailView(model: model, thread: thread)
+                        .id(thread.id)
+                } else {
+                    ContentUnavailableView {
+                        Label("Ask your knowledge", systemImage: "sparkles")
+                    } description: {
+                        Text("Create a private local-AI conversation across everything in Dropsift.")
+                    } actions: {
+                        Button("New conversation") { model.createThread() }
+                            .buttonStyle(.borderedProminent)
+                    }
                 }
             }
+            .frame(minWidth: 500, maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
@@ -209,96 +208,6 @@ struct DropsiftRootView: View {
         }
     }
 }
-private struct RecordingsColumn: View {
-    @ObservedObject var model: AppModel
-
-    var body: some View {
-        VStack(spacing: 0) {
-            columnHeader(
-                title: "Recordings",
-                count: model.recordings.count,
-                action: model.openRecordingsFolder
-            )
-
-            if model.filteredRecordings.isEmpty {
-                ContentUnavailableView {
-                    Label("No recordings", systemImage: "waveform")
-                } description: {
-                    Text(
-                        model.recordingSearch.isEmpty
-                            ? "Your meetings will appear here."
-                            : "No recordings match your search."
-                    )
-                }
-            } else {
-                List(model.filteredRecordings, selection: $model.selectedRecordingID) { recording in
-                    RecordingRow(recording: recording)
-                        .tag(recording.id)
-                        .contextMenu {
-                            Button(role: .destructive) {
-                                model.requestDeleteRecording(recording)
-                            } label: {
-                                Label("Move Recording to Trash", systemImage: "trash")
-                            }
-                        }
-                }
-                .listStyle(.inset)
-            }
-        }
-        .searchable(text: $model.recordingSearch, prompt: "Search recordings")
-    }
-
-    private func columnHeader(
-        title: String,
-        count: Int,
-        action: @escaping () -> Void
-    ) -> some View {
-        HStack {
-            Text(title)
-                .font(.title3.weight(.semibold))
-            Text("\(count)")
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
-            Spacer()
-            Button(action: action) {
-                Image(systemName: "folder")
-            }
-            .buttonStyle(.plain)
-            .help("Open recordings in Finder")
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-    }
-}
-
-private struct RecordingRow: View {
-    let recording: RecordingItem
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(recording.title)
-                    .font(.body.weight(.medium))
-                    .lineLimit(1)
-                Spacer(minLength: 8)
-                Image(systemName: recording.isTranscribed ? "checkmark.circle.fill" : "clock")
-                    .foregroundStyle(recording.isTranscribed ? Color.green : Color.secondary)
-                    .font(.caption)
-            }
-
-            Text(recording.displayDate + " · " + recording.displayDuration)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            Text(recording.preview)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-        }
-        .padding(.vertical, 5)
-    }
-}
-
 private struct ChatsColumn: View {
     @ObservedObject var model: AppModel
 
@@ -323,7 +232,7 @@ private struct ChatsColumn: View {
                 ContentUnavailableView {
                     Label("No conversations", systemImage: "bubble.left.and.bubble.right")
                 } description: {
-                    Text("Ask questions across one or all transcripts.")
+                    Text("Ask questions across your entire knowledge timeline.")
                 } actions: {
                     Button("New conversation") { model.createThread() }
                 }
@@ -342,7 +251,7 @@ private struct ChatsColumn: View {
                                     : "waveform")
                                 Text(
                                     thread.scope.kind == .allRecordings
-                                        ? "All recordings"
+                                        ? "All knowledge"
                                         : "One recording"
                                 )
                                 Spacer()
