@@ -10,6 +10,7 @@ import Foundation
 actor TranscriptionCoordinator {
     enum Status: Sendable {
         case idle
+        case preparingModel(session: String, detail: String, progress: Double)
         case transcribing(session: String, queued: Int)
         case diarizing(session: String, queued: Int)
         case failed(session: String)
@@ -103,7 +104,8 @@ actor TranscriptionCoordinator {
 
     private func transcribe(_ dir: URL) async throws {
         let meta = try SessionMeta.read(from: dir)
-        let engine = try await preparedEngine()
+        let engine = try await preparedEngine(session: dir.lastPathComponent)
+        publish(.transcribing(session: dir.lastPathComponent, queued: queue.count))
 
         var merged: [TranscriptDocument.Segment] = []
         var detectedRemoteSpeakers: Set<String> = []
@@ -166,6 +168,7 @@ actor TranscriptionCoordinator {
             model: engine.model,
             createdAt: ISO8601DateFormatter().string(from: Date()),
             segments: merged,
+            languageCode: TranscriptLanguageDetector.detect(in: merged),
             diarization: usedDiarization
                 ? TranscriptDocument.DiarizationInfo(
                     engine: preparedDiarizerName,
@@ -186,7 +189,7 @@ actor TranscriptionCoordinator {
         log(dir, "done — \(merged.count) segments")
     }
 
-    private func preparedEngine() async throws -> TranscriptionEngine {
+    private func preparedEngine(session: String) async throws -> TranscriptionEngine {
         if let engine { return engine }
         let configured = Config.transcriptionEngine()
         if configured != "parakeet" {
@@ -194,7 +197,15 @@ actor TranscriptionCoordinator {
                 "warning: unknown transcription engine \"\(configured)\" — using parakeet\n".utf8
             ))
         }
-        let engine = ParakeetEngine()
+        let engine = ParakeetEngine { [weak self] progress, detail in
+            Task {
+                await self?.publish(.preparingModel(
+                    session: session,
+                    detail: detail,
+                    progress: progress
+                ))
+            }
+        }
         try await engine.prepare()
         self.engine = engine
         return engine

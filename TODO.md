@@ -53,5 +53,6 @@ This file is the product and engineering backlog. Keep it current as work lands.
   ranking.
 - [ ] Add streamed local-model responses and cancellation.
 - [ ] Add generated meeting summaries, decisions, and action-item views.
-- [ ] Add multilingual transcription.
+- [x] Add automatic multilingual transcription for 25 European languages with
+  Parakeet TDT v3 and persist the detected dominant language.
 - [ ] Add import/export for existing audio and transcript files.

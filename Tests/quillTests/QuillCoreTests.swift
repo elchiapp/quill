@@ -147,6 +147,7 @@ func recordingLoaderReadsCanonicalTranscriptSchema() throws {
         segments: [
             .init(speaker: "me", startMs: 0, endMs: 1_000, text: "Hello")
         ],
+        languageCode: "it",
         diarization: .init(
             engine: "offline-vbx",
             model: "local-diarizer",
@@ -161,7 +162,22 @@ func recordingLoaderReadsCanonicalTranscriptSchema() throws {
     #expect(recording.title == "My meeting")
     #expect(recording.durationSeconds == 60)
     #expect(recording.transcript?.segments.first?.speaker == "me")
+    #expect(recording.transcript?.languageCode == "it")
     #expect(recording.transcript?.diarization?.speakerCount == 2)
+}
+
+@Test
+func transcriptLanguageDetectorRecognizesSupportedLanguages() {
+    let segments = [
+        TranscriptDocument.Segment(
+            speaker: "speaker_1",
+            startMs: 0,
+            endMs: 5_000,
+            text: "Buongiorno, oggi discutiamo il progetto e decidiamo quali attività completare."
+        )
+    ]
+
+    #expect(TranscriptLanguageDetector.detect(in: segments) == "it")
 }
 
 @Test

@@ -35,6 +35,7 @@ struct TranscriptDocument: Codable, Sendable {
     let model: String
     let createdAt: String
     let segments: [Segment]
+    let languageCode: String?
     let diarization: DiarizationInfo?
 
     init(
@@ -42,12 +43,14 @@ struct TranscriptDocument: Codable, Sendable {
         model: String,
         createdAt: String,
         segments: [Segment],
+        languageCode: String? = nil,
         diarization: DiarizationInfo? = nil
     ) {
         self.engine = engine
         self.model = model
         self.createdAt = createdAt
         self.segments = segments
+        self.languageCode = languageCode
         self.diarization = diarization
     }
 
@@ -56,6 +59,7 @@ struct TranscriptDocument: Codable, Sendable {
         case model
         case createdAt = "created_at"
         case segments
+        case languageCode = "language_code"
         case diarization
     }
 
@@ -70,6 +74,10 @@ struct TranscriptDocument: Codable, Sendable {
 
     private func rendered(title: String) -> String {
         var lines = ["# \(title)", "", "engine: \(engine) (\(model))", ""]
+        if let languageCode {
+            lines.append("language: \(languageCode) (detected from transcript text)")
+            lines.append("")
+        }
         if let diarization {
             lines.append(
                 "diarization: \(diarization.engine) (\(diarization.model)), "

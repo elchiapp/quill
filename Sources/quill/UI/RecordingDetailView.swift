@@ -144,6 +144,10 @@ struct RecordingDetailView: View {
 
     private func transcriptionFooter(_ document: TranscriptDocument) -> String {
         var value = "Transcribed locally with \(document.engine) · \(document.model)"
+        if let code = document.languageCode {
+            let name = Locale.current.localizedString(forLanguageCode: code) ?? code
+            value += " · \(name.capitalized) detected"
+        }
         if let diarization = document.diarization {
             value += " · \(diarization.speakerCount) remote speaker"
             if diarization.speakerCount != 1 { value += "s" }

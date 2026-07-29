@@ -2,7 +2,7 @@ import AVFoundation
 import FluidAudio
 import Foundation
 
-/// Parakeet TDT 0.6B v2 (English) via FluidAudio's Core ML port. Models
+/// Parakeet TDT 0.6B v3 (25 European languages) via FluidAudio's Core ML port. Models
 /// download once into FluidAudio's managed cache (~600 MB); after that,
 /// transcription runs entirely on-device at roughly 20 seconds per hour of
 /// audio on Apple Silicon.
@@ -22,16 +22,44 @@ actor ParakeetEngine: TranscriptionEngine {
     }
 
     nonisolated let name = "parakeet"
-    nonisolated let model = "parakeet-tdt-0.6b-v2-coreml"
+    nonisolated let model = "parakeet-tdt-0.6b-v3-coreml"
 
+    private let onPreparationProgress: (@Sendable (Double, String) -> Void)?
     private var manager: AsrManager?
+
+    init(
+        onPreparationProgress: (@Sendable (Double, String) -> Void)? = nil
+    ) {
+        self.onPreparationProgress = onPreparationProgress
+    }
 
     func prepare() async throws {
         guard manager == nil else { return }
-        let models = try await AsrModels.downloadAndLoad(version: .v2)
-        let manager = AsrManager()
+        onPreparationProgress?(0, "Preparing multilingual speech model")
+        let models = try await AsrModels.downloadAndLoad(
+            version: .v3,
+            progressHandler: { [onPreparationProgress] progress in
+                let detail: String
+                switch progress.phase {
+                case .listing:
+                    detail = "Checking multilingual speech model"
+                case .downloading(let completed, let total):
+                    detail = "Downloading speech model \(completed)/\(total)"
+                case .compiling:
+                    detail = "Compiling speech model for this Mac"
+                }
+                onPreparationProgress?(progress.fractionCompleted, detail)
+            }
+        )
+        // FluidAudio recommends disabling mel-context for multilingual v3
+        // long-form audio to avoid language drift at chunk boundaries.
+        let manager = AsrManager(config: ASRConfig(
+            melChunkContext: false,
+            dualDecodeArbitration: true
+        ))
         try await manager.loadModels(models)
         self.manager = manager
+        onPreparationProgress?(1, "Multilingual speech model ready")
     }
 
     func transcribe(_ audio: URL) async throws -> [TranscriptSegment] {
@@ -69,7 +97,7 @@ actor ParakeetEngine: TranscriptionEngine {
     }
 
     /// Group word timings into readable segments: break on sentence-ending
-    /// punctuation (parakeet v2 emits punctuation), a silence gap, or a hard
+    /// punctuation (parakeet v3 emits punctuation), a silence gap, or a hard
     /// length cap so a run-on speaker still wraps.
     private static func segments(from words: [WordTiming]) -> [TranscriptSegment] {
         var out: [TranscriptSegment] = []

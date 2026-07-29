@@ -58,12 +58,13 @@ readable.
 
 ## Transcription
 
-Built in, on-device, automatic. The default engine is **Parakeet TDT 0.6B v2**
-(English) via [FluidAudio](https://github.com/FluidInference/FluidAudio)'s
-Core ML port — roughly 20 seconds per hour of audio on Apple Silicon. Models
-(~600 MB) download once on first transcription; `quill doctor` tells you
-whether they're already cached so you're never downloading after an important
-meeting.
+Built in, on-device, automatic. The default engine is **Parakeet TDT 0.6B v3**
+via [FluidAudio](https://github.com/FluidInference/FluidAudio)'s Core ML port.
+It automatically recognizes 25 European languages, including English,
+Italian, French, German, Spanish, Portuguese, Dutch, Polish, Russian, and
+Ukrainian. Models (~600 MB) download once on first transcription, with
+download and Core ML compilation progress visible in the app. `quill doctor`
+tells you whether they're already cached.
 
 Each track is transcribed separately, shifted by its start offset so both
 share one clock, and merged by timestamp. Jobs run in a serial queue — you can
@@ -172,8 +173,9 @@ quill install --uninstall
   per-process picker if it bothers you).
 - If recordings come out silent, check System Settings → Privacy & Security →
   Screen & System Audio Recording.
-- Parakeet v2 is English-only. Other languages will come with the Whisper
-  engine.
+- Parakeet v3 supports 25 European languages automatically. Mandarin,
+  Japanese, Arabic, and other languages outside that set still need a future
+  transcription engine.
 - iCloud Drive storage uses the visible `Quill` folder, not a hidden app
   container, so recordings remain directly accessible in Finder.
 

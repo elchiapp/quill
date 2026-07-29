@@ -466,6 +466,9 @@ final class AppModel: ObservableObject {
         case .idle:
             transcriptionStatus = nil
             reloadRecordings()
+        case .preparingModel(let session, let detail, let progress):
+            let percent = Int((progress * 100).rounded())
+            transcriptionStatus = "\(detail) · \(percent)% · \(session)"
         case .transcribing(let session, let queued):
             transcriptionStatus = queued > 0
                 ? "Transcribing \(session) · \(queued) queued"
