@@ -1,17 +1,17 @@
 import ArgumentParser
 import Foundation
 
-/// Manage quill's LaunchAgent so the daemon starts at login.
+/// Manage Dropsift's LaunchAgent so the app starts at login.
 ///
 /// We deliberately do NOT use SMAppService.mainApp here — that requires a full
-/// .app bundle. Since quill ships as a single binary in /usr/local/bin, a
-/// plain LaunchAgent plist is the simpler, more honest mechanism.
+/// .app bundle. Since Dropsift can also ship as a single binary in
+/// /usr/local/bin, a plain LaunchAgent plist is the simpler mechanism.
 struct Install: ParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Install or remove the launch-at-login LaunchAgent."
     )
 
-    @Flag(name: .long, help: "Register quill to start at login.")
+    @Flag(name: .long, help: "Register Dropsift to start at login.")
     var launchAtLogin: Bool = false
 
     @Flag(name: .long, help: "Remove the launch-at-login agent.")
@@ -34,13 +34,18 @@ struct Install: ParsableCommand {
 
     // MARK: -
 
-    private static let label = "com.digimata.quill"
+    private static let label = "com.elchiapp.dropsift"
+    private static let legacyLabel = "com.digimata.quill"
 
     private var plistURL: URL {
+        plistURL(for: Self.label)
+    }
+
+    private func plistURL(for label: String) -> URL {
         let home = FileManager.default.homeDirectoryForCurrentUser
         return home
             .appendingPathComponent("Library/LaunchAgents", isDirectory: true)
-            .appendingPathComponent("\(Self.label).plist")
+            .appendingPathComponent("\(label).plist")
     }
 
     private func writeAgent() throws {
@@ -52,8 +57,8 @@ struct Install: ParsableCommand {
             "RunAtLoad": true,
             "KeepAlive": ["SuccessfulExit": false] as [String: Any],
             "ProcessType": "Interactive",
-            "StandardOutPath": "/tmp/quill.out.log",
-            "StandardErrorPath": "/tmp/quill.err.log",
+            "StandardOutPath": "/tmp/dropsift.out.log",
+            "StandardErrorPath": "/tmp/dropsift.err.log",
         ]
 
         let url = plistURL
@@ -80,37 +85,39 @@ struct Install: ParsableCommand {
         print("✓ launch-at-login installed")
         print("  plist:  \(url.path)")
         print("  binary: \(binary)")
-        print("  logs:   /tmp/quill.out.log, /tmp/quill.err.log")
+        print("  logs:   /tmp/dropsift.out.log, /tmp/dropsift.err.log")
     }
 
     private func removeAgent() throws {
-        let url = plistURL
-        if FileManager.default.fileExists(atPath: url.path) {
+        let urls = [plistURL, plistURL(for: Self.legacyLabel)]
+        var removed = false
+        for url in urls where FileManager.default.fileExists(atPath: url.path) {
             _ = runLaunchctl(["bootout", "gui/\(uid())", url.path])
             try FileManager.default.removeItem(at: url)
-            print("✓ launch-at-login removed")
-        } else {
-            print("nothing to remove (no agent at \(url.path))")
+            removed = true
         }
+        print(removed
+            ? "✓ launch-at-login removed"
+            : "nothing to remove (no Dropsift or legacy Quill agent found)")
     }
 
     private func resolveBinaryPath() throws -> String {
-        // /usr/local/bin/quill is the canonical install path. Honor a real
+        // /usr/local/bin/dropsift is the canonical install path. Honor a real
         // location if running from elsewhere (e.g. dev).
-        let candidate = "/usr/local/bin/quill"
+        let candidate = "/usr/local/bin/dropsift"
         if FileManager.default.isExecutableFile(atPath: candidate) {
             return candidate
         }
         // Fall back to the running executable's resolved path.
-        let argv0 = CommandLine.arguments.first ?? "quill"
+        let argv0 = CommandLine.arguments.first ?? "dropsift"
         if argv0.hasPrefix("/"), FileManager.default.isExecutableFile(atPath: argv0) {
             FileHandle.standardError.write(Data(
-                "note: /usr/local/bin/quill not found; using \(argv0)\n".utf8
+                "note: /usr/local/bin/dropsift not found; using \(argv0)\n".utf8
             ))
             return argv0
         }
         FileHandle.standardError.write(Data(
-            "couldn't locate the quill binary. install it to /usr/local/bin/quill first.\n".utf8
+            "couldn't locate the dropsift binary. install it to /usr/local/bin/dropsift first.\n".utf8
         ))
         throw ExitCode(1)
     }

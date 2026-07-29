@@ -1,17 +1,17 @@
 import Foundation
 import Testing
-@testable import quill
+@testable import dropsift
 
 @Test(
     "Offline diarization separates a real audio fixture",
     .enabled(
-        if: ProcessInfo.processInfo.environment["QUILL_DIARIZATION_FIXTURE"] != nil,
-        "Set QUILL_DIARIZATION_FIXTURE to run the model-backed integration test."
+        if: ProcessInfo.processInfo.environment["DROPSIFT_DIARIZATION_FIXTURE"] != nil,
+        "Set DROPSIFT_DIARIZATION_FIXTURE to run the model-backed integration test."
     )
 )
 func offlineDiarizationIntegration() async throws {
     let path = try #require(
-        ProcessInfo.processInfo.environment["QUILL_DIARIZATION_FIXTURE"]
+        ProcessInfo.processInfo.environment["DROPSIFT_DIARIZATION_FIXTURE"]
     )
     let engine = SpeakerDiarizationEngine()
     try await engine.prepare()

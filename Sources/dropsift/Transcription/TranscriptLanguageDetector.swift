@@ -4,7 +4,7 @@ import NaturalLanguage
 /// FluidAudio's Parakeet v3 automatically recognizes supported languages but
 /// does not expose the chosen language in its batch result. Record a
 /// best-effort dominant language from the finished transcript so the UI and
-/// exported transcript can show what Quill heard.
+/// exported transcript can show what Dropsift heard.
 enum TranscriptLanguageDetector {
     private static let supportedCodes: Set<String> = [
         "bg", "hr", "cs", "da", "nl", "en", "et", "fi", "fr", "de",

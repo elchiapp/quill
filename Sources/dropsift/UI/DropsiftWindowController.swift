@@ -2,9 +2,9 @@ import AppKit
 import SwiftUI
 
 @MainActor
-final class QuillWindowController: NSWindowController {
+final class DropsiftWindowController: NSWindowController {
     init(model: AppModel) {
-        let rootView = QuillRootView(model: model)
+        let rootView = DropsiftRootView(model: model)
         let hostingController = NSHostingController(rootView: rootView)
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1280, height: 800),
@@ -12,13 +12,13 @@ final class QuillWindowController: NSWindowController {
             backing: .buffered,
             defer: false
         )
-        window.title = "Quill"
+        window.title = "Dropsift"
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.minSize = NSSize(width: 980, height: 650)
         window.contentViewController = hostingController
         window.center()
-        window.setFrameAutosaveName("QuillMainWindow")
+        window.setFrameAutosaveName("DropsiftMainWindow")
         super.init(window: window)
     }
 

@@ -1,4 +1,4 @@
-# Quill TODO
+# Dropsift TODO
 
 This file is the product and engineering backlog. Keep it current as work lands.
 
@@ -9,7 +9,17 @@ This file is the product and engineering backlog. Keep it current as work lands.
   so public visibility and GitHub forking do not grant general commercial-use,
   redistribution, or sublicensing rights.
 - [ ] After upstream permission is resolved, choose and add a license for the
-  original Quill work owned by this fork's contributors.
+  new Dropsift work owned by this fork's contributors.
+
+## Dropsift product foundation
+
+- [x] Rename the app, executable, bundle identity, assistant persona, package,
+  documentation, and menu-bar identity to Dropsift.
+- [x] Replace the Quill feather with a funnel-to-pinpoint Dropsift mark.
+- [x] Keep existing Quill recordings, threads, config, model cache, and
+  launch-agent cleanup compatible after the rename.
+- [ ] Rename the GitHub repository after downstream links and release
+  automation are ready to move.
 
 ## Current iteration
 
@@ -27,7 +37,7 @@ This file is the product and engineering backlog. Keep it current as work lands.
 
 - [x] Replace all external local-server integration with in-process MLX
   inference.
-- [x] Download and manage model weights entirely inside Quill.
+- [x] Download and manage model weights entirely inside Dropsift.
 - [x] Show model download and loading progress in chat and Settings.
 - [x] Validate transcript-grounded generation with the built-in model.
 - [x] Rebuild, sign, and install the standalone app update.
@@ -49,11 +59,23 @@ This file is the product and engineering backlog. Keep it current as work lands.
 - [x] Keep conversation selection visibly active while the composer has focus.
 - [x] Add confirmed deletion for conversations and Trash-based deletion for
   recordings.
-- [x] Pulse the menu-bar feather subtly while a recording is active.
+- [x] Pulse the menu-bar Dropsift mark subtly while a recording is active.
 - [x] Add crash-safe, iCloud-synced live notes while recording.
 
 ## Product backlog
 
+- [ ] Introduce a first-class knowledge-item model shared by recordings,
+  notes, screenshots, images, PDFs, imported audio, and text files.
+- [ ] Add drag-and-drop and file-picker ingestion with visible extraction,
+  indexing, and failure states.
+- [ ] Add a global screenshot shortcut with screen-permission onboarding,
+  region/window capture, OCR, and a local visual description.
+- [ ] Replace plain live notes with a WYSIWYG Markdown editor supporting
+  headings, lists, checkboxes, links, images, and attachment drops.
+- [ ] Index notes and imported items alongside transcripts so every chat can
+  search the entire knowledge base.
+- [ ] Make source cards open the exact PDF page, image region, note block, or
+  transcript timestamp used in an answer.
 - [ ] Let users rename detected speakers and remember voice profiles across
   meetings.
 - [ ] Add synchronized audio playback that follows transcript timestamps.

@@ -139,7 +139,7 @@ struct RecordingDetailView: View {
             } description: {
                 Text(
                     model.transcriptionStatus
-                        ?? "Quill will transcribe this recording locally. The first run downloads the speech model."
+                        ?? "Dropsift will transcribe this recording locally. The first run downloads the speech model."
                 )
             }
         }

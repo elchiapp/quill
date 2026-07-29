@@ -86,7 +86,7 @@ struct ChatDetailView: View {
                     .foregroundStyle(.tint)
                 Text("Ask your recordings")
                     .font(.title2.weight(.semibold))
-                Text("Quill retrieves relevant transcript passages and answers with its built-in local model.")
+                Text("Dropsift retrieves relevant transcript passages and answers with its built-in local model.")
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 440)
@@ -175,7 +175,7 @@ struct ChatDetailView: View {
             .padding(.trailing, 8)
             .background(.background.secondary, in: RoundedRectangle(cornerRadius: 14))
 
-            Text("Nothing is sent to an inference service. Answers run inside Quill with \(model.selectedModel).")
+            Text("Nothing is sent to an inference service. Answers run inside Dropsift with \(model.selectedModel).")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
         }
@@ -214,7 +214,7 @@ struct ChatDetailView: View {
             case .downloaded:
                 "Preparing downloaded \(model.selectedModelPlan.model.name)…"
             default:
-                "Preparing Quill’s built-in model…"
+                "Preparing Dropsift’s built-in model…"
             }
         case .generating:
             "Generating locally with \(model.selectedModel)…"
@@ -231,7 +231,7 @@ private struct ChatBubble: View {
             if message.role == .user { Spacer(minLength: 100) }
 
             VStack(alignment: .leading, spacing: 7) {
-                Text(message.role == .user ? "You" : "Quill")
+                Text(message.role == .user ? "You" : "Dropsift")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                 Text(.init(message.content))

@@ -25,7 +25,7 @@ final class MenuBarController {
         menu.autoenablesItems = false
 
         let show = NSMenuItem(
-            title: "Open Quill",
+            title: "Open Dropsift",
             action: #selector(showClicked),
             keyEquivalent: ""
         )
@@ -60,7 +60,7 @@ final class MenuBarController {
         menu.addItem(.separator())
 
         let quit = NSMenuItem(
-            title: "Quit quill",
+            title: "Quit Dropsift",
             action: #selector(quitClicked),
             keyEquivalent: "q"
         )
@@ -73,7 +73,7 @@ final class MenuBarController {
         statusItem.menu = menu
 
         if let button = statusItem.button {
-            let image = Self.featherImage()
+            let image = Self.siftImage()
             image?.isTemplate = true
             button.image = image
             button.imagePosition = .imageLeft
@@ -81,7 +81,7 @@ final class MenuBarController {
     }
 
     /// Reflect recording state in the icon tint and menu item titles. The
-    /// menu bar shows only the feather (red while recording); the elapsed
+    /// menu bar shows only the Dropsift mark (red while recording); the elapsed
     /// counter lives in the menu's state label. Call once a second while
     /// recording.
     func update(recording: Bool, elapsed: String?) {
@@ -99,21 +99,20 @@ final class MenuBarController {
         transcriptionLabel.isHidden = text == nil
     }
 
-    // Inlined Lucide feather SVG. Keeping it in source means the executable
+    // Inlined funnel-to-point SVG. Keeping it in source means the executable
     // has no separate resource bundle to install alongside it — true
     // single-binary.
-    private static let featherSVG = """
+    private static let siftSVG = """
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" \
     viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" \
     stroke-linecap="round" stroke-linejoin="round">\
-    <path d="M12.67 19a2 2 0 0 0 1.416-.588l6.154-6.172a6 6 0 0 0-8.49-8.49L5.586 9.914A2 2 0 0 0 5 11.328V18a1 1 0 0 0 1 1z"/>\
-    <path d="M16 8 2 22"/>\
-    <path d="M17.5 15H9"/>\
+    <path d="M3 4h18l-7 8v4l-4 2v-6z"/>\
+    <circle cx="12" cy="21" r="1.5"/>\
     </svg>
     """
 
-    private static func featherImage() -> NSImage? {
-        guard let data = featherSVG.data(using: .utf8),
+    private static func siftImage() -> NSImage? {
+        guard let data = siftSVG.data(using: .utf8),
               let image = NSImage(data: data)
         else { return nil }
         // Menu-bar status icons are nominally 18pt tall; size the SVG to match.

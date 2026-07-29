@@ -5,17 +5,17 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleDisplayName</key>
-    <string>Quill</string>
+    <string>Dropsift</string>
     <key>CFBundleExecutable</key>
-    <string>quill</string>
+    <string>dropsift</string>
     <key>CFBundleIconFile</key>
-    <string>Quill</string>
+    <string>Dropsift</string>
     <key>CFBundleIdentifier</key>
-    <string>com.digimata.quill</string>
+    <string>com.elchiapp.dropsift</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>Quill</string>
+    <string>Dropsift</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -34,8 +34,8 @@
         <true/>
     </dict>
     <key>NSMicrophoneUsageDescription</key>
-    <string>Quill records your microphone during meetings so you can transcribe them locally. Audio never leaves this Mac.</string>
+    <string>Dropsift records your microphone during meetings so you can transcribe them locally. Audio never leaves this Mac.</string>
     <key>NSAudioCaptureUsageDescription</key>
-    <string>Quill records system audio from meetings so it can transcribe the other side locally. Audio never leaves this Mac.</string>
+    <string>Dropsift records system audio from meetings so it can transcribe the other side locally. Audio never leaves this Mac.</string>
 </dict>
 </plist>

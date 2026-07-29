@@ -3,9 +3,9 @@ import ArgumentParser
 import Foundation
 
 @main
-struct Quill: ParsableCommand {
+struct Dropsift: ParsableCommand {
     static let configuration = CommandConfiguration(
-        commandName: "quill",
+        commandName: "dropsift",
         abstract: "Private local meeting workspace with recording, transcription, and local-AI chat.",
         subcommands: [Run.self, Doctor.self, Install.self],
         defaultSubcommand: Run.self
@@ -15,7 +15,7 @@ struct Quill: ParsableCommand {
 struct Run: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "run",
-        abstract: "Open the Quill desktop app (default)."
+        abstract: "Open the Dropsift desktop app (default)."
     )
 
     @Option(name: .long, help: "Recordings root directory (overrides the config file).")
@@ -55,7 +55,7 @@ struct Run: ParsableCommand {
         signal(SIGINT, SIG_IGN)
 
         FileHandle.standardError.write(Data(
-            "quill up · iCloud library → \(root.path) · ^C to quit\n".utf8
+            "dropsift up · iCloud library → \(root.path) · ^C to quit\n".utf8
         ))
         app.run()
     }
@@ -79,7 +79,7 @@ struct Doctor: ParsableCommand {
 final class AppController: NSObject, NSApplicationDelegate {
     private let model: AppModel
     private let menuBar = MenuBarController()
-    private lazy var mainWindow = QuillWindowController(model: model)
+    private lazy var mainWindow = DropsiftWindowController(model: model)
 
     init(root: URL) {
         model = AppModel(root: root)

@@ -3,17 +3,17 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleIdentifier</key>
-    <string>com.digimata.quill</string>
+    <string>com.elchiapp.dropsift</string>
     <key>CFBundleName</key>
-    <string>Quill</string>
+    <string>Dropsift</string>
     <key>NSAppTransportSecurity</key>
     <dict>
         <key>NSAllowsLocalNetworking</key>
         <true/>
     </dict>
     <key>NSMicrophoneUsageDescription</key>
-    <string>quill records your microphone during meetings so you can transcribe them later. Audio never leaves this Mac.</string>
+    <string>Dropsift records your microphone during meetings so you can transcribe them later. Audio never leaves this Mac.</string>
     <key>NSAudioCaptureUsageDescription</key>
-    <string>quill records system audio (the other side of your meetings) so you can transcribe them later. Audio never leaves this Mac.</string>
+    <string>Dropsift records system audio—the other side of your meetings—so you can transcribe it later. Audio never leaves this Mac.</string>
 </dict>
 </plist>

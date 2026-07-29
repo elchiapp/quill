@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="background" x1="120" y1="72" x2="904" y2="952" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#377CF6"/>
+      <stop offset="0.5" stop-color="#5352D9"/>
+      <stop offset="1" stop-color="#211044"/>
+    </linearGradient>
+    <linearGradient id="funnel" x1="512" y1="248" x2="512" y2="800" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#E7EDFF"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="180%">
+      <feDropShadow dx="0" dy="24" stdDeviation="22" flood-color="#12062C" flood-opacity="0.38"/>
+    </filter>
+    <filter id="glow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="18"/>
+    </filter>
+  </defs>
+  <rect x="64" y="64" width="896" height="896" rx="210" fill="url(#background)"/>
+  <g filter="url(#shadow)">
+    <circle cx="320" cy="254" r="35" fill="#FFFFFF"/>
+    <rect x="465" y="219" width="94" height="70" rx="22" fill="#FFFFFF" opacity="0.94"/>
+    <path d="M691 216 737 285H645Z" fill="#FFFFFF" opacity="0.88"/>
+    <path d="M214 340H810L574 592V690c0 18-10 34-26 42l-88 45c-18 9-40-4-40-24V592Z"
+          fill="url(#funnel)"/>
+    <path d="M302 405H722" fill="none" stroke="#6D6BE1" stroke-width="31" stroke-linecap="round" opacity="0.75"/>
+    <path d="M350 470H674" fill="none" stroke="#7775E7" stroke-width="25" stroke-linecap="round" opacity="0.55"/>
+  </g>
+  <circle cx="512" cy="805" r="82" fill="#56D6FF" opacity="0.28" filter="url(#glow)"/>
+  <circle cx="512" cy="805" r="58" fill="none" stroke="#FFFFFF" stroke-width="24"/>
+  <path d="M512 714V754M512 856V896M421 805H461M563 805H603"
+        fill="none" stroke="#FFFFFF" stroke-width="22" stroke-linecap="round"/>
+  <circle cx="512" cy="805" r="13" fill="#FFFFFF"/>
+</svg>

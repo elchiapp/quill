@@ -1,12 +1,12 @@
 import Foundation
 import Testing
-@testable import quill
+@testable import dropsift
 
 @Test(
     "Built-in MLX answers from transcript context without a server",
     .enabled(
-        if: ProcessInfo.processInfo.environment["QUILL_BUILTIN_AI_INTEGRATION"] == "1",
-        "Set QUILL_BUILTIN_AI_INTEGRATION=1 to download/load the app-managed model."
+        if: ProcessInfo.processInfo.environment["DROPSIFT_BUILTIN_AI_INTEGRATION"] == "1",
+        "Set DROPSIFT_BUILTIN_AI_INTEGRATION=1 to download/load the app-managed model."
     )
 )
 func builtInMLXIntegration() async throws {

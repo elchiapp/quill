@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import quill
+@testable import dropsift
 
 @Test
 func transcriptRetrieverFindsRelevantMeetingAcrossLibrary() {

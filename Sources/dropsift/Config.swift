@@ -1,6 +1,6 @@
 import Foundation
 
-/// Optional user config at ~/.config/quill/config.json:
+/// Optional user config at ~/.config/dropsift/config.json:
 ///
 ///     {
 ///       "recordings_dir": "~/Recordings",
@@ -11,14 +11,29 @@ import Foundation
 ///     }
 ///
 /// Resolution order for the recordings root: --out flag > config file >
-/// iCloud Drive when available > ~/Recordings. `on_stop` is a shell command spawned with the session
-/// directory as its argument — after the transcript is written, or right
-/// after recording when transcription is disabled.
+/// iCloud Drive when available > ~/Dropsift/Recordings. `on_stop` is a shell
+/// command spawned with the session directory as its argument — after the
+/// transcript is written, or right after recording when transcription is
+/// disabled.
 enum Config {
-    static let path = FileManager.default.homeDirectoryForCurrentUser
+    private static let newPath = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(".config/dropsift/config.json")
+
+    private static let legacyPath = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".config/quill/config.json")
 
-    static let localRoot = FileManager.default.homeDirectoryForCurrentUser
+    /// Keep an existing Quill configuration working after the product rename.
+    /// New installations and users who create a Dropsift config use the new
+    /// path without requiring an explicit migration step.
+    static var path: URL {
+        preferred(new: newPath, legacy: legacyPath)
+    }
+
+    private static let localRoot = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Dropsift", isDirectory: true)
+        .appendingPathComponent("Recordings", isDirectory: true)
+
+    private static let legacyLocalRoot = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Recordings", isDirectory: true)
 
     static let iCloudDriveRoot = FileManager.default.homeDirectoryForCurrentUser
@@ -29,11 +44,15 @@ enum Config {
     /// container entitlements. Macs without iCloud Drive fall back locally.
     static var defaultRoot: URL {
         if FileManager.default.fileExists(atPath: iCloudDriveRoot.path) {
-            return iCloudDriveRoot
+            let dropsift = iCloudDriveRoot
+                .appendingPathComponent("Dropsift", isDirectory: true)
+                .appendingPathComponent("Recordings", isDirectory: true)
+            let quill = iCloudDriveRoot
                 .appendingPathComponent("Quill", isDirectory: true)
                 .appendingPathComponent("Recordings", isDirectory: true)
+            return preferred(new: dropsift, legacy: quill)
         }
-        return localRoot
+        return preferred(new: localRoot, legacy: legacyLocalRoot)
     }
 
     static var appDataRoot: URL {
@@ -42,8 +61,13 @@ enum Config {
 
     /// Large inference weights stay local and disposable rather than syncing
     /// through iCloud with the user's recordings and chat history.
-    static let modelCacheRoot = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Library/Caches/Quill/Models", isDirectory: true)
+    static var modelCacheRoot: URL {
+        let dropsift = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Caches/Dropsift/Models", isDirectory: true)
+        let quill = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Caches/Quill/Models", isDirectory: true)
+        return preferred(new: dropsift, legacy: quill)
+    }
 
     /// The configured recordings root, or nil if no config file / no key.
     static func recordingsDir() -> URL? {
@@ -122,5 +146,16 @@ enum Config {
             )
         }
         return recordingsDir() ?? defaultRoot
+    }
+
+    /// Prefer the new product location, but continue from an existing Quill
+    /// location when the Dropsift equivalent has not been created yet.
+    private static func preferred(new: URL, legacy: URL) -> URL {
+        let fileManager = FileManager.default
+        if fileManager.fileExists(atPath: new.path)
+            || !fileManager.fileExists(atPath: legacy.path) {
+            return new
+        }
+        return legacy
     }
 }

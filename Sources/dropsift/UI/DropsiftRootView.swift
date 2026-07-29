@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct QuillRootView: View {
+struct DropsiftRootView: View {
     @ObservedObject var model: AppModel
 
     var body: some View {
@@ -41,7 +41,7 @@ struct QuillRootView: View {
                 } label: {
                     Image(systemName: "gearshape")
                 }
-                .help("Quill settings")
+                .help("Dropsift settings")
             }
         }
         .sheet(isPresented: $model.showingSettings) {
@@ -51,7 +51,7 @@ struct QuillRootView: View {
             ModelRecommendationView(model: model)
         }
         .alert(
-            "Quill",
+            "Dropsift",
             isPresented: Binding(
                 get: { model.appError != nil },
                 set: { if !$0 { model.appError = nil } }
@@ -81,10 +81,10 @@ struct QuillRootView: View {
     private var sidebar: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                Image(systemName: "pencil")
+                Image(systemName: "line.3.horizontal.decrease.circle")
                     .font(.title2)
                     .foregroundStyle(.tint)
-                Text("Quill")
+                Text("Dropsift")
                     .font(.title2.weight(.semibold))
                 Spacer()
             }
@@ -95,7 +95,7 @@ struct QuillRootView: View {
             List(selection: $model.section) {
                 Label("Recordings", systemImage: "waveform")
                     .tag(AppModel.Section.recordings)
-                Label("Ask Quill", systemImage: "sparkles")
+                Label("Ask Dropsift", systemImage: "sparkles")
                     .tag(AppModel.Section.chats)
             }
             .listStyle(.sidebar)
@@ -412,7 +412,7 @@ private struct LiveRecordingNotesView: View {
 
             ZStack(alignment: .topLeading) {
                 if model.liveNotes.isEmpty {
-                    Text("Take notes while Quill records…")
+                    Text("Take notes while Dropsift records…")
                         .foregroundStyle(.tertiary)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 9)

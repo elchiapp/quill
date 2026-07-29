@@ -4,9 +4,9 @@ set -euo pipefail
 SCRIPT_DIR=${0:A:h}
 PROJECT_ROOT=${SCRIPT_DIR:h}
 DIST_DIR="$PROJECT_ROOT/dist"
-APP_OUTPUT="$DIST_DIR/Quill.app"
-APP_ARCHIVE="$DIST_DIR/Quill.app.zip"
-DMG_PATH="$DIST_DIR/Quill.dmg"
+APP_OUTPUT="$DIST_DIR/Dropsift.app"
+APP_ARCHIVE="$DIST_DIR/Dropsift.app.zip"
+DMG_PATH="$DIST_DIR/Dropsift.dmg"
 BUILD_CONFIGURATION=${BUILD_CONFIGURATION:-release}
 SIGN_IDENTITY=${SIGN_IDENTITY:--}
 MLX_DERIVED_DATA="$PROJECT_ROOT/.build/mlx-xcode"
@@ -51,32 +51,32 @@ if [[ ! -f "$MLX_METALLIB" ]]; then
 fi
 
 BIN_DIR=$(swift build -c "$BUILD_CONFIGURATION" --show-bin-path)
-QUILL_BINARY="$BIN_DIR/quill"
-if [[ ! -x "$QUILL_BINARY" ]]; then
-    print -u2 "Missing built executable: $QUILL_BINARY"
+DROPSIFT_BINARY="$BIN_DIR/dropsift"
+if [[ ! -x "$DROPSIFT_BINARY" ]]; then
+    print -u2 "Missing built executable: $DROPSIFT_BINARY"
     exit 1
 fi
 
-if [[ "$APP_OUTPUT" != "$PROJECT_ROOT/dist/Quill.app" ]]; then
+if [[ "$APP_OUTPUT" != "$PROJECT_ROOT/dist/Dropsift.app" ]]; then
     print -u2 "Refusing to replace an unexpected app path: $APP_OUTPUT"
     exit 1
 fi
 
 /bin/rm -rf "$APP_OUTPUT" "$APP_ARCHIVE" "$DMG_PATH"
 
-PACKAGE_WORK=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/quill-package.XXXXXX")
-APP_BUNDLE="$PACKAGE_WORK/Quill.app"
+PACKAGE_WORK=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/dropsift-package.XXXXXX")
+APP_BUNDLE="$PACKAGE_WORK/Dropsift.app"
 /bin/mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
-/usr/bin/ditto "$QUILL_BINARY" "$APP_BUNDLE/Contents/MacOS/quill"
+/usr/bin/ditto "$DROPSIFT_BINARY" "$APP_BUNDLE/Contents/MacOS/dropsift"
 /usr/bin/ditto "$MLX_METALLIB" "$APP_BUNDLE/Contents/Resources/mlx.metallib"
 /bin/ln -s ../Resources "$APP_BUNDLE/Contents/MacOS/Resources"
-/bin/chmod 755 "$APP_BUNDLE/Contents/MacOS/quill"
+/bin/chmod 755 "$APP_BUNDLE/Contents/MacOS/dropsift"
 /usr/bin/ditto "$PROJECT_ROOT/Packaging/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
 
 COMMIT_COUNT=$(/usr/bin/git rev-list --count HEAD 2>/dev/null || print 1)
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $COMMIT_COUNT" "$APP_BUNDLE/Contents/Info.plist"
 
-ICON_WORK=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/quill-icon.XXXXXX")
+ICON_WORK=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/dropsift-icon.XXXXXX")
 DMG_WORK=""
 cleanup() {
     /bin/rm -rf "$ICON_WORK" "$PACKAGE_WORK"
@@ -86,14 +86,14 @@ cleanup() {
 }
 trap cleanup EXIT
 
-/usr/bin/qlmanage -t -s 1024 -o "$ICON_WORK" "$PROJECT_ROOT/Packaging/QuillIcon.svg" >/dev/null
-ICON_SOURCE="$ICON_WORK/QuillIcon.svg.png"
+/usr/bin/qlmanage -t -s 1024 -o "$ICON_WORK" "$PROJECT_ROOT/Packaging/DropsiftIcon.svg" >/dev/null
+ICON_SOURCE="$ICON_WORK/DropsiftIcon.svg.png"
 if [[ ! -f "$ICON_SOURCE" ]]; then
     print -u2 "Quick Look did not render the app icon."
     exit 1
 fi
 
-ICONSET="$ICON_WORK/Quill.iconset"
+ICONSET="$ICON_WORK/Dropsift.iconset"
 /bin/mkdir -p "$ICONSET"
 for SPEC in \
     "16 icon_16x16.png" \
@@ -111,7 +111,7 @@ do
     NAME=${SPEC#* }
     /usr/bin/sips -z "$SIZE" "$SIZE" "$ICON_SOURCE" --out "$ICONSET/$NAME" >/dev/null
 done
-/usr/bin/iconutil -c icns "$ICONSET" -o "$APP_BUNDLE/Contents/Resources/Quill.icns"
+/usr/bin/iconutil -c icns "$ICONSET" -o "$APP_BUNDLE/Contents/Resources/Dropsift.icns"
 
 # Finder and Quick Look can attach metadata that codesign rejects as resource
 # forks. Generated bundles do not need any extended attributes.
@@ -125,12 +125,12 @@ done
     "$APP_BUNDLE"
 /usr/bin/codesign --verify --deep --strict "$APP_BUNDLE"
 
-DMG_WORK=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/quill-dmg.XXXXXX")
-/usr/bin/ditto "$APP_BUNDLE" "$DMG_WORK/Quill.app"
+DMG_WORK=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/dropsift-dmg.XXXXXX")
+/usr/bin/ditto "$APP_BUNDLE" "$DMG_WORK/Dropsift.app"
 /bin/ln -s /Applications "$DMG_WORK/Applications"
 /usr/bin/hdiutil create \
     -quiet \
-    -volname "Quill" \
+    -volname "Dropsift" \
     -srcfolder "$DMG_WORK" \
     -ov \
     -format UDZO \

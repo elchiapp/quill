@@ -7,7 +7,7 @@ struct SettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text("Quill settings")
+                Text("Dropsift settings")
                     .font(.title2.weight(.semibold))
                 Spacer()
                 Button("Done") { dismiss() }
@@ -249,7 +249,7 @@ struct ModelRecommendationView: View {
             }
 
             Text(
-                "Quill starts conservatively with Qwen3.5 2B. Based on this Mac, the recommended option is \(recommendation.model.name)."
+                "Dropsift starts conservatively with Qwen3.5 2B. Based on this Mac, the recommended option is \(recommendation.model.name)."
             )
 
             HStack(spacing: 12) {

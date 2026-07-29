@@ -98,14 +98,17 @@ final class AppModel: ObservableObject {
     private var recordingStartedAt: Date?
     private var notesSaveTask: Task<Void, Never>?
 
-    private static let selectedModelKey = "quill.builtInAI.selectedModel"
-    private static let recommendationKey = "quill.builtInAI.recommendationHandled"
+    private static let selectedModelKey = "dropsift.builtInAI.selectedModel"
+    private static let recommendationKey = "dropsift.builtInAI.recommendationHandled"
+    private static let legacySelectedModelKey = "quill.builtInAI.selectedModel"
+    private static let legacyRecommendationKey = "quill.builtInAI.recommendationHandled"
+    private static let legacyDefaults = UserDefaults(suiteName: "com.digimata.quill")
 
     init(root: URL) {
         let profile = DeviceProfile.current
-        let storedModelID = UserDefaults.standard.string(
-            forKey: Self.selectedModelKey
-        )
+        let storedModelID = UserDefaults.standard.string(forKey: Self.selectedModelKey)
+            ?? UserDefaults.standard.string(forKey: Self.legacySelectedModelKey)
+            ?? Self.legacyDefaults?.string(forKey: Self.legacySelectedModelKey)
         let selectedModel = AIModelCatalog.model(id: storedModelID)
         let modelPlan = AIModelCatalog.plan(for: selectedModel, device: profile)
 
@@ -243,7 +246,7 @@ final class AppModel: ObservableObject {
             }
         } catch {
             appError = "Couldn’t start recording: \(error)"
-            notifyUser(title: "Quill — recording failed", body: "\(error)")
+            notifyUser(title: "Dropsift — recording failed", body: "\(error)")
         }
     }
 
@@ -456,7 +459,7 @@ final class AppModel: ObservableObject {
         guard newPlan.fitsMemoryBudget,
               deviceProfile.totalMemoryBytes >= model.minimumDeviceMemoryBytes
         else {
-            appError = "\(model.name) does not fit Quill’s 50% memory safety limit on this Mac."
+            appError = "\(model.name) does not fit Dropsift’s 50% memory safety limit on this Mac."
             return
         }
 
@@ -517,7 +520,11 @@ final class AppModel: ObservableObject {
     private var shouldOfferModelRecommendation: Bool {
         let recommendation = recommendedModelPlan
         guard recommendation.model.id != selectedModelID else { return false }
-        return UserDefaults.standard.string(forKey: Self.recommendationKey)
+        return (
+            UserDefaults.standard.string(forKey: Self.recommendationKey)
+                ?? UserDefaults.standard.string(forKey: Self.legacyRecommendationKey)
+                ?? Self.legacyDefaults?.string(forKey: Self.legacyRecommendationKey)
+        )
             != recommendationSignature
     }
 
@@ -640,11 +647,11 @@ final class AppModel: ObservableObject {
             """
         }.joined(separator: "\n\n---\n\n")
         let scopeDescription = scope.kind == .allRecordings
-            ? "the user’s complete Quill recording library"
-            : "the selected Quill recording"
+            ? "the user’s complete Dropsift knowledge library"
+            : "the selected Dropsift recording"
 
         return """
-        You are Quill, a private local meeting assistant. Answer questions about \(scopeDescription).
+        You are Dropsift, a private local knowledge assistant. Answer questions about \(scopeDescription).
         Use only the transcript excerpts below for claims about meetings. If the excerpts do not
         contain the answer, say that clearly. Cite meeting claims inline as [1], [2], and so on,
         matching the numbered excerpts. Be concise, synthesize across recordings when useful,

@@ -1,10 +1,12 @@
-# Quill
+# Dropsift
 
-A private, local-first macOS meeting workspace. Quill records microphone and
+A private, local-first macOS meeting workspace. Dropsift records microphone and
 system audio as separate tracks, transcribes both on-device, presents a
 speaker-tagged transcript library, and lets you chat with one or all meetings
 through a local LLM. Audio, transcripts, and chat threads sync through the
 user's iCloud Drive; inference never leaves the Mac.
+
+**Drop anything in. Pull the exact source out.**
 
 ## Install
 
@@ -12,10 +14,10 @@ Build a signed, double-clickable app bundle and a distributable disk image:
 
 ```sh
 scripts/package-macos.sh
-open dist/Quill.dmg
+open dist/Dropsift.dmg
 ```
 
-The generated artifacts are `dist/Quill.app.zip` and `dist/Quill.dmg`. By
+The generated artifacts are `dist/Dropsift.app.zip` and `dist/Dropsift.dmg`. By
 default, the app is ad-hoc signed for local use. Set `SIGN_IDENTITY` to a
 Developer ID or Apple Development signing identity when a persistent identity
 is required.
@@ -25,14 +27,14 @@ virtual device, no kernel extension) on an Apple-silicon Mac.
 
 ## How to use
 
-1. Open `Quill.app` and click **New recording**. First use prompts for
+1. Open `Dropsift.app` and click **New recording**. First use prompts for
    microphone and System Audio Recording permissions.
-2. Stop from the window or feather menu-bar item. Quill transcribes the two
+2. Stop from the window or Dropsift menu-bar item. Dropsift transcribes the two
    tracks locally and adds the speaker-tagged result to the library.
-3. Open **Ask Quill**, start a conversation, and choose either **All
-   recordings** or one meeting as its scope. Quill starts with the compact
+3. Open **Ask Dropsift**, start a conversation, and choose either **All
+   recordings** or one meeting as its scope. Dropsift starts with the compact
    Qwen3.5 2B model and offers a stronger model when the detected hardware can
-   run one safely. On the first question, Quill downloads the selected model;
+   run one safely. On the first question, Dropsift downloads the selected model;
    subsequent inference is offline.
    Numbered source cards beneath an answer open the cited recording at the
    matching transcript timestamp.
@@ -40,10 +42,10 @@ virtual device, no kernel extension) on an Apple-silicon Mac.
 While recording, the main window shows a live notes editor above the current
 detail view. Notes autosave into the recording's `notes.md` in iCloud Drive,
 so they survive a crash and remain visible with the finished recording. The
-menu-bar feather turns red and pulses gently until recording stops.
+menu-bar Dropsift mark turns red and pulses gently until recording stops.
 
 Each session lands in
-`iCloud Drive/Quill/Recordings/<yyyy.MM.dd-HHmm>/` by default:
+`iCloud Drive/Dropsift/Recordings/<yyyy.MM.dd-HHmm>/` by default:
 
 | File | Contents |
 |---|---|
@@ -56,7 +58,7 @@ Each session lands in
 | `transcribe.log` | transcription progress/errors for this session |
 
 Two tracks on purpose: speech models do better on clean single-source audio,
-and the microphone is a trusted `me` channel. Quill runs local speaker
+and the microphone is a trusted `me` channel. Dropsift runs local speaker
 diarization on the system track, labeling remote voices as `speaker_1`,
 `speaker_2`, and so on. CAF on purpose: unlike m4a, it needs no finalization
 pass — if the process dies mid-meeting, everything already written is still
@@ -69,7 +71,7 @@ via [FluidAudio](https://github.com/FluidInference/FluidAudio)'s Core ML port.
 It automatically recognizes 25 European languages, including English,
 Italian, French, German, Spanish, Portuguese, Dutch, Polish, Russian, and
 Ukrainian. Models (~600 MB) download once on first transcription, with
-download and Core ML compilation progress visible in the app. `quill doctor`
+download and Core ML compilation progress visible in the app. `dropsift doctor`
 tells you whether they're already cached.
 
 Each track is transcribed separately, shifted by its start offset so both
@@ -96,38 +98,43 @@ finishes with the fallback `them` label and records the failure in
 
 ## Local AI
 
-Inference is part of Quill itself. It uses Apple's
+Inference is part of Dropsift itself. It uses Apple's
 [MLX Swift](https://github.com/ml-explore/mlx-swift) runtime and current
 Qwen3.5/Qwen3.6 models directly in the app process. The conservative default is
-`Qwen3.5 2B` at 4-bit. Quill detects the chip, CPU count, and unified memory,
+`Qwen3.5 2B` at 4-bit. Dropsift detects the chip, CPU count, and unified memory,
 then offers a stronger 4B, 9B, 27B, or 35B-A3B model when appropriate.
 
-For every model, Quill:
+For every model, Dropsift:
 
 - caps MLX at 50% of total unified memory;
 - calculates the largest context window that fits that limit, up to the
   model's native 262K tokens;
 - shows download progress, in-memory loading, failures, and the active model;
-- downloads weights into `~/Library/Caches/Quill/Models` only after the user
+- downloads weights into `~/Library/Caches/Dropsift/Models` only after the user
   selects the model or asks the first question.
 
 There is no LM Studio, llama server, localhost API, Python runtime, terminal
 command, or separate application.
 
-Chat never uploads a transcript. Quill chunks and ranks transcript passages
+Chat never uploads a transcript. Dropsift chunks and ranks transcript passages
 locally, shows distinct retrieval, model-download/loading, and generation
 states, and passes only relevant excerpts to its in-process model. Structured
 source fragments are saved on each assistant message and link back to the
 closest transcript segment. Threads persist in
-`iCloud Drive/Quill/Threads/threads.json`.
+`iCloud Drive/Dropsift/Threads/threads.json`.
+
+Existing Quill users are handled conservatively: if a Dropsift library,
+config, or model cache does not exist yet, the app reuses the corresponding
+Quill location. Recordings, threads, settings, and downloaded weights are not
+stranded by the rename.
 
 ## Config
 
-Optional, at `~/.config/quill/config.json`:
+Optional, at `~/.config/dropsift/config.json`:
 
 ```json
 {
-  "recordings_dir": "~/Library/Mobile Documents/com~apple~CloudDocs/Quill/Recordings",
+  "recordings_dir": "~/Library/Mobile Documents/com~apple~CloudDocs/Dropsift/Recordings",
   "transcription": { "enabled": true, "engine": "parakeet" },
   "diarization": { "enabled": true, "engine": "offline-vbx" },
   "on_stop": "my-hook"
@@ -153,11 +160,11 @@ Optional, at `~/.config/quill/config.json`:
 ## CLI
 
 ```sh
-quill                        # open the desktop app (^C to quit when run here)
-quill run --out <dir>        # open with a custom recordings root
-quill doctor                 # check permissions, recordings folder, models
-quill install --launch-at-login
-quill install --uninstall
+dropsift                        # open the desktop app (^C to quit when run here)
+dropsift run --out <dir>        # open with a custom recordings root
+dropsift doctor                 # check permissions, recordings folder, models
+dropsift install --launch-at-login
+dropsift install --uninstall
 ```
 
 ## Stack
@@ -182,12 +189,12 @@ quill install --uninstall
 - Parakeet v3 supports 25 European languages automatically. Mandarin,
   Japanese, Arabic, and other languages outside that set still need a future
   transcription engine.
-- iCloud Drive storage uses the visible `Quill` folder, not a hidden app
+- iCloud Drive storage uses the visible `Dropsift` folder, not a hidden app
   container, so recordings remain directly accessible in Finder.
 
 ## License status
 
-The upstream repository currently has no explicit software license. Public
+The original upstream Quill repository currently has no explicit software license. Public
 GitHub visibility permits viewing and forking through GitHub, but does not
 grant general commercial-use or redistribution rights. See
 [`LICENSE_STATUS.md`](LICENSE_STATUS.md) and resolve the legal blocker in

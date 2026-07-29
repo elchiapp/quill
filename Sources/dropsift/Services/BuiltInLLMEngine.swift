@@ -163,7 +163,7 @@ actor BuiltInLLMEngine {
             )
             let cache = HubCache(cacheDirectory: root)
             let client = HubClient(
-                userAgent: "Quill/1.0 built-in-local-ai",
+                userAgent: "Dropsift/1.0 built-in-local-ai",
                 cache: cache
             )
             let configuration = ModelConfiguration(
