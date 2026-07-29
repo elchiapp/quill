@@ -24,6 +24,41 @@ final class AppModel: ObservableObject {
         let token = UUID()
     }
 
+    enum DeletionRequest: Identifiable, Equatable {
+        case thread(id: UUID, title: String)
+        case recording(id: String, title: String)
+
+        var id: String {
+            switch self {
+            case .thread(let id, _): "thread-\(id)"
+            case .recording(let id, _): "recording-\(id)"
+            }
+        }
+
+        var confirmationTitle: String {
+            switch self {
+            case .thread: "Delete this conversation?"
+            case .recording: "Move this recording to Trash?"
+            }
+        }
+
+        var actionTitle: String {
+            switch self {
+            case .thread: "Delete Conversation"
+            case .recording: "Move to Trash"
+            }
+        }
+
+        var message: String {
+            switch self {
+            case .thread(_, let title):
+                "“\(title)” and its messages will be permanently deleted. This cannot be undone."
+            case .recording(_, let title):
+                "“\(title)” and its audio, transcript, and notes will move to the macOS Trash."
+            }
+        }
+    }
+
     @Published var section: Section = .recordings
     @Published var recordings: [RecordingItem]
     @Published var selectedRecordingID: String?
@@ -38,8 +73,10 @@ final class AppModel: ObservableObject {
 
     @Published var isRecording = false
     @Published var recordingElapsed = "0:00"
+    @Published var liveNotes = ""
     @Published var transcriptionStatus: String?
     @Published var appError: String?
+    @Published var deletionRequest: DeletionRequest?
 
     @Published var aiStatus: BuiltInAIState
     @Published var selectedModelID: String
@@ -59,6 +96,7 @@ final class AppModel: ObservableObject {
     private var session: RecordingSession?
     private var ticker: Timer?
     private var recordingStartedAt: Date?
+    private var notesSaveTask: Task<Void, Never>?
 
     private static let selectedModelKey = "quill.builtInAI.selectedModel"
     private static let recommendationKey = "quill.builtInAI.recommendationHandled"
@@ -195,6 +233,7 @@ final class AppModel: ObservableObject {
             try newSession.start()
             session = newSession
             recordingStartedAt = newSession.startedAt
+            liveNotes = ""
             isRecording = true
             recordingElapsed = "0:00"
             onRecordingStateChange?(true, recordingElapsed)
@@ -210,9 +249,11 @@ final class AppModel: ObservableObject {
 
     func stopRecording() {
         guard let session else { return }
+        flushLiveNotes(to: session.dir)
         session.stop()
         let directory = session.dir
         self.session = nil
+        liveNotes = ""
         recordingStartedAt = nil
         ticker?.invalidate()
         ticker = nil
@@ -252,6 +293,22 @@ final class AppModel: ObservableObject {
         NSWorkspace.shared.open(url)
     }
 
+    func updateLiveNotes(_ notes: String) {
+        liveNotes = notes
+        guard let directory = session?.dir else { return }
+
+        notesSaveTask?.cancel()
+        notesSaveTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return }
+            do {
+                try RecordingLibrary.saveNotes(notes, to: directory)
+            } catch {
+                self?.appError = "Couldn’t save recording notes: \(error.localizedDescription)"
+            }
+        }
+    }
+
     func createThread(scope: ChatScope = .all) {
         let thread = ChatThread(scope: scope)
         threads.insert(thread, at: 0)
@@ -265,6 +322,28 @@ final class AppModel: ObservableObject {
         threads[index].scope = scope
         threads[index].updatedAt = Date()
         persistThreads()
+    }
+
+    func requestDeleteThread(_ thread: ChatThread) {
+        deletionRequest = .thread(id: thread.id, title: thread.title)
+    }
+
+    func requestDeleteRecording(_ recording: RecordingItem) {
+        deletionRequest = .recording(id: recording.id, title: recording.title)
+    }
+
+    func cancelDeletion() {
+        deletionRequest = nil
+    }
+
+    func confirmDeletion(_ request: DeletionRequest) {
+        deletionRequest = nil
+        switch request {
+        case .thread(let id, _):
+            deleteThread(id)
+        case .recording(let id, _):
+            moveRecordingToTrash(id)
+        }
     }
 
     func openSource(_ source: ChatSource) {
@@ -458,6 +537,51 @@ final class AppModel: ObservableObject {
             try chatStore.save(threads)
         } catch {
             appError = "Couldn’t save chat history: \(error.localizedDescription)"
+        }
+    }
+
+    private func deleteThread(_ id: UUID) {
+        guard let index = threads.firstIndex(where: { $0.id == id }) else { return }
+        let wasSelected = selectedThreadID == id
+        threads.remove(at: index)
+        if wasSelected {
+            selectedThreadID = threads.indices.contains(index)
+                ? threads[index].id
+                : threads.last?.id
+            chatDraft = ""
+            chatError = nil
+        }
+        persistThreads()
+    }
+
+    private func moveRecordingToTrash(_ id: String) {
+        guard let recording = recordings.first(where: { $0.id == id }) else { return }
+        NSWorkspace.shared.recycle([recording.directory]) { [weak self] _, error in
+            Task { @MainActor in
+                guard let self else { return }
+                if let error {
+                    self.appError = "Couldn’t move the recording to Trash: \(error.localizedDescription)"
+                    return
+                }
+
+                for index in self.threads.indices
+                where self.threads[index].scope.recordingID == id {
+                    self.threads[index].scope = .all
+                    self.threads[index].updatedAt = Date()
+                }
+                self.persistThreads()
+                self.reloadRecordings()
+            }
+        }
+    }
+
+    private func flushLiveNotes(to directory: URL) {
+        notesSaveTask?.cancel()
+        notesSaveTask = nil
+        do {
+            try RecordingLibrary.saveNotes(liveNotes, to: directory)
+        } catch {
+            appError = "Couldn’t save recording notes: \(error.localizedDescription)"
         }
     }
 

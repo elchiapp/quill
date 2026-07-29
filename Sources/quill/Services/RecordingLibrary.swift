@@ -49,4 +49,11 @@ enum RecordingLibrary {
                 options: .atomic
             )
     }
+
+    static func saveNotes(_ notes: String, to directory: URL) throws {
+        try Data(notes.utf8).write(
+            to: directory.appendingPathComponent("notes.md"),
+            options: .atomic
+        )
+    }
 }

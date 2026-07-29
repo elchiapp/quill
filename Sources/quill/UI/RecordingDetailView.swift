@@ -15,6 +15,10 @@ struct RecordingDetailView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
+            if !recording.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Divider()
+                savedNotes
+            }
             Divider()
             transcript
         }
@@ -57,6 +61,12 @@ struct RecordingDetailView: View {
                     Button("Show in Finder") {
                         NSWorkspace.shared.activateFileViewerSelecting([recording.directory])
                     }
+                    Divider()
+                    Button(role: .destructive) {
+                        model.requestDeleteRecording(recording)
+                    } label: {
+                        Label("Move Recording to Trash", systemImage: "trash")
+                    }
                 } label: {
                     Label("Audio & files", systemImage: "waveform")
                 }
@@ -65,6 +75,22 @@ struct RecordingDetailView: View {
             }
         }
         .padding(24)
+    }
+
+    private var savedNotes: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Notes", systemImage: "note.text")
+                .font(.headline)
+            ScrollView {
+                Text(.init(recording.notes))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(minHeight: 44, maxHeight: 130)
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 14)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.45))
     }
 
     @ViewBuilder

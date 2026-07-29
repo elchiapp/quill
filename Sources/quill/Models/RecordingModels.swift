@@ -129,6 +129,7 @@ struct RecordingItem: Identifiable, Sendable {
     let micURL: URL?
     let systemURL: URL?
     let transcript: TranscriptDocument?
+    let notes: String
 
     var isTranscribed: Bool { transcript != nil }
     var segmentCount: Int { transcript?.segments.count ?? 0 }
@@ -194,6 +195,10 @@ struct RecordingItem: Identifiable, Sendable {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let title = customTitle.flatMap { $0.isEmpty ? nil : $0 }
             ?? Self.defaultTitle(startedAt: startedAt, folderName: directory.lastPathComponent)
+        let notes = (try? String(
+            contentsOf: directory.appendingPathComponent("notes.md"),
+            encoding: .utf8
+        )) ?? ""
 
         func trackURL(_ key: String) -> URL? {
             guard let filename = metadata?.files?[key] else { return nil }
@@ -210,7 +215,8 @@ struct RecordingItem: Identifiable, Sendable {
             durationSeconds: max(duration, 0),
             micURL: trackURL("mic"),
             systemURL: trackURL("system"),
-            transcript: transcript
+            transcript: transcript,
+            notes: notes
         )
     }
 

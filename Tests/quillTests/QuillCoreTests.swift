@@ -32,7 +32,8 @@ func transcriptRetrieverFindsRelevantMeetingAcrossLibrary() {
         durationSeconds: 60,
         micURL: nil,
         systemURL: nil,
-        transcript: transcript
+        transcript: transcript,
+        notes: ""
     )
 
     let matches = TranscriptRetriever.retrieve(
@@ -157,6 +158,7 @@ func recordingLoaderReadsCanonicalTranscriptSchema() throws {
     )
     try document.write(to: root, title: "Test meeting")
     try Data("My meeting".utf8).write(to: root.appendingPathComponent("title.txt"))
+    try RecordingLibrary.saveNotes("- Follow up with Marco", to: root)
 
     let recording = try #require(RecordingItem.load(from: root))
     #expect(recording.title == "My meeting")
@@ -164,6 +166,7 @@ func recordingLoaderReadsCanonicalTranscriptSchema() throws {
     #expect(recording.transcript?.segments.first?.speaker == "me")
     #expect(recording.transcript?.languageCode == "it")
     #expect(recording.transcript?.diarization?.speakerCount == 2)
+    #expect(recording.notes == "- Follow up with Marco")
 }
 
 @Test

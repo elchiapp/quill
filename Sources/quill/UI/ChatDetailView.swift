@@ -60,6 +60,13 @@ struct ChatDetailView: View {
                         }
                     }
                 }
+
+                Divider()
+                Button(role: .destructive) {
+                    model.requestDeleteThread(thread)
+                } label: {
+                    Label("Delete Conversation", systemImage: "trash")
+                }
             } label: {
                 Label(scopeLabel, systemImage: "scope")
             }

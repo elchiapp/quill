@@ -44,6 +44,14 @@ This file is the product and engineering backlog. Keep it current as work lands.
 - [x] Show model download, in-memory loading, ready, and failure states.
 - [x] Validate, package, install, and push the hardware-aware update.
 
+## Desktop interaction polish
+
+- [x] Keep conversation selection visibly active while the composer has focus.
+- [x] Add confirmed deletion for conversations and Trash-based deletion for
+  recordings.
+- [x] Pulse the menu-bar feather subtly while a recording is active.
+- [x] Add crash-safe, iCloud-synced live notes while recording.
+
 ## Product backlog
 
 - [ ] Let users rename detected speakers and remember voice profiles across

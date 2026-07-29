@@ -37,6 +37,11 @@ virtual device, no kernel extension) on an Apple-silicon Mac.
    Numbered source cards beneath an answer open the cited recording at the
    matching transcript timestamp.
 
+While recording, the main window shows a live notes editor above the current
+detail view. Notes autosave into the recording's `notes.md` in iCloud Drive,
+so they survive a crash and remain visible with the finished recording. The
+menu-bar feather turns red and pulses gently until recording stops.
+
 Each session lands in
 `iCloud Drive/Quill/Recordings/<yyyy.MM.dd-HHmm>/` by default:
 
@@ -47,6 +52,7 @@ Each session lands in
 | `meta.json` | start/end timestamps, duration, per-track start offsets |
 | `transcript.json` | canonical transcript — engine provenance + timed, speaker-tagged segments |
 | `transcript.md` | the same transcript rendered for reading |
+| `notes.md` | your autosaved notes, available while the recording is still running |
 | `transcribe.log` | transcription progress/errors for this session |
 
 Two tracks on purpose: speech models do better on clean single-source audio,

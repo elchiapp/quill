@@ -1,4 +1,5 @@
 import AppKit
+import QuartzCore
 
 /// Status bar item in the top-right of the menu bar. Shows recording state at
 /// a glance and provides the only persistent control surface for the daemon
@@ -9,6 +10,8 @@ final class MenuBarController {
     private let stateLabel: NSMenuItem
     private let transcriptionLabel: NSMenuItem
     private let toggleItem: NSMenuItem
+    private var recordingPulseTimer: Timer?
+    private var pulseDimmed = false
 
     var onShow: (() -> Void)?
     var onToggle: (() -> Void)?
@@ -85,6 +88,7 @@ final class MenuBarController {
         stateLabel.title = recording ? "● recording · \(elapsed ?? "0:00")" : "idle"
         toggleItem.title = recording ? "Stop recording" : "Start recording"
         statusItem.button?.contentTintColor = recording ? .systemRed : nil
+        recording ? startRecordingPulse() : stopRecordingPulse()
     }
 
     /// Show transcription progress/failure as a second status line in the
@@ -115,6 +119,32 @@ final class MenuBarController {
         // Menu-bar status icons are nominally 18pt tall; size the SVG to match.
         image.size = NSSize(width: 16, height: 16)
         return image
+    }
+
+    private func startRecordingPulse() {
+        guard recordingPulseTimer == nil else { return }
+        pulseDimmed = false
+
+        let timer = Timer(timeInterval: 0.8, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, let button = self.statusItem.button else { return }
+                self.pulseDimmed.toggle()
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = 0.38
+                    context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                    button.animator().alphaValue = self.pulseDimmed ? 0.5 : 1
+                }
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        recordingPulseTimer = timer
+    }
+
+    private func stopRecordingPulse() {
+        recordingPulseTimer?.invalidate()
+        recordingPulseTimer = nil
+        pulseDimmed = false
+        statusItem.button?.alphaValue = 1
     }
 
     @objc private func showClicked() { onShow?() }
