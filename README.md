@@ -26,6 +26,36 @@ is required.
 **Requires:** macOS 15+ (Core Audio process taps for system audio — no
 virtual device, no kernel extension) on an Apple-silicon Mac.
 
+## iPhone and Apple Watch
+
+The native iPhone and Apple Watch apps live in
+`Mobile/DropsiftMobile.xcodeproj`. Open that project in Xcode, select your
+Apple Development team if it is different from the configured team, choose
+your paired iPhone, and press Run. The companion Watch app is embedded in the
+iPhone app and can also be installed from the Watch app on iPhone.
+
+On first launch, tap **Choose iCloud folder** and select the existing
+`iCloud Drive/Dropsift` folder (or the legacy `Quill` folder). The iPhone then
+reads and writes the exact same `Items/` and `Recordings/` folders as the Mac.
+Any captures made before connecting are copied into the selected library.
+
+The Watch app is deliberately one tap: record, stop, and the AAC voice message
+is queued to the paired iPhone using background Watch Connectivity. The phone
+adopts it into the shared recording schema, attempts on-device transcription,
+and leaves it for the Mac's multilingual Parakeet queue if Apple Speech is
+unavailable. Watch transfers survive either app being temporarily offline.
+
+The iPhone app includes the same Capture, Timeline, and Ask flow. It imports
+notes, documents, images with local OCR, existing audio, and phone voice
+messages; filters and previews the shared timeline; and searches everything.
+On iOS 26 with Apple Intelligence available, answers are generated locally
+with Foundation Models. Other devices get an extractive local answer with the
+same source cards. Transcript cards jump to and highlight the cited timestamp;
+PDF cards open the cited page.
+
+See [`Mobile/README.md`](Mobile/README.md) for build, signing, device-test, and
+TestFlight/archive instructions.
+
 ## How to use
 
 1. Open `Dropsift.app` on **Capture**. The uncluttered capture canvas provides

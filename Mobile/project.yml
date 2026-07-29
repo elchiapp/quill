@@ -1,0 +1,91 @@
+name: DropsiftMobile
+options:
+  bundleIdPrefix: com.elchiapp
+  deploymentTarget:
+    iOS: "18.0"
+    watchOS: "11.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+  defaultConfig: Debug
+settings:
+  base:
+    DEVELOPMENT_TEAM: S4CT94ZKS2
+    SWIFT_VERSION: "6.0"
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    CURRENT_PROJECT_VERSION: 1
+    MARKETING_VERSION: 1.0
+packages:
+  DropsiftShared:
+    path: ../Shared
+targets:
+  DropsiftMobile:
+    type: application
+    platform: iOS
+    info:
+      path: iOS/Info.plist
+      properties:
+        CFBundleDisplayName: Dropsift
+        LSSupportsOpeningDocumentsInPlace: true
+        NSMicrophoneUsageDescription: Dropsift records voice messages you choose to capture.
+        NSPhotoLibraryUsageDescription: Dropsift imports images you select into your knowledge library.
+        NSSpeechRecognitionUsageDescription: Dropsift transcribes your voice messages on this device.
+        UIBackgroundModes:
+          - audio
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+    sources:
+      - path: iOS
+      - path: Assets/MobileAssets.xcassets
+    dependencies:
+      - package: DropsiftShared
+        product: DropsiftShared
+      - target: DropsiftWatch
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.elchiapp.dropsift.mobile
+        PRODUCT_NAME: Dropsift
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        SUPPORTS_MACCATALYST: NO
+        TARGETED_DEVICE_FAMILY: "1"
+  DropsiftWatch:
+    type: application
+    platform: watchOS
+    info:
+      path: Watch/Info.plist
+      properties:
+        CFBundleDisplayName: Dropsift
+        NSMicrophoneUsageDescription: Dropsift records voice messages you choose to capture.
+        UIBackgroundModes:
+          - audio
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+        WKCompanionAppBundleIdentifier: com.elchiapp.dropsift.mobile
+    sources:
+      - path: Watch
+      - path: Assets/WatchAssets.xcassets
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.elchiapp.dropsift.mobile.watchkitapp
+        PRODUCT_NAME: Dropsift Watch
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        SKIP_INSTALL: YES
+schemes:
+  DropsiftMobile:
+    build:
+      targets:
+        DropsiftMobile: all
+        DropsiftWatch: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+  DropsiftWatch:
+    build:
+      targets:
+        DropsiftWatch: all
+    run:
+      config: Debug

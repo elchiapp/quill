@@ -81,6 +81,25 @@ This file is the product and engineering backlog. Keep it current as work lands.
 - [x] Detect likely meetings locally and ask through an actionable
   notification before recording.
 
+## iPhone and Apple Watch
+
+- [x] Add a native iPhone Capture, Timeline, preview/edit, deletion, and Ask
+  experience.
+- [x] Reuse the Mac's visible iCloud Drive library through a persistent
+  user-granted folder bookmark.
+- [x] Add one-tap phone voice messages and on-device Apple Speech
+  transcription with automatic Mac/Parakeet fallback.
+- [x] Add a native Watch voice recorder with durable background transfer to
+  the paired iPhone.
+- [x] Adopt Watch audio into the existing desktop recording schema and refresh
+  the Mac library/transcription queue automatically.
+- [x] Preserve source cards and deep-link phone answers to transcript
+  timestamps and PDF pages.
+- [x] Add shared-schema regression tests plus physical-device build targets.
+- [ ] Run the paired-device delivery checklist on the release iPhone and Apple
+  Watch before the first TestFlight upload. Simulator runtimes do not exercise
+  Watch Connectivity file transfers.
+
 ## Product backlog
 
 - [ ] Migrate recordings into the same on-disk first-class item schema now

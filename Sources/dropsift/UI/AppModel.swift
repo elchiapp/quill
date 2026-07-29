@@ -130,6 +130,7 @@ final class AppModel: ObservableObject {
     private var recordingStartedAt: Date?
     private var notesSaveTask: Task<Void, Never>?
     private var knowledgeSaveTasks: [UUID: Task<Void, Never>] = [:]
+    private var libraryRefreshTask: Task<Void, Never>?
 
     private static let selectedModelKey = "dropsift.builtInAI.selectedModel"
     private static let recommendationKey = "dropsift.builtInAI.recommendationHandled"
@@ -298,6 +299,17 @@ final class AppModel: ObservableObject {
                 }
             }
         }
+        if libraryRefreshTask == nil {
+            libraryRefreshTask = Task { [weak self, transcription, root] in
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(8))
+                    guard let self, !Task.isCancelled else { return }
+                    await transcription.resumePending(root: root)
+                    self.reloadRecordings()
+                    self.reloadKnowledge()
+                }
+            }
+        }
     }
 
     func shutdown() {
@@ -305,6 +317,8 @@ final class AppModel: ObservableObject {
             stopRecording()
         }
         Task { [meetingDetector] in await meetingDetector.stop() }
+        libraryRefreshTask?.cancel()
+        libraryRefreshTask = nil
     }
 
     func toggleRecording() {

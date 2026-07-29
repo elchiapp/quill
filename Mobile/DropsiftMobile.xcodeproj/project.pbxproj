@@ -1,0 +1,551 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		02546636D21FD5483F8EB252 /* MobileAppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06A4824FE4BCDCF070DC6BB4 /* MobileAppModel.swift */; };
+		032E4101A738AE7DC24622E0 /* WatchAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FF3FB1AC1556CBA23169769E /* WatchAssets.xcassets */; };
+		061C8D0E521F3A4998285FAA /* VoiceRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74C8B15B180C1733DD98A2A3 /* VoiceRecorder.swift */; };
+		0C069C28D0183C7AA6F999DD /* MobileAskView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEAA175C2EE4D7B95AF9FA9C /* MobileAskView.swift */; };
+		0C0FB86358B55E92D1C39611 /* WatchPhoneBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 166B851846212B78B402B1E5 /* WatchPhoneBridge.swift */; };
+		1BB4DDA7F04870FBC858F59A /* MobileKnowledgeExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8254D9D384CB40203E4B9CFA /* MobileKnowledgeExtractor.swift */; };
+		277279551A70C73BF3700748 /* MobileLibraryLocator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9878483958FDF497873FC1C6 /* MobileLibraryLocator.swift */; };
+		431C0ADBF5AF80E59D008624 /* MobileAnswerService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51116C66796BCF21A8E68050 /* MobileAnswerService.swift */; };
+		4E5A4E67556EB50F9FE9B08B /* DropsiftWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1DB96F9353A69E96EDFF9B5 /* DropsiftWatchApp.swift */; };
+		65023D9C5CA7F1FFE84F08E2 /* DropsiftWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 48C4ACBB1476ED1A2EFE4D02 /* DropsiftWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		72EF6FFDF8F0A45C8892579B /* MobileAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AD5C0EB98CB0459FCEC31E6A /* MobileAssets.xcassets */; };
+		887E463A622AA0EEC1AF55D1 /* DropsiftShared in Frameworks */ = {isa = PBXBuildFile; productRef = AFE74BFD80735036C7F37703 /* DropsiftShared */; };
+		899129CD94403F09E7FCF061 /* MobileTimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 043B4E5FC47977A5FE7F87BC /* MobileTimelineView.swift */; };
+		A6545AE2492BE5137E2F9FBE /* DropsiftMobileApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09B6825A0A2AE36A42D792F0 /* DropsiftMobileApp.swift */; };
+		BF67C6C67328D70E19A6C9DB /* WatchCaptureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 780BC3C7FDFA7E39BFD5EF32 /* WatchCaptureView.swift */; };
+		C40E57A5204E06580CC2D8F5 /* WatchVoiceRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51D11D50BD257F871DF79FAD /* WatchVoiceRecorder.swift */; };
+		D29D65A5DCE2B868596E8804 /* MobileRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEAE561439C22776E4937DC4 /* MobileRootView.swift */; };
+		E068C3D658638A3D5B80EE31 /* MobileCaptureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A603868526502532B50B1C9 /* MobileCaptureView.swift */; };
+		E14C18FFD94093995162E95D /* PhoneWatchBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CE6C79170C18EDCED785668 /* PhoneWatchBridge.swift */; };
+		E3D8E41025EA87304D5AC0E5 /* MobileModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61E8183CE1D9EAA348FE0990 /* MobileModels.swift */; };
+		F34CFCAA3A863E82E51D3426 /* MobileTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95879353C604EC2EE848B73A /* MobileTranscriber.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		4D3C13F69B1F1FE8C8F846CA /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F20DB38B0CE8A1148486F816 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 870A6788E6B9B37EA5B0D7B1;
+			remoteInfo = DropsiftWatch;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		A5803D88A3448604E12996C7 /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				65023D9C5CA7F1FFE84F08E2 /* DropsiftWatch.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		043B4E5FC47977A5FE7F87BC /* MobileTimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileTimelineView.swift; sourceTree = "<group>"; };
+		06A4824FE4BCDCF070DC6BB4 /* MobileAppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileAppModel.swift; sourceTree = "<group>"; };
+		09B6825A0A2AE36A42D792F0 /* DropsiftMobileApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DropsiftMobileApp.swift; sourceTree = "<group>"; };
+		166B851846212B78B402B1E5 /* WatchPhoneBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchPhoneBridge.swift; sourceTree = "<group>"; };
+		2A603868526502532B50B1C9 /* MobileCaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileCaptureView.swift; sourceTree = "<group>"; };
+		48C4ACBB1476ED1A2EFE4D02 /* DropsiftWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DropsiftWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		51116C66796BCF21A8E68050 /* MobileAnswerService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileAnswerService.swift; sourceTree = "<group>"; };
+		51D11D50BD257F871DF79FAD /* WatchVoiceRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchVoiceRecorder.swift; sourceTree = "<group>"; };
+		58FA61DAC6B36125D19217CA /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		5D739693EFAB6F7BBDF0ED7B /* DropsiftMobile.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = DropsiftMobile.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		61E8183CE1D9EAA348FE0990 /* MobileModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileModels.swift; sourceTree = "<group>"; };
+		6CE6C79170C18EDCED785668 /* PhoneWatchBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneWatchBridge.swift; sourceTree = "<group>"; };
+		74C8B15B180C1733DD98A2A3 /* VoiceRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceRecorder.swift; sourceTree = "<group>"; };
+		780BC3C7FDFA7E39BFD5EF32 /* WatchCaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchCaptureView.swift; sourceTree = "<group>"; };
+		8254D9D384CB40203E4B9CFA /* MobileKnowledgeExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileKnowledgeExtractor.swift; sourceTree = "<group>"; };
+		855169C3F97E836007409A69 /* Shared */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Shared; path = ../Shared; sourceTree = SOURCE_ROOT; };
+		9229C091CCC17E35E4DEBCED /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		95879353C604EC2EE848B73A /* MobileTranscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileTranscriber.swift; sourceTree = "<group>"; };
+		9878483958FDF497873FC1C6 /* MobileLibraryLocator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileLibraryLocator.swift; sourceTree = "<group>"; };
+		AD5C0EB98CB0459FCEC31E6A /* MobileAssets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = MobileAssets.xcassets; sourceTree = "<group>"; };
+		BEAE561439C22776E4937DC4 /* MobileRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileRootView.swift; sourceTree = "<group>"; };
+		CEAA175C2EE4D7B95AF9FA9C /* MobileAskView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileAskView.swift; sourceTree = "<group>"; };
+		E1DB96F9353A69E96EDFF9B5 /* DropsiftWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DropsiftWatchApp.swift; sourceTree = "<group>"; };
+		FF3FB1AC1556CBA23169769E /* WatchAssets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = WatchAssets.xcassets; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		E613A142C8147D60679B1DC3 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				887E463A622AA0EEC1AF55D1 /* DropsiftShared in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		3091494C2F20143B3FD612AA /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				09B6825A0A2AE36A42D792F0 /* DropsiftMobileApp.swift */,
+				9229C091CCC17E35E4DEBCED /* Info.plist */,
+				51116C66796BCF21A8E68050 /* MobileAnswerService.swift */,
+				06A4824FE4BCDCF070DC6BB4 /* MobileAppModel.swift */,
+				CEAA175C2EE4D7B95AF9FA9C /* MobileAskView.swift */,
+				2A603868526502532B50B1C9 /* MobileCaptureView.swift */,
+				8254D9D384CB40203E4B9CFA /* MobileKnowledgeExtractor.swift */,
+				9878483958FDF497873FC1C6 /* MobileLibraryLocator.swift */,
+				61E8183CE1D9EAA348FE0990 /* MobileModels.swift */,
+				BEAE561439C22776E4937DC4 /* MobileRootView.swift */,
+				043B4E5FC47977A5FE7F87BC /* MobileTimelineView.swift */,
+				95879353C604EC2EE848B73A /* MobileTranscriber.swift */,
+				6CE6C79170C18EDCED785668 /* PhoneWatchBridge.swift */,
+				74C8B15B180C1733DD98A2A3 /* VoiceRecorder.swift */,
+			);
+			path = iOS;
+			sourceTree = "<group>";
+		};
+		4A6F9143CAB54676956ADBC9 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				5D739693EFAB6F7BBDF0ED7B /* DropsiftMobile.app */,
+				48C4ACBB1476ED1A2EFE4D02 /* DropsiftWatch.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		5F1DAA65D03BFC591542C68B = {
+			isa = PBXGroup;
+			children = (
+				97EB090E3AD067AA5313C951 /* Assets */,
+				3091494C2F20143B3FD612AA /* iOS */,
+				C69DECBCC7301A7689D2DC44 /* Packages */,
+				6CAF34C919E2979C56BB9B5E /* Watch */,
+				4A6F9143CAB54676956ADBC9 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		6CAF34C919E2979C56BB9B5E /* Watch */ = {
+			isa = PBXGroup;
+			children = (
+				E1DB96F9353A69E96EDFF9B5 /* DropsiftWatchApp.swift */,
+				58FA61DAC6B36125D19217CA /* Info.plist */,
+				780BC3C7FDFA7E39BFD5EF32 /* WatchCaptureView.swift */,
+				166B851846212B78B402B1E5 /* WatchPhoneBridge.swift */,
+				51D11D50BD257F871DF79FAD /* WatchVoiceRecorder.swift */,
+			);
+			path = Watch;
+			sourceTree = "<group>";
+		};
+		97EB090E3AD067AA5313C951 /* Assets */ = {
+			isa = PBXGroup;
+			children = (
+				AD5C0EB98CB0459FCEC31E6A /* MobileAssets.xcassets */,
+				FF3FB1AC1556CBA23169769E /* WatchAssets.xcassets */,
+			);
+			path = Assets;
+			sourceTree = "<group>";
+		};
+		C69DECBCC7301A7689D2DC44 /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				855169C3F97E836007409A69 /* Shared */,
+			);
+			name = Packages;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		870A6788E6B9B37EA5B0D7B1 /* DropsiftWatch */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 822231AB1C3FF64B066ADA5A /* Build configuration list for PBXNativeTarget "DropsiftWatch" */;
+			buildPhases = (
+				38C113F6BA8469B432B1E740 /* Sources */,
+				A76265FEF8E864D167762AB0 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = DropsiftWatch;
+			packageProductDependencies = (
+			);
+			productName = DropsiftWatch;
+			productReference = 48C4ACBB1476ED1A2EFE4D02 /* DropsiftWatch.app */;
+			productType = "com.apple.product-type.application";
+		};
+		A50ACA76C760AEB4969B3BE1 /* DropsiftMobile */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1BEFFDA89B2780A90B0033B2 /* Build configuration list for PBXNativeTarget "DropsiftMobile" */;
+			buildPhases = (
+				1AC566A2E2D3520F102E9F23 /* Sources */,
+				D02248264F14627DBE69662E /* Resources */,
+				E613A142C8147D60679B1DC3 /* Frameworks */,
+				A5803D88A3448604E12996C7 /* Embed Watch Content */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				F9941D3D1D66D28383EBDCEC /* PBXTargetDependency */,
+			);
+			name = DropsiftMobile;
+			packageProductDependencies = (
+				AFE74BFD80735036C7F37703 /* DropsiftShared */,
+			);
+			productName = DropsiftMobile;
+			productReference = 5D739693EFAB6F7BBDF0ED7B /* DropsiftMobile.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		F20DB38B0CE8A1148486F816 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					870A6788E6B9B37EA5B0D7B1 = {
+						DevelopmentTeam = S4CT94ZKS2;
+					};
+					A50ACA76C760AEB4969B3BE1 = {
+						DevelopmentTeam = S4CT94ZKS2;
+					};
+				};
+			};
+			buildConfigurationList = 8F505680F1161926E241CAD1 /* Build configuration list for PBXProject "DropsiftMobile" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 5F1DAA65D03BFC591542C68B;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				C03710CDF39EE8F576050A83 /* XCLocalSwiftPackageReference "../Shared" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 4A6F9143CAB54676956ADBC9 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A50ACA76C760AEB4969B3BE1 /* DropsiftMobile */,
+				870A6788E6B9B37EA5B0D7B1 /* DropsiftWatch */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A76265FEF8E864D167762AB0 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				032E4101A738AE7DC24622E0 /* WatchAssets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D02248264F14627DBE69662E /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				72EF6FFDF8F0A45C8892579B /* MobileAssets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		1AC566A2E2D3520F102E9F23 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A6545AE2492BE5137E2F9FBE /* DropsiftMobileApp.swift in Sources */,
+				431C0ADBF5AF80E59D008624 /* MobileAnswerService.swift in Sources */,
+				02546636D21FD5483F8EB252 /* MobileAppModel.swift in Sources */,
+				0C069C28D0183C7AA6F999DD /* MobileAskView.swift in Sources */,
+				E068C3D658638A3D5B80EE31 /* MobileCaptureView.swift in Sources */,
+				1BB4DDA7F04870FBC858F59A /* MobileKnowledgeExtractor.swift in Sources */,
+				277279551A70C73BF3700748 /* MobileLibraryLocator.swift in Sources */,
+				E3D8E41025EA87304D5AC0E5 /* MobileModels.swift in Sources */,
+				D29D65A5DCE2B868596E8804 /* MobileRootView.swift in Sources */,
+				899129CD94403F09E7FCF061 /* MobileTimelineView.swift in Sources */,
+				F34CFCAA3A863E82E51D3426 /* MobileTranscriber.swift in Sources */,
+				E14C18FFD94093995162E95D /* PhoneWatchBridge.swift in Sources */,
+				061C8D0E521F3A4998285FAA /* VoiceRecorder.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		38C113F6BA8469B432B1E740 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4E5A4E67556EB50F9FE9B08B /* DropsiftWatchApp.swift in Sources */,
+				BF67C6C67328D70E19A6C9DB /* WatchCaptureView.swift in Sources */,
+				0C0FB86358B55E92D1C39611 /* WatchPhoneBridge.swift in Sources */,
+				C40E57A5204E06580CC2D8F5 /* WatchVoiceRecorder.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		F9941D3D1D66D28383EBDCEC /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 870A6788E6B9B37EA5B0D7B1 /* DropsiftWatch */;
+			targetProxy = 4D3C13F69B1F1FE8C8F846CA /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		2173B05805362BD3A136FA8C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = S4CT94ZKS2;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+				WATCHOS_DEPLOYMENT_TARGET = 11.0;
+			};
+			name = Debug;
+		};
+		5362047246CF5AC650E6366C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = iOS/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.elchiapp.dropsift.mobile;
+				PRODUCT_NAME = Dropsift;
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		57CBBE752AE4870732BF1D62 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				INFOPLIST_FILE = Watch/Info.plist;
+				PRODUCT_BUNDLE_IDENTIFIER = com.elchiapp.dropsift.mobile.watchkitapp;
+				PRODUCT_NAME = "Dropsift Watch";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = 4;
+			};
+			name = Release;
+		};
+		5CA8CEDDB9B4108B946AE065 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				INFOPLIST_FILE = Watch/Info.plist;
+				PRODUCT_BUNDLE_IDENTIFIER = com.elchiapp.dropsift.mobile.watchkitapp;
+				PRODUCT_NAME = "Dropsift Watch";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = 4;
+			};
+			name = Debug;
+		};
+		611B52B5D4C57F6844FC4907 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = iOS/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.elchiapp.dropsift.mobile;
+				PRODUCT_NAME = Dropsift;
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		61D4145EF85FEC15E7D55BD9 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = S4CT94ZKS2;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 6.0;
+				WATCHOS_DEPLOYMENT_TARGET = 11.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		1BEFFDA89B2780A90B0033B2 /* Build configuration list for PBXNativeTarget "DropsiftMobile" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				611B52B5D4C57F6844FC4907 /* Debug */,
+				5362047246CF5AC650E6366C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		822231AB1C3FF64B066ADA5A /* Build configuration list for PBXNativeTarget "DropsiftWatch" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5CA8CEDDB9B4108B946AE065 /* Debug */,
+				57CBBE752AE4870732BF1D62 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		8F505680F1161926E241CAD1 /* Build configuration list for PBXProject "DropsiftMobile" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				2173B05805362BD3A136FA8C /* Debug */,
+				61D4145EF85FEC15E7D55BD9 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		C03710CDF39EE8F576050A83 /* XCLocalSwiftPackageReference "../Shared" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Shared;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		AFE74BFD80735036C7F37703 /* DropsiftShared */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = DropsiftShared;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = F20DB38B0CE8A1148486F816 /* Project object */;
+}

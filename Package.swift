@@ -3,7 +3,15 @@ import PackageDescription
 
 let package = Package(
     name: "dropsift",
-    platforms: [.macOS(.v15)],
+    platforms: [
+        .macOS(.v15),
+        .iOS(.v18),
+        .watchOS(.v11),
+    ],
+    products: [
+        .executable(name: "dropsift", targets: ["dropsift"]),
+        .library(name: "DropsiftShared", targets: ["DropsiftShared"]),
+    ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.3.0"),
         .package(url: "https://github.com/FluidInference/FluidAudio.git", from: "0.7.0"),
@@ -19,6 +27,10 @@ let package = Package(
         .package(url: "https://github.com/huggingface/swift-transformers.git", from: "1.3.0"),
     ],
     targets: [
+        .target(
+            name: "DropsiftShared",
+            path: "Shared/DropsiftShared"
+        ),
         .executableTarget(
             name: "dropsift",
             dependencies: [
@@ -47,6 +59,11 @@ let package = Package(
         .testTarget(
             name: "dropsiftTests",
             dependencies: ["dropsift"]
+        ),
+        .testTarget(
+            name: "DropsiftSharedTests",
+            dependencies: ["DropsiftShared"],
+            path: "Shared/DropsiftSharedTests"
         ),
     ]
 )
