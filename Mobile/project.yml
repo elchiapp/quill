@@ -9,7 +9,8 @@ options:
   defaultConfig: Debug
 settings:
   base:
-    DEVELOPMENT_TEAM: S4CT94ZKS2
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: MLH5T4W793
     SWIFT_VERSION: "6.0"
     ENABLE_USER_SCRIPT_SANDBOXING: YES
     CURRENT_PROJECT_VERSION: 1
@@ -25,6 +26,7 @@ targets:
       path: iOS/Info.plist
       properties:
         CFBundleDisplayName: Dropsift
+        ITSAppUsesNonExemptEncryption: false
         LSSupportsOpeningDocumentsInPlace: true
         NSMicrophoneUsageDescription: Dropsift records voice messages you choose to capture.
         NSPhotoLibraryUsageDescription: Dropsift imports images you select into your knowledge library.
@@ -56,6 +58,7 @@ targets:
       path: Watch/Info.plist
       properties:
         CFBundleDisplayName: Dropsift
+        ITSAppUsesNonExemptEncryption: false
         NSMicrophoneUsageDescription: Dropsift records voice messages you choose to capture.
         UIBackgroundModes:
           - audio

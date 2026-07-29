@@ -56,6 +56,8 @@ This file is the product and engineering backlog. Keep it current as work lands.
 
 ## Desktop interaction polish
 
+- [x] Restore the standard macOS application menu, including Settings and
+  Cmd+Q termination.
 - [x] Keep conversation selection visibly active while the composer has focus.
 - [x] Add confirmed deletion for conversations and Trash-based deletion for
   recordings.
@@ -96,6 +98,11 @@ This file is the product and engineering backlog. Keep it current as work lands.
 - [x] Preserve source cards and deep-link phone answers to transcript
   timestamps and PDF pages.
 - [x] Add shared-schema regression tests plus physical-device build targets.
+- [x] Pin mobile signing to the intended personal Apple team and add the
+  App Store export-compliance declaration.
+- [ ] Sign into the intended personal Apple Account in Xcode, create the
+  matching App Store Connect record, archive, and upload the first TestFlight
+  build.
 - [ ] Run the paired-device delivery checklist on the release iPhone and Apple
   Watch before the first TestFlight upload. Simulator runtimes do not exercise
   Watch Connectivity file transfers.

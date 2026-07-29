@@ -12,6 +12,7 @@
 		061C8D0E521F3A4998285FAA /* VoiceRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74C8B15B180C1733DD98A2A3 /* VoiceRecorder.swift */; };
 		0C069C28D0183C7AA6F999DD /* MobileAskView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEAA175C2EE4D7B95AF9FA9C /* MobileAskView.swift */; };
 		0C0FB86358B55E92D1C39611 /* WatchPhoneBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 166B851846212B78B402B1E5 /* WatchPhoneBridge.swift */; };
+		191765A95811C40876C34740 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A68D3AC1D731AB7DE0BB5A1F /* PrivacyInfo.xcprivacy */; };
 		1BB4DDA7F04870FBC858F59A /* MobileKnowledgeExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8254D9D384CB40203E4B9CFA /* MobileKnowledgeExtractor.swift */; };
 		277279551A70C73BF3700748 /* MobileLibraryLocator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9878483958FDF497873FC1C6 /* MobileLibraryLocator.swift */; };
 		431C0ADBF5AF80E59D008624 /* MobileAnswerService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51116C66796BCF21A8E68050 /* MobileAnswerService.swift */; };
@@ -74,6 +75,7 @@
 		9229C091CCC17E35E4DEBCED /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		95879353C604EC2EE848B73A /* MobileTranscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileTranscriber.swift; sourceTree = "<group>"; };
 		9878483958FDF497873FC1C6 /* MobileLibraryLocator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileLibraryLocator.swift; sourceTree = "<group>"; };
+		A68D3AC1D731AB7DE0BB5A1F /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		AD5C0EB98CB0459FCEC31E6A /* MobileAssets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = MobileAssets.xcassets; sourceTree = "<group>"; };
 		BEAE561439C22776E4937DC4 /* MobileRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileRootView.swift; sourceTree = "<group>"; };
 		CEAA175C2EE4D7B95AF9FA9C /* MobileAskView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileAskView.swift; sourceTree = "<group>"; };
@@ -109,6 +111,7 @@
 				043B4E5FC47977A5FE7F87BC /* MobileTimelineView.swift */,
 				95879353C604EC2EE848B73A /* MobileTranscriber.swift */,
 				6CE6C79170C18EDCED785668 /* PhoneWatchBridge.swift */,
+				A68D3AC1D731AB7DE0BB5A1F /* PrivacyInfo.xcprivacy */,
 				74C8B15B180C1733DD98A2A3 /* VoiceRecorder.swift */,
 			);
 			path = iOS;
@@ -216,10 +219,12 @@
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
 					870A6788E6B9B37EA5B0D7B1 = {
-						DevelopmentTeam = S4CT94ZKS2;
+						DevelopmentTeam = MLH5T4W793;
+						ProvisioningStyle = Automatic;
 					};
 					A50ACA76C760AEB4969B3BE1 = {
-						DevelopmentTeam = S4CT94ZKS2;
+						DevelopmentTeam = MLH5T4W793;
+						ProvisioningStyle = Automatic;
 					};
 				};
 			};
@@ -260,6 +265,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				72EF6FFDF8F0A45C8892579B /* MobileAssets.xcassets in Resources */,
+				191765A95811C40876C34740 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -341,10 +347,11 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = S4CT94ZKS2;
+				DEVELOPMENT_TEAM = MLH5T4W793;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -474,10 +481,11 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = S4CT94ZKS2;
+				DEVELOPMENT_TEAM = MLH5T4W793;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;

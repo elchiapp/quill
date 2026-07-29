@@ -38,10 +38,22 @@ With current iOS and watchOS simulator runtimes installed:
 scripts/build-mobile.sh
 ```
 
-For TestFlight or App Store distribution, choose **Any iOS Device
-(arm64)** and use **Product → Archive** in Xcode. Apple requires a valid
-development/distribution certificate and provisioning profiles; an unsigned
-IPA cannot be installed on a normal iPhone or Apple Watch.
+For TestFlight or App Store distribution:
+
+1. In **Xcode → Settings → Apple Accounts**, sign in with the Apple Account
+   that owns the intended App Store Connect team.
+2. Confirm **Signing & Capabilities → Team** selects that same team for both
+   app targets.
+3. Choose **Any iOS Device (arm64)** and use **Product → Archive**.
+4. In Organizer, choose **Distribute App → App Store Connect → Upload**.
+
+Apple requires a valid paid Developer Program team, a matching App Store
+Connect app record, and valid signing. An unsigned IPA cannot be installed on
+a normal iPhone or Apple Watch. The app declares that it does not use
+non-exempt encryption, so App Store Connect should not repeatedly ask the
+standard export-compliance question unless encryption is added later. Its
+privacy manifest declares app-local preferences and no tracking or collected
+data; update that declaration if the app's data practices change.
 
 ## Connect the shared library
 

@@ -106,6 +106,8 @@ final class AppController: NSObject, NSApplicationDelegate {
         model.onTranscriptionStateChange = { [weak self] status in
             self?.menuBar.updateTranscription(status)
         }
+
+        installMainMenu()
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -141,5 +143,190 @@ final class AppController: NSObject, NSApplicationDelegate {
     func shutdown() {
         model.shutdown()
         NSApp.terminate(nil)
+    }
+
+    @objc private func showSettingsFromMenu(_ sender: Any?) {
+        showWindow()
+        model.showingSettings = true
+    }
+
+    @objc private func quitFromMenu(_ sender: Any?) {
+        shutdown()
+    }
+
+    private func installMainMenu() {
+        let mainMenu = NSMenu(title: "Main Menu")
+
+        let applicationMenu = NSMenu(title: "Dropsift")
+        let applicationMenuItem = NSMenuItem(title: "Dropsift", action: nil, keyEquivalent: "")
+        applicationMenuItem.submenu = applicationMenu
+        mainMenu.addItem(applicationMenuItem)
+
+        let about = NSMenuItem(
+            title: "About Dropsift",
+            action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
+            keyEquivalent: ""
+        )
+        about.target = NSApp
+        applicationMenu.addItem(about)
+        applicationMenu.addItem(.separator())
+
+        let settings = NSMenuItem(
+            title: "Settings…",
+            action: #selector(showSettingsFromMenu(_:)),
+            keyEquivalent: ","
+        )
+        settings.target = self
+        applicationMenu.addItem(settings)
+        applicationMenu.addItem(.separator())
+
+        let servicesMenu = NSMenu(title: "Services")
+        let services = NSMenuItem(title: "Services", action: nil, keyEquivalent: "")
+        services.submenu = servicesMenu
+        applicationMenu.addItem(services)
+        NSApp.servicesMenu = servicesMenu
+        applicationMenu.addItem(.separator())
+
+        let hide = NSMenuItem(
+            title: "Hide Dropsift",
+            action: #selector(NSApplication.hide(_:)),
+            keyEquivalent: "h"
+        )
+        hide.target = NSApp
+        applicationMenu.addItem(hide)
+
+        let hideOthers = NSMenuItem(
+            title: "Hide Others",
+            action: #selector(NSApplication.hideOtherApplications(_:)),
+            keyEquivalent: "h"
+        )
+        hideOthers.keyEquivalentModifierMask = [.command, .option]
+        hideOthers.target = NSApp
+        applicationMenu.addItem(hideOthers)
+
+        let showAll = NSMenuItem(
+            title: "Show All",
+            action: #selector(NSApplication.unhideAllApplications(_:)),
+            keyEquivalent: ""
+        )
+        showAll.target = NSApp
+        applicationMenu.addItem(showAll)
+        applicationMenu.addItem(.separator())
+
+        let quit = NSMenuItem(
+            title: "Quit Dropsift",
+            action: #selector(quitFromMenu(_:)),
+            keyEquivalent: "q"
+        )
+        quit.target = self
+        applicationMenu.addItem(quit)
+
+        let fileMenu = NSMenu(title: "File")
+        let fileMenuItem = NSMenuItem(title: "File", action: nil, keyEquivalent: "")
+        fileMenuItem.submenu = fileMenu
+        mainMenu.addItem(fileMenuItem)
+        fileMenu.addItem(
+            NSMenuItem(
+                title: "Close Window",
+                action: #selector(NSWindow.performClose(_:)),
+                keyEquivalent: "w"
+            )
+        )
+
+        let editMenu = NSMenu(title: "Edit")
+        let editMenuItem = NSMenuItem(title: "Edit", action: nil, keyEquivalent: "")
+        editMenuItem.submenu = editMenu
+        mainMenu.addItem(editMenuItem)
+        editMenu.addItem(
+            NSMenuItem(
+                title: "Undo",
+                action: Selector(("undo:")),
+                keyEquivalent: "z"
+            )
+        )
+        let redo = NSMenuItem(
+            title: "Redo",
+            action: Selector(("redo:")),
+            keyEquivalent: "z"
+        )
+        redo.keyEquivalentModifierMask = [.command, .shift]
+        editMenu.addItem(redo)
+        editMenu.addItem(.separator())
+        editMenu.addItem(
+            NSMenuItem(
+                title: "Cut",
+                action: #selector(NSText.cut(_:)),
+                keyEquivalent: "x"
+            )
+        )
+        editMenu.addItem(
+            NSMenuItem(
+                title: "Copy",
+                action: #selector(NSText.copy(_:)),
+                keyEquivalent: "c"
+            )
+        )
+        editMenu.addItem(
+            NSMenuItem(
+                title: "Paste",
+                action: #selector(NSText.paste(_:)),
+                keyEquivalent: "v"
+            )
+        )
+        editMenu.addItem(
+            NSMenuItem(
+                title: "Select All",
+                action: #selector(NSText.selectAll(_:)),
+                keyEquivalent: "a"
+            )
+        )
+
+        let viewMenu = NSMenu(title: "View")
+        let viewMenuItem = NSMenuItem(title: "View", action: nil, keyEquivalent: "")
+        viewMenuItem.submenu = viewMenu
+        mainMenu.addItem(viewMenuItem)
+        let fullScreen = NSMenuItem(
+            title: "Enter Full Screen",
+            action: #selector(NSWindow.toggleFullScreen(_:)),
+            keyEquivalent: "f"
+        )
+        fullScreen.keyEquivalentModifierMask = [.command, .control]
+        viewMenu.addItem(fullScreen)
+
+        let windowMenu = NSMenu(title: "Window")
+        let windowMenuItem = NSMenuItem(title: "Window", action: nil, keyEquivalent: "")
+        windowMenuItem.submenu = windowMenu
+        mainMenu.addItem(windowMenuItem)
+        windowMenu.addItem(
+            NSMenuItem(
+                title: "Minimize",
+                action: #selector(NSWindow.performMiniaturize(_:)),
+                keyEquivalent: "m"
+            )
+        )
+        windowMenu.addItem(
+            NSMenuItem(
+                title: "Zoom",
+                action: #selector(NSWindow.performZoom(_:)),
+                keyEquivalent: ""
+            )
+        )
+        windowMenu.addItem(.separator())
+        let bringAllToFront = NSMenuItem(
+            title: "Bring All to Front",
+            action: #selector(NSApplication.arrangeInFront(_:)),
+            keyEquivalent: ""
+        )
+        bringAllToFront.target = NSApp
+        windowMenu.addItem(bringAllToFront)
+        NSApp.windowsMenu = windowMenu
+
+        let helpMenu = NSMenu(title: "Help")
+        let helpMenuItem = NSMenuItem(title: "Help", action: nil, keyEquivalent: "")
+        helpMenuItem.submenu = helpMenu
+        mainMenu.addItem(helpMenuItem)
+        NSApp.helpMenu = helpMenu
+
+        NSApp.mainMenu = mainMenu
     }
 }
