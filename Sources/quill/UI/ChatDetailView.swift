@@ -4,6 +4,8 @@ struct ChatDetailView: View {
     @ObservedObject var model: AppModel
     let thread: ChatThread
 
+    @FocusState private var isComposerFocused: Bool
+
     var body: some View {
         VStack(spacing: 0) {
             chatHeader
@@ -12,6 +14,12 @@ struct ChatDetailView: View {
             composer
         }
         .background(Color(nsColor: .textBackgroundColor))
+        .task(id: thread.id) {
+            // Let the navigation split view install the new detail hierarchy
+            // before asking AppKit to make the composer first responder.
+            await Task.yield()
+            isComposerFocused = true
+        }
     }
 
     private var chatHeader: some View {
@@ -125,7 +133,7 @@ struct ChatDetailView: View {
                     .foregroundStyle(.red)
             }
 
-            HStack(alignment: .bottom, spacing: 10) {
+            HStack(alignment: .center, spacing: 10) {
                 TextField(
                     "Ask a question about your transcripts…",
                     text: $model.chatDraft,
@@ -133,6 +141,8 @@ struct ChatDetailView: View {
                 )
                 .textFieldStyle(.plain)
                 .lineLimit(1...6)
+                .focused($isComposerFocused)
+                .accessibilityIdentifier("chat-composer")
                 .onSubmit {
                     if !NSEvent.modifierFlags.contains(.shift) {
                         model.sendChatMessage()
@@ -153,7 +163,9 @@ struct ChatDetailView: View {
                         || model.isAnswering
                 )
             }
-            .padding(12)
+            .padding(.leading, 14)
+            .padding(.vertical, 8)
+            .padding(.trailing, 8)
             .background(.background.secondary, in: RoundedRectangle(cornerRadius: 14))
 
             Text("Nothing is sent to an inference service. Answers run inside Quill with \(model.selectedModel).")
