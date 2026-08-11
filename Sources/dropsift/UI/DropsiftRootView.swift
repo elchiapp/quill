@@ -185,13 +185,15 @@ struct DropsiftRootView: View {
             HSplitView {
                 detailContent
                     .frame(minWidth: 520, maxWidth: .infinity, maxHeight: .infinity)
+                    .layoutPriority(1)
 
                 LiveRecordingNotesView(model: model) {
                     withAnimation(.easeInOut(duration: 0.2)) {
                         showingLiveNotesPanel = false
                     }
                 }
-                .frame(minWidth: 340, idealWidth: 400, maxWidth: 520)
+                .frame(minWidth: 330, idealWidth: 370, maxWidth: 420)
+                .layoutPriority(0)
                 .transition(.move(edge: .trailing).combined(with: .opacity))
             }
             .onChange(of: model.isRecording) { _, recording in

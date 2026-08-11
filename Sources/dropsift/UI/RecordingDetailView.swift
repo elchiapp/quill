@@ -23,7 +23,13 @@ struct RecordingDetailView: View {
 
     var body: some View {
         Group {
-            if showingNotesPanel, !isActiveRecording {
+            if RecordingDetailLayoutPolicy.showsSavedNotes(
+                requested: showingNotesPanel,
+                isAnyRecordingActive: model.isRecording
+                    || ProcessInfo.processInfo.environment[
+                        "DROPSIFT_PREVIEW_RECORDING_PANEL"
+                    ] == "1"
+            ) {
                 HSplitView {
                     recordingContent
                         .frame(
@@ -35,8 +41,8 @@ struct RecordingDetailView: View {
                     savedNotes
                         .frame(
                             minWidth: 340,
-                            idealWidth: 400,
-                            maxWidth: 460,
+                            idealWidth: 380,
+                            maxWidth: 420,
                             maxHeight: .infinity
                         )
                 }
@@ -261,7 +267,7 @@ struct RecordingDetailView: View {
 
                     Spacer()
 
-                    if !isActiveRecording {
+                    if !model.isRecording {
                         Button {
                             withAnimation(.easeInOut(duration: 0.2)) {
                                 showingNotesPanel.toggle()
@@ -505,6 +511,15 @@ struct RecordingDetailView: View {
             if rhs == "them" { return false }
             return lhs.localizedStandardCompare(rhs) == .orderedAscending
         }
+    }
+}
+
+enum RecordingDetailLayoutPolicy {
+    static func showsSavedNotes(
+        requested: Bool,
+        isAnyRecordingActive: Bool
+    ) -> Bool {
+        requested && !isAnyRecordingActive
     }
 }
 

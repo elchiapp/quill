@@ -10,6 +10,7 @@ struct TimelineView: View {
                 .frame(maxHeight: .infinity)
             detail
                 .frame(minWidth: 500, maxWidth: .infinity, maxHeight: .infinity)
+                .layoutPriority(1)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: .textBackgroundColor))

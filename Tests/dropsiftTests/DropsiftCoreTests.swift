@@ -236,6 +236,22 @@ func mainWindowExpandsAnUndersizedRestoredFrame() {
 }
 
 @Test
+func liveRecordingNeverShowsTwoCompetingNotesPanels() {
+    #expect(
+        RecordingDetailLayoutPolicy.showsSavedNotes(
+            requested: true,
+            isAnyRecordingActive: false
+        )
+    )
+    #expect(
+        !RecordingDetailLayoutPolicy.showsSavedNotes(
+            requested: true,
+            isAnyRecordingActive: true
+        )
+    )
+}
+
+@Test
 func automaticPresentationGenerationSkipsTheExistingTimelineBaseline() {
     let existing = Set([
         "recording:existing",
