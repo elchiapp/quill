@@ -19,6 +19,67 @@ func generatedTitlesPreferSpecificTopicsOverOpeningFiller() {
 }
 
 @Test
+func localModelPresentationParsesAndCleansStructuredMetadata() throws {
+    let presentation = try #require(
+        ContentPresentationGenerator.parse(
+            """
+            ```json
+            {"title":"Title: Fineco and BKN301 Integration.","description":"  The teams mapped the integration data model. They also agreed on the next technical validation.  "}
+            ```
+            """,
+            sourceRevision: "abc123",
+            model: "Qwen3.5 4B"
+        )
+    )
+
+    #expect(presentation.title == "Fineco and BKN301 Integration")
+    #expect(
+        presentation.description
+            == "The teams mapped the integration data model. They also agreed on the next technical validation."
+    )
+    #expect(presentation.sourceRevision == "abc123")
+    #expect(presentation.model == "Qwen3.5 4B")
+}
+
+@Test
+func sharedTimelinePrefersSyncedDescriptionAndPreservesAITitle() throws {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = SharedLibraryStore(root: root)
+    let content = "Discuss the Fineco and BKN301 integration data model."
+    let note = try store.createNote(content: content)
+    let sourceText = [content, ""].joined(separator: "\n\n")
+    let presentation = ContentPresentation(
+        title: "Fineco and BKN301 Integration",
+        description: "A working session about the shared integration model and its next validation steps.",
+        sourceRevision: ContentPresentationStore.revision(for: sourceText),
+        model: "Qwen3.5 4B"
+    )
+
+    var metadata = note.metadata
+    metadata.title = presentation.title
+    let encoder = JSONEncoder()
+    encoder.dateEncodingStrategy = .iso8601
+    try encoder.encode(metadata).write(
+        to: note.directory.appendingPathComponent("item.json"),
+        options: .atomic
+    )
+    try ContentTitleGenerator.markGenerated(in: note.directory)
+    try ContentPresentationStore.save(presentation, to: note.directory)
+
+    let loaded = try #require(store.loadKnowledgeItems().first)
+    let timeline = SharedTimelineItem.knowledge(loaded)
+    #expect(loaded.title == "Fineco and BKN301 Integration")
+    #expect(timeline.listDescription == presentation.description)
+
+    try store.updateKnowledge(id: note.id, content: "The scope changed.")
+    let updated = try #require(store.loadKnowledgeItems().first)
+    #expect(updated.generatedDescription.isEmpty)
+    #expect(updated.listDescription == updated.preview)
+}
+
+@Test
 func sharedLibraryRoundTripsNoteAndSearchesIt() throws {
     let root = FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString, isDirectory: true)

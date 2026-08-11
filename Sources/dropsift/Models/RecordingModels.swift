@@ -171,11 +171,20 @@ struct RecordingItem: Identifiable, Sendable {
     var isTranscribed: Bool { transcript != nil }
     var segmentCount: Int { transcript?.segments.count ?? 0 }
 
+    var generatedDescription: String {
+        ContentPresentationStore.load(from: directory)?.description
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
     var preview: String {
         guard let segments = transcript?.segments, !segments.isEmpty else {
             return "Waiting for transcription"
         }
         return segments.prefix(2).map(\.text).joined(separator: " ")
+    }
+
+    var listDescription: String {
+        generatedDescription.isEmpty ? preview : generatedDescription
     }
 
     var displayDate: String {

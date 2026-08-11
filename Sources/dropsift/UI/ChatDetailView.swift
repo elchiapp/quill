@@ -29,9 +29,19 @@ struct ChatDetailView: View {
                 Text(thread.title)
                     .font(.title2.weight(.semibold))
                     .lineLimit(1)
-                Text("Private local AI · source-grounded")
+                if model.regeneratingThreadID == thread.id {
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Generating a better title locally…")
+                    }
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                } else {
+                    Text("Private local AI · source-grounded")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Spacer()
@@ -62,6 +72,16 @@ struct ChatDetailView: View {
             }
 
             Menu {
+                Button {
+                    model.regenerateThreadTitle(thread.id)
+                } label: {
+                    Label("Regenerate title", systemImage: "sparkles")
+                }
+                .disabled(
+                    model.regeneratingThreadID == thread.id
+                        || thread.messages.isEmpty
+                )
+                Divider()
                 Button(role: .destructive) {
                     model.requestDeleteThread(thread)
                 } label: {

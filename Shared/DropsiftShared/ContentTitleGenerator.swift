@@ -62,7 +62,16 @@ public enum ContentTitleGenerator {
         return isAutomaticPlaceholder(existingTitle)
     }
 
-    public static func markGenerated(in directory: URL) throws {
+    public static func markGenerated(
+        in directory: URL,
+        replacingManual: Bool = false
+    ) throws {
+        if replacingManual {
+            let manual = directory.appendingPathComponent(manualMarkerFilename)
+            if FileManager.default.fileExists(atPath: manual.path) {
+                try FileManager.default.removeItem(at: manual)
+            }
+        }
         let marker = directory.appendingPathComponent(generatedMarkerFilename)
         guard !FileManager.default.fileExists(atPath: marker.path) else { return }
         try Data("Generated locally from item contents.\n".utf8)

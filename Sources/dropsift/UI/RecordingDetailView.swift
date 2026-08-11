@@ -118,6 +118,21 @@ struct RecordingDetailView: View {
                     model.renameSelectedRecording(to: title)
                 }
 
+            if model.metadataGenerationItemID == "recording:\(recording.id)" {
+                HStack(spacing: 7) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Generating title and description locally…")
+                }
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            } else if !recording.generatedDescription.isEmpty {
+                Text(recording.generatedDescription)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+
             HStack(spacing: 12) {
                 Label(recording.displayDate, systemImage: "calendar")
                 Label(recording.displayDuration, systemImage: "clock")
@@ -137,6 +152,21 @@ struct RecordingDetailView: View {
                 .buttonStyle(.borderedProminent)
 
                 Menu {
+                    Button {
+                        model.regeneratePresentation(
+                            for: .recording(recording)
+                        )
+                    } label: {
+                        Label(
+                            "Regenerate title & description",
+                            systemImage: "sparkles"
+                        )
+                    }
+                    .disabled(
+                        model.metadataGenerationItemID
+                            == "recording:\(recording.id)"
+                    )
+                    Divider()
                     Button("Open microphone track") { model.openAudio(recording.micURL) }
                         .disabled(recording.micURL == nil)
                     Button("Open system-audio track") { model.openAudio(recording.systemURL) }

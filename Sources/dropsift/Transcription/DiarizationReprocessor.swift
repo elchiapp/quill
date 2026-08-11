@@ -1,3 +1,4 @@
+import DropsiftShared
 import Foundation
 
 struct DiarizationReprocessResult: Sendable {
@@ -110,6 +111,7 @@ enum DiarizationReprocessor {
                 speakerCount: remoteSpeakerCounts.count
             )
         )
+        try ContentPresentationStore.invalidate(in: recordingDirectory)
         let title = try RecordingLibrary.refreshGeneratedTitle(
             in: recordingDirectory,
             transcript: updated

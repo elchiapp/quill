@@ -55,7 +55,15 @@ final class AppModel: ObservableObject {
         let revision: String
         let title: String
         let text: String
+        let presentationRevision: String
+        let presentationKind: String
+        let directory: URL
         let reference: SharedSemanticSourceReference
+    }
+
+    private struct ThreadTitleRequest: Sendable {
+        let threadID: UUID
+        let reportsErrors: Bool
     }
 
     enum DeletionRequest: Identifiable, Equatable {
@@ -119,6 +127,8 @@ final class AppModel: ObservableObject {
     @Published var chatDraft = ""
     @Published var chatStage: ChatPipelineStage = .idle
     @Published var chatError: String?
+    @Published private(set) var regeneratingThreadID: UUID?
+    @Published private(set) var metadataGenerationItemID: String?
     @Published var transcriptJump: TranscriptJump?
     @Published var knowledgeJump: KnowledgeJump?
     @Published var modelDeletionRequest: BuiltInModel?
@@ -175,6 +185,9 @@ final class AppModel: ObservableObject {
     private var aiDownloadStallTask: Task<Void, Never>?
     private var semanticAnalysisTask: Task<Void, Never>?
     private var requestedSemanticSourceIDs: [String] = []
+    private var requestedPresentationSourceIDs: [String] = []
+    private var requestedThreadTitles: [ThreadTitleRequest] = []
+    private var failedPresentationKeys = Set<String>()
     private var aiDownloadProgress = 0.0
     private var microphoneLevelUpdatedAt: Date?
     private var systemLevelUpdatedAt: Date?
@@ -264,7 +277,7 @@ final class AppModel: ObservableObject {
                 && (
                     query.isEmpty
                         || item.title.localizedCaseInsensitiveContains(query)
-                        || item.preview.localizedCaseInsensitiveContains(query)
+                        || item.listDescription.localizedCaseInsensitiveContains(query)
                 )
         }
     }
@@ -977,6 +990,25 @@ final class AppModel: ObservableObject {
         persistThreads()
     }
 
+    func regenerateThreadTitle(_ threadID: UUID) {
+        guard threads.contains(where: { $0.id == threadID }) else { return }
+        requestedThreadTitles.removeAll { $0.threadID == threadID }
+        requestedThreadTitles.insert(
+            ThreadTitleRequest(threadID: threadID, reportsErrors: true),
+            at: 0
+        )
+        scanForSemanticCandidates()
+    }
+
+    func regeneratePresentation(for item: TimelineItem) {
+        failedPresentationKeys = failedPresentationKeys.filter {
+            !$0.hasPrefix(item.id + "|")
+        }
+        requestedPresentationSourceIDs.removeAll { $0 == item.id }
+        requestedPresentationSourceIDs.insert(item.id, at: 0)
+        scanForSemanticCandidates()
+    }
+
     func requestDeleteThread(_ thread: ChatThread) {
         deletionRequest = .thread(id: thread.id, title: thread.title)
     }
@@ -1161,10 +1193,26 @@ final class AppModel: ObservableObject {
                     answer: answer,
                     chunks: retrieval.chunks
                 )
+                let shouldGenerateConversationTitle = threads[currentIndex]
+                    .messages
+                    .filter { $0.role == .user }
+                    .count == 1
                 threads[currentIndex].updatedAt = Date()
                 threads.sort { $0.updatedAt > $1.updatedAt }
                 persistThreads()
                 chatStage = .idle
+                if shouldGenerateConversationTitle,
+                   !requestedThreadTitles.contains(where: {
+                       $0.threadID == threadID
+                   }) {
+                    requestedThreadTitles.append(
+                        ThreadTitleRequest(
+                            threadID: threadID,
+                            reportsErrors: false
+                        )
+                    )
+                }
+                scanForSemanticCandidates()
             } catch {
                 if let streamingResponseID,
                    let currentIndex = threads.firstIndex(where: { $0.id == threadID }),
@@ -1181,6 +1229,7 @@ final class AppModel: ObservableObject {
                 chatError = error.localizedDescription
                 chatStage = .idle
                 aiStatus = .failed(error.localizedDescription)
+                scanForSemanticCandidates()
             }
         }
     }
@@ -1294,6 +1343,7 @@ final class AppModel: ObservableObject {
             UserDefaults.standard.removeObject(
                 forKey: Self.pendingModelDownloadKey
             )
+            scanForSemanticCandidates()
         case .notDownloaded, .downloaded, .loading, .failed:
             aiDownloadStallTask?.cancel()
             aiDownloadStallTask = nil
@@ -1549,7 +1599,56 @@ final class AppModel: ObservableObject {
     }
 
     private func scanForSemanticCandidates() {
-        guard semanticAnalysisTask == nil else { return }
+        guard semanticAnalysisTask == nil, chatStage == .idle else { return }
+
+        if let request = requestedThreadTitles.first {
+            requestedThreadTitles.removeFirst()
+            guard let thread = threads.first(where: {
+                $0.id == request.threadID
+            }), !thread.messages.isEmpty else {
+                scanForSemanticCandidates()
+                return
+            }
+
+            regeneratingThreadID = thread.id
+            let engine = llm
+            let conversation = Self.titlePrompt(for: thread)
+            semanticAnalysisTask = Task { [weak self] in
+                guard let self else { return }
+                do {
+                    let response = try await engine.complete(
+                        systemPrompt: ContentPresentationGenerator
+                            .conversationTitleSystemPrompt,
+                        messages: [
+                            ChatMessage(role: .user, content: conversation),
+                        ]
+                    )
+                    try Task.checkCancellation()
+                    guard let title = ContentPresentationGenerator.cleanTitle(
+                        response
+                    ) else {
+                        throw CocoaError(.formatting)
+                    }
+                    if let index = threads.firstIndex(where: {
+                        $0.id == request.threadID
+                    }) {
+                        threads[index].title = title
+                        threads[index].updatedAt = Date()
+                        persistThreads()
+                    }
+                } catch {
+                    if request.reportsErrors, !(error is CancellationError) {
+                        chatError = "Couldn’t generate a conversation title: "
+                            + error.localizedDescription
+                    }
+                }
+                regeneratingThreadID = nil
+                semanticAnalysisTask = nil
+                scanForSemanticCandidates()
+            }
+            return
+        }
+
         let sources = semanticSources()
         let manuallyRequestedSource = requestedSemanticSourceIDs
             .compactMap { requestedID in
@@ -1572,12 +1671,22 @@ final class AppModel: ObservableObject {
                 return
             }
         }
+        let manuallyRequestedPresentation = requestedPresentationSourceIDs
+            .compactMap { requestedID in
+                sources.first { $0.sourceID == requestedID }
+            }
+            .first
+        if let manuallyRequestedPresentation {
+            requestedPresentationSourceIDs.removeAll {
+                $0 == manuallyRequestedPresentation.sourceID
+            }
+        }
         let pendingKeys = Set(
             semanticStore.loadPendingReviews().map {
                 $0.sourceID + "|" + $0.sourceRevision
             }
         )
-        let source = manuallyRequestedSource ?? sources.first(where: {
+        let semanticSource = manuallyRequestedSource ?? sources.first(where: {
             !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 && !semanticStore.isProcessed(
                     sourceID: $0.sourceID,
@@ -1585,66 +1694,148 @@ final class AppModel: ObservableObject {
                 )
                 && !pendingKeys.contains($0.sourceID + "|" + $0.revision)
         })
+        let modelIsCached = BuiltInLLMEngine.hasCachedModel(
+            selectedModelPlan.model,
+            in: Config.modelCacheRoot
+        )
+        let automaticPresentationSource = modelIsCached
+            ? sources.first(where: {
+                !$0.text.trimmingCharacters(
+                    in: .whitespacesAndNewlines
+                ).isEmpty
+                    && !failedPresentationKeys.contains(
+                        $0.sourceID + "|" + $0.presentationRevision
+                    )
+                    && !ContentPresentationStore.isCurrent(
+                        in: $0.directory,
+                        revision: $0.presentationRevision
+                    )
+            })
+            : nil
+        let source = manuallyRequestedPresentation
+            ?? automaticPresentationSource
+            ?? semanticSource
         guard let source else {
             refreshSemantics()
             return
         }
 
-        semanticProcessingLabel = "Organizing \(source.title)…"
+        let presentationWasRequested = manuallyRequestedPresentation?.sourceID
+            == source.sourceID
+        let needsPresentation = presentationWasRequested
+            || (modelIsCached && !ContentPresentationStore.isCurrent(
+                in: source.directory,
+                revision: source.presentationRevision
+            ))
+        let needsSemantics = semanticSource?.sourceID == source.sourceID
+        semanticProcessingLabel = needsPresentation
+            ? "Writing title and description for \(source.title)…"
+            : "Organizing \(source.title)…"
         semanticProcessingSourceID = source.sourceID
-        let useLocalModel = BuiltInLLMEngine.hasCachedModel(
-            selectedModelPlan.model,
-            in: Config.modelCacheRoot
-        )
+        metadataGenerationItemID = needsPresentation ? source.sourceID : nil
         let store = semanticStore
         let engine = llm
+        let modelName = selectedModelPlan.model.name
         semanticAnalysisTask = Task { [weak self] in
             guard let self else { return }
-            var candidates: [SharedSemanticCandidate] = []
-            if useLocalModel {
+            var presentationSaved = false
+            if needsPresentation {
                 do {
                     let response = try await engine.complete(
-                        systemPrompt: SharedSemanticExtraction.systemPrompt,
+                        systemPrompt: ContentPresentationGenerator.systemPrompt,
                         messages: [
                             ChatMessage(
                                 role: .user,
-                                content: SharedSemanticExtraction.userPrompt(
+                                content: ContentPresentationGenerator.userPrompt(
+                                    kind: source.presentationKind,
+                                    currentTitle: source.title,
                                     text: source.text,
-                                    sourceTitle: source.title
                                 )
                             ),
                         ]
                     )
-                    candidates = SharedSemanticExtraction.parse(
+                    try Task.checkCancellation()
+                    guard let presentation = ContentPresentationGenerator.parse(
                         response,
-                        source: source.reference
-                    )
+                        sourceRevision: source.presentationRevision,
+                        model: modelName
+                    ) else { throw CocoaError(.formatting) }
+                    if source.sourceID.hasPrefix("recording:") {
+                        try RecordingLibrary.saveGeneratedPresentation(
+                            presentation,
+                            in: source.directory,
+                            replacingManualTitle: presentationWasRequested
+                        )
+                    } else {
+                        try KnowledgeLibrary.saveGeneratedPresentation(
+                            presentation,
+                            in: source.directory,
+                            replacingManualTitle: presentationWasRequested
+                        )
+                    }
+                    presentationSaved = true
                 } catch {
-                    candidates = []
+                    failedPresentationKeys.insert(
+                        source.sourceID + "|" + source.presentationRevision
+                    )
+                    if presentationWasRequested, !(error is CancellationError) {
+                        appError = "Couldn’t generate this item’s title and description: "
+                            + error.localizedDescription
+                    }
                 }
             }
-            if candidates.isEmpty {
-                candidates = SharedSemanticExtraction.heuristicCandidates(
-                    in: source.text,
-                    source: source.reference
+
+            if needsSemantics, !Task.isCancelled {
+                var candidates: [SharedSemanticCandidate] = []
+                if modelIsCached {
+                    do {
+                        let response = try await engine.complete(
+                            systemPrompt: SharedSemanticExtraction.systemPrompt,
+                            messages: [
+                                ChatMessage(
+                                    role: .user,
+                                    content: SharedSemanticExtraction.userPrompt(
+                                        text: source.text,
+                                        sourceTitle: source.title
+                                    )
+                                ),
+                            ]
+                        )
+                        candidates = SharedSemanticExtraction.parse(
+                            response,
+                            source: source.reference
+                        )
+                    } catch {
+                        candidates = []
+                    }
+                }
+                if candidates.isEmpty {
+                    candidates = SharedSemanticExtraction.heuristicCandidates(
+                        in: source.text,
+                        source: source.reference
+                    )
+                }
+                let review = SharedSemanticReview(
+                    sourceID: source.sourceID,
+                    sourceRevision: source.revision,
+                    sourceTitle: source.title,
+                    source: source.reference,
+                    candidates: candidates
                 )
-            }
-            let review = SharedSemanticReview(
-                sourceID: source.sourceID,
-                sourceRevision: source.revision,
-                sourceTitle: source.title,
-                source: source.reference,
-                candidates: candidates
-            )
-            do {
-                _ = try store.enqueueReview(review)
-            } catch {
-                self.appError = "Couldn’t save extracted findings: "
-                    + error.localizedDescription
+                do {
+                    _ = try store.enqueueReview(review)
+                } catch {
+                    self.appError = "Couldn’t save extracted findings: "
+                        + error.localizedDescription
+                }
             }
             self.semanticProcessingLabel = nil
             self.semanticProcessingSourceID = nil
+            self.metadataGenerationItemID = nil
             self.semanticAnalysisTask = nil
+            if presentationSaved {
+                self.refreshLibrary()
+            }
             self.refreshSemantics()
             self.scanForSemanticCandidates()
         }
@@ -1664,6 +1855,15 @@ final class AppModel: ObservableObject {
             let combined = notes.isEmpty
                 ? text
                 : "Notes:\n\(notes)\n\nTranscript:\n\(text)"
+            let rawTranscript = (transcript?.segments ?? [])
+                .map(\.text)
+                .joined(separator: "\n")
+            let presentationText = notes.isEmpty
+                ? rawTranscript
+                : "Notes:\n\(notes)\n\nTranscript:\n\(rawTranscript)"
+            let presentationRevision = ContentPresentationStore.revision(
+                for: presentationText
+            )
             guard !combined.trimmingCharacters(
                 in: .whitespacesAndNewlines
             ).isEmpty else { return nil }
@@ -1671,10 +1871,12 @@ final class AppModel: ObservableObject {
             let itemID = "recording:\(recording.id)"
             return SemanticSourceContent(
                 sourceID: itemID,
-                revision: (transcript?.createdAt ?? "notes-only") + "|"
-                    + Self.stableTextSignature(recording.notes),
+                revision: presentationRevision,
                 title: recording.title,
                 text: combined,
+                presentationRevision: presentationRevision,
+                presentationKind: "recording or meeting transcript",
+                directory: recording.directory,
                 reference: SharedSemanticSourceReference(
                     itemID: itemID,
                     title: recording.title,
@@ -1695,12 +1897,22 @@ final class AppModel: ObservableObject {
             let text = notes.isEmpty
                 ? primary
                 : "\(primary)\n\nAdditional notes:\n\(notes)"
+            let presentationText = item.kind == .note
+                ? [item.content, item.additionalNotes].joined(separator: "\n\n")
+                : ([item.additionalNotes] + item.blocks.map(\.text))
+                    .joined(separator: "\n\n")
+            let presentationRevision = ContentPresentationStore.revision(
+                for: presentationText
+            )
             let itemID = "knowledge:\(item.id.uuidString)"
             return SemanticSourceContent(
                 sourceID: itemID,
-                revision: ISO8601DateFormatter().string(from: item.updatedAt),
+                revision: presentationRevision,
                 title: item.title,
                 text: text,
+                presentationRevision: presentationRevision,
+                presentationKind: item.kind.displayName.lowercased(),
+                directory: item.directory,
                 reference: SharedSemanticSourceReference(
                     itemID: itemID,
                     title: item.title,
@@ -1915,6 +2127,15 @@ final class AppModel: ObservableObject {
     private static func threadTitle(from question: String) -> String {
         let singleLine = question.replacingOccurrences(of: "\n", with: " ")
         return singleLine.count > 48 ? String(singleLine.prefix(48)) + "…" : singleLine
+    }
+
+    private static func titlePrompt(for thread: ChatThread) -> String {
+        let transcript = thread.messages.suffix(12).map { message in
+            let role = message.role == .user ? "USER" : "DROPSIFT"
+            return "\(role): \(message.content)"
+        }
+        .joined(separator: "\n\n")
+        return String(transcript.prefix(16_000))
     }
 
     private static func systemPrompt(

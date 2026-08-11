@@ -86,6 +86,7 @@ enum RecordingLibrary {
     }
 
     static func saveNotes(_ notes: String, to directory: URL) throws {
+        try ContentPresentationStore.invalidate(in: directory)
         try Data(notes.utf8).write(
             to: directory.appendingPathComponent("notes.md"),
             options: .atomic
@@ -103,6 +104,40 @@ enum RecordingLibrary {
         try recording.transcript?.write(
             to: recording.directory,
             title: recording.title
+        )
+    }
+
+    static func saveGeneratedPresentation(
+        _ presentation: ContentPresentation,
+        in directory: URL,
+        replacingManualTitle: Bool
+    ) throws {
+        let titleURL = directory.appendingPathComponent("title.txt")
+        let existingTitle = (try? String(
+            contentsOf: titleURL,
+            encoding: .utf8
+        ))?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let mayReplaceTitle = replacingManualTitle
+            || ContentTitleGenerator.mayReplaceTitle(existingTitle, in: directory)
+        let resolvedTitle: String
+        if mayReplaceTitle {
+            resolvedTitle = presentation.title
+            try Data(resolvedTitle.utf8).write(to: titleURL, options: .atomic)
+            try ContentTitleGenerator.markGenerated(
+                in: directory,
+                replacingManual: replacingManualTitle
+            )
+        } else {
+            resolvedTitle = existingTitle.flatMap { $0.isEmpty ? nil : $0 }
+                ?? presentation.title
+        }
+
+        var stored = presentation
+        stored.title = resolvedTitle
+        try ContentPresentationStore.save(stored, to: directory)
+        try RecordingItem.load(from: directory)?.transcript?.write(
+            to: directory,
+            title: resolvedTitle
         )
     }
 
@@ -358,6 +393,7 @@ enum RecordingLibrary {
         try fileManager.moveItem(at: stagingDirectory, to: finalDirectory)
 
         try headManifest.write(to: recording.directory)
+        try ContentPresentationStore.invalidate(in: recording.directory)
         let headTitle = try refreshGeneratedTitle(
             in: recording.directory,
             transcript: headTranscript
@@ -392,6 +428,20 @@ enum RecordingLibrary {
         let transcriptText = storedTranscript?.segments
             .map(\.text)
             .joined(separator: "\n") ?? ""
+        let revisionNotes = notes.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        let sourceText = revisionNotes.isEmpty
+            ? transcriptText
+            : "Notes:\n\(revisionNotes)\n\nTranscript:\n\(transcriptText)"
+        let revision = ContentPresentationStore.revision(for: sourceText)
+        if ContentPresentationStore.isCurrent(
+            in: directory,
+            revision: revision
+        ) {
+            return existingTitle.flatMap { $0.isEmpty ? nil : $0 }
+                ?? "Recording \(directory.lastPathComponent)"
+        }
         let generated = ContentTitleGenerator.title(
             from: [notes, transcriptText],
             fallback: existingTitle.flatMap { $0.isEmpty ? nil : $0 }

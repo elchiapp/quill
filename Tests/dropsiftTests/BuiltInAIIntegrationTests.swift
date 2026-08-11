@@ -1,4 +1,5 @@
 import Foundation
+import DropsiftShared
 import Testing
 @testable import dropsift
 
@@ -38,4 +39,54 @@ func builtInMLXIntegration() async throws {
     #expect(chunks.count > 1)
     #expect(answer.lowercased().contains("friday"))
     #expect(answer.contains("[1]"))
+
+    let metadataResponse = try await engine.complete(
+        systemPrompt: ContentPresentationGenerator.systemPrompt,
+        messages: [
+            ChatMessage(
+                role: .user,
+                content: ContentPresentationGenerator.userPrompt(
+                    kind: "meeting transcript",
+                    currentTitle: "Meeting · Friday",
+                    text: """
+                    Davide: Fineco and BKN301 need a shared integration data model.
+                    Dario: We agreed to validate the API fields with the engineering team next week.
+                    """
+                )
+            ),
+        ]
+    )
+    let presentation = try #require(
+        ContentPresentationGenerator.parse(
+            metadataResponse,
+            sourceRevision: "integration-fixture",
+            model: plan.model.name
+        )
+    )
+    #expect(
+        presentation.title.localizedCaseInsensitiveContains("Fineco")
+            || presentation.title.localizedCaseInsensitiveContains("BKN301")
+    )
+    #expect(presentation.description.count >= 12)
+
+    let conversationTitleResponse = try await engine.complete(
+        systemPrompt: ContentPresentationGenerator.conversationTitleSystemPrompt,
+        messages: [
+            ChatMessage(
+                role: .user,
+                content: """
+                USER: What was the call with BKN301 about?
+
+                DROPSIFT: The Fineco and BKN301 teams discussed a shared integration data model and planned an API validation with engineering.
+                """
+            ),
+        ]
+    )
+    let conversationTitle = try #require(
+        ContentPresentationGenerator.cleanTitle(conversationTitleResponse)
+    )
+    #expect(
+        conversationTitle.localizedCaseInsensitiveContains("Fineco")
+            || conversationTitle.localizedCaseInsensitiveContains("BKN301")
+    )
 }

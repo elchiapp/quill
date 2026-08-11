@@ -175,12 +175,14 @@ public struct SharedLibraryStore: Sendable {
             try ContentTitleGenerator.markManual(in: directory)
         }
         if let content {
+            try ContentPresentationStore.invalidate(in: directory)
             try Data(content.utf8).write(
                 to: directory.appendingPathComponent("content.md"),
                 options: .atomic
             )
         }
         if let additionalNotes {
+            try ContentPresentationStore.invalidate(in: directory)
             try Data(additionalNotes.utf8).write(
                 to: directory.appendingPathComponent("notes.md"),
                 options: .atomic
@@ -357,6 +359,7 @@ public struct SharedLibraryStore: Sendable {
             recordingID,
             isDirectory: true
         )
+        try ContentPresentationStore.invalidate(in: directory)
         try encode(transcript).write(
             to: directory.appendingPathComponent("transcript.json"),
             options: .atomic
@@ -406,6 +409,7 @@ public struct SharedLibraryStore: Sendable {
             recordingID,
             isDirectory: true
         )
+        try ContentPresentationStore.invalidate(in: directory)
         try Data(notes.utf8).write(
             to: directory.appendingPathComponent("notes.md"),
             options: .atomic
@@ -478,7 +482,8 @@ public struct SharedLibraryStore: Sendable {
             for block in allBlocks where !block.text.isEmpty {
                 let score = Self.score(
                     terms: terms,
-                    in: item.title + " " + block.text
+                    in: item.title + " " + item.generatedDescription
+                        + " " + block.text
                 )
                 if score > 0 {
                     candidates.append(
@@ -502,7 +507,9 @@ public struct SharedLibraryStore: Sendable {
                 let speaker = recording.speakerName(for: segment.speaker)
                 let score = Self.score(
                     terms: terms,
-                    in: recording.title + " " + speaker + " " + segment.text
+                    in: recording.title + " "
+                        + recording.generatedDescription + " "
+                        + speaker + " " + segment.text
                 )
                 if score > 0 {
                     candidates.append(
@@ -665,6 +672,15 @@ public struct SharedLibraryStore: Sendable {
         let sources = loaded.kind == .note
             ? [loaded.content, loaded.additionalNotes]
             : [loaded.additionalNotes] + loaded.blocks.map(\.text)
+        let revision = ContentPresentationStore.revision(
+            for: sources.joined(separator: "\n\n")
+        )
+        if ContentPresentationStore.isCurrent(
+            in: directory,
+            revision: revision
+        ) {
+            return
+        }
         let generated = ContentTitleGenerator.title(
             from: sources,
             fallback: loaded.title
@@ -696,6 +712,20 @@ public struct SharedLibraryStore: Sendable {
             encoding: .utf8
         )) ?? ""
         let transcriptText = transcript?.segments.map(\.text).joined(separator: "\n") ?? ""
+        let revisionNotes = notes.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        let sourceText = revisionNotes.isEmpty
+            ? transcriptText
+            : "Notes:\n\(revisionNotes)\n\nTranscript:\n\(transcriptText)"
+        let revision = ContentPresentationStore.revision(for: sourceText)
+        if ContentPresentationStore.isCurrent(
+            in: directory,
+            revision: revision
+        ) {
+            return existingTitle.flatMap { $0.isEmpty ? nil : $0 }
+                ?? directory.lastPathComponent
+        }
         let generated = ContentTitleGenerator.title(
             from: [notes, transcriptText],
             fallback: existingTitle.flatMap { $0.isEmpty ? nil : $0 }

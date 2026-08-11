@@ -54,6 +54,22 @@ struct KnowledgeDetailView: View {
                     model.renameKnowledgeItem(item.id, to: title)
                 }
 
+            if model.metadataGenerationItemID
+                == "knowledge:\(item.id.uuidString)" {
+                HStack(spacing: 7) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Generating title and description locally…")
+                }
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            } else if !item.generatedDescription.isEmpty {
+                Text(item.generatedDescription)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+
             HStack(spacing: 12) {
                 Label(item.kind.displayName, systemImage: item.kind.systemImage)
                 Label(item.createdAt.formatted(date: .abbreviated, time: .shortened), systemImage: "calendar")
@@ -84,6 +100,19 @@ struct KnowledgeDetailView: View {
                 }
 
                 Menu {
+                    Button {
+                        model.regeneratePresentation(for: .knowledge(item))
+                    } label: {
+                        Label(
+                            "Regenerate title & description",
+                            systemImage: "sparkles"
+                        )
+                    }
+                    .disabled(
+                        model.metadataGenerationItemID
+                            == "knowledge:\(item.id.uuidString)"
+                    )
+                    Divider()
                     Button("Show in Finder") {
                         NSWorkspace.shared.activateFileViewerSelecting([item.directory])
                     }

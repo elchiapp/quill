@@ -120,7 +120,7 @@ private struct MobileTimelineRow: View {
                 Text(item.kind.rawValue.capitalized)
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(color)
-                Text(item.preview)
+                Text(item.listDescription)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
@@ -212,6 +212,12 @@ private struct MobileKnowledgeDetail: View {
             VStack(alignment: .leading, spacing: 18) {
                 TextField("Title", text: $title)
                     .font(.title2.bold())
+
+                if !item.generatedDescription.isEmpty {
+                    Text(item.generatedDescription)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
 
                 preview
 
@@ -321,6 +327,11 @@ private struct MobileRecordingDetail: View {
                     VStack(alignment: .leading, spacing: 5) {
                         Text(recording.title)
                             .font(.title2.bold())
+                        if !recording.generatedDescription.isEmpty {
+                            Text(recording.generatedDescription)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
                         Text(
                             "\(recording.startedAt.formatted(date: .abbreviated, time: .shortened)) · \(recording.durationSeconds)s"
                         )

@@ -100,6 +100,7 @@ enum KnowledgeLibrary {
     }
 
     static func saveContent(_ content: String, for item: KnowledgeItem) throws {
+        try ContentPresentationStore.invalidate(in: item.directory)
         try Data(content.utf8).write(
             to: item.directory.appendingPathComponent("content.md"),
             options: .atomic
@@ -111,6 +112,7 @@ enum KnowledgeLibrary {
     }
 
     static func saveAdditionalNotes(_ notes: String, for item: KnowledgeItem) throws {
+        try ContentPresentationStore.invalidate(in: item.directory)
         try Data(notes.utf8).write(
             to: item.directory.appendingPathComponent("notes.md"),
             options: .atomic
@@ -119,6 +121,31 @@ enum KnowledgeLibrary {
         try refreshGeneratedTitle(&metadata, in: item.directory)
         metadata.updatedAt = Date()
         try write(metadata, to: item.directory)
+    }
+
+    static func saveGeneratedPresentation(
+        _ presentation: ContentPresentation,
+        in directory: URL,
+        replacingManualTitle: Bool
+    ) throws {
+        guard var item = KnowledgeItem.load(from: directory)?.metadata else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+        let mayReplaceTitle = replacingManualTitle
+            || ContentTitleGenerator.mayReplaceTitle(item.title, in: directory)
+        if mayReplaceTitle {
+            item.title = presentation.title
+            try ContentTitleGenerator.markGenerated(
+                in: directory,
+                replacingManual: replacingManualTitle
+            )
+        }
+        item.updatedAt = Date()
+        try write(item, to: directory)
+
+        var stored = presentation
+        stored.title = item.title
+        try ContentPresentationStore.save(stored, to: directory)
     }
 
     private static func resolvedKind(
@@ -157,6 +184,14 @@ enum KnowledgeLibrary {
         let sources = metadata.kind == .note
             ? [content, notes]
             : [notes] + metadata.blocks.map(\.text)
+        let sourceText = sources.joined(separator: "\n\n")
+        let revision = ContentPresentationStore.revision(for: sourceText)
+        if ContentPresentationStore.isCurrent(
+            in: directory,
+            revision: revision
+        ) {
+            return false
+        }
         let generated = ContentTitleGenerator.title(
             from: sources,
             fallback: metadata.title

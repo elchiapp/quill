@@ -230,7 +230,7 @@ private struct TimelineRow: View {
                 Text(item.kind.singularName)
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(color)
-                Text(item.preview)
+                Text(item.listDescription)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)

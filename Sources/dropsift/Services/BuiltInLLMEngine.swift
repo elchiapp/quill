@@ -33,6 +33,29 @@ private final class DownloadProgressCollection: @unchecked Sendable {
     }
 }
 
+private actor LocalGenerationGate {
+    private var isLocked = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func acquire() async {
+        if !isLocked {
+            isLocked = true
+            return
+        }
+        await withCheckedContinuation { continuation in
+            waiters.append(continuation)
+        }
+    }
+
+    func release() {
+        if waiters.isEmpty {
+            isLocked = false
+        } else {
+            waiters.removeFirst().resume()
+        }
+    }
+}
+
 private final class RedirectRejectingDelegate: NSObject, URLSessionTaskDelegate,
     @unchecked Sendable
 {
@@ -408,6 +431,7 @@ actor BuiltInLLMEngine {
         task: Task<ModelContainer, Error>
     )?
     private var stateHandler: StateHandler?
+    private let generationGate = LocalGenerationGate()
 
     init(cacheRoot: URL, plan: BuiltInModelPlan) {
         self.cacheRoot = cacheRoot
@@ -511,7 +535,14 @@ actor BuiltInLLMEngine {
             throw EngineError.emptyConversation
         }
 
-        let model = try await modelContainer()
+        await generationGate.acquire()
+        let model: ModelContainer
+        do {
+            model = try await modelContainer()
+        } catch {
+            await generationGate.release()
+            throw error
+        }
         let history: [Chat.Message] = messages
             .dropLast()
             .suffix(min(48, max(14, plan.contextTokens / 8_192)))
@@ -539,6 +570,7 @@ actor BuiltInLLMEngine {
             generateParameters: parameters
         )
         let upstream = session.streamResponse(to: prompt.content)
+        let gate = generationGate
         return AsyncThrowingStream { continuation in
             let task = Task { [weak self] in
                 do {
@@ -556,11 +588,13 @@ actor BuiltInLLMEngine {
                     if let self {
                         await self.generationFinished()
                     }
+                    await gate.release()
                     continuation.finish()
                 } catch {
                     if let self {
                         await self.generationFinished()
                     }
+                    await gate.release()
                     continuation.finish(throwing: error)
                 }
             }

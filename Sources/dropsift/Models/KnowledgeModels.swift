@@ -1,3 +1,4 @@
+import DropsiftShared
 import Foundation
 
 enum KnowledgeItemKind: String, Codable, CaseIterable, Sendable {
@@ -66,6 +67,11 @@ struct KnowledgeItem: Identifiable, Sendable {
     var blocks: [KnowledgeBlock] { metadata.blocks }
     var extractionError: String? { metadata.extractionError }
 
+    var generatedDescription: String {
+        ContentPresentationStore.load(from: directory)?.description
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
     var assetURL: URL? {
         metadata.assetFilename.map { directory.appendingPathComponent($0) }
     }
@@ -88,6 +94,10 @@ struct KnowledgeItem: Identifiable, Sendable {
             return kind == .note ? "Empty note" : "No text extracted"
         }
         return String(flattened.prefix(180))
+    }
+
+    var listDescription: String {
+        generatedDescription.isEmpty ? preview : generatedDescription
     }
 
     static func load(from directory: URL) -> KnowledgeItem? {
@@ -192,6 +202,13 @@ enum TimelineItem: Identifiable, Sendable {
         switch self {
         case .recording(let recording): recording.preview
         case .knowledge(let item): item.preview
+        }
+    }
+
+    var listDescription: String {
+        switch self {
+        case .recording(let recording): recording.listDescription
+        case .knowledge(let item): item.listDescription
         }
     }
 }

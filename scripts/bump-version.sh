@@ -35,9 +35,9 @@ NEXT_BUILD="$TODAY$(/usr/bin/printf '%02d' "$NEXT_SEQUENCE")"
 
 /usr/bin/printf '%s\n' "$NEXT_VERSION" > "$VERSION_FILE"
 /usr/bin/printf '%s\n' "$NEXT_BUILD" > "$BUILD_NUMBER_FILE"
-/usr/libexec/PlistBuddy \
-    -c "Set :CFBundleShortVersionString $NEXT_VERSION" \
-    -c "Set :CFBundleVersion $NEXT_BUILD" \
+/usr/bin/sed -E -i '' \
+    -e "/<key>CFBundleShortVersionString<\\/key>/{n;s#<string>[^<]+</string>#<string>$NEXT_VERSION</string>#;}" \
+    -e "/<key>CFBundleVersion<\\/key>/{n;s#<string>[^<]+</string>#<string>$NEXT_BUILD</string>#;}" \
     "$PROJECT_ROOT/Packaging/Info.plist"
 /usr/bin/sed -E -i '' \
     "s/(CURRENT_PROJECT_VERSION: )[0-9]+/\\1$NEXT_BUILD/; s/(MARKETING_VERSION: )[0-9]+\.[0-9]+\.[0-9]+/\\1$NEXT_VERSION/" \

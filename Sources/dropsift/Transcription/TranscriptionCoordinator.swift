@@ -1,3 +1,4 @@
+import DropsiftShared
 import Foundation
 
 /// Post-recording pipeline: a serial queue of session folders to transcribe.
@@ -216,6 +217,7 @@ actor TranscriptionCoordinator {
                 )
                 : nil
         )
+        try ContentPresentationStore.invalidate(in: dir)
         let title = try RecordingLibrary.refreshGeneratedTitle(
             in: dir,
             transcript: transcript

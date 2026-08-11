@@ -78,6 +78,11 @@ public struct SharedKnowledgeItem: Identifiable, Sendable, Equatable {
     public var blocks: [SharedKnowledgeBlock] { metadata.blocks }
     public var extractionError: String? { metadata.extractionError }
 
+    public var generatedDescription: String {
+        ContentPresentationStore.load(from: directory)?.description
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
     public var assetURL: URL? {
         metadata.assetFilename.map { directory.appendingPathComponent($0) }
     }
@@ -96,6 +101,10 @@ public struct SharedKnowledgeItem: Identifiable, Sendable, Equatable {
             return kind == .note ? "Empty note" : "No text extracted"
         }
         return String(flattened.prefix(180))
+    }
+
+    public var listDescription: String {
+        generatedDescription.isEmpty ? preview : generatedDescription
     }
 }
 
@@ -244,6 +253,11 @@ public struct SharedRecordingItem: Identifiable, Sendable, Equatable {
         SharedSpeakerNameStore.displayName(for: speakerID, names: speakerNames)
     }
 
+    public var generatedDescription: String {
+        ContentPresentationStore.load(from: directory)?.description
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
     public var preview: String {
         if let first = transcript?.segments.first?.text, !first.isEmpty {
             return first
@@ -252,6 +266,10 @@ public struct SharedRecordingItem: Identifiable, Sendable, Equatable {
             return notes
         }
         return transcript == nil ? "Waiting for transcription" : "No speech detected"
+    }
+
+    public var listDescription: String {
+        generatedDescription.isEmpty ? preview : generatedDescription
     }
 }
 
@@ -314,6 +332,13 @@ public enum SharedTimelineItem: Identifiable, Sendable, Equatable {
         switch self {
         case .recording(let item): item.preview
         case .knowledge(let item): item.preview
+        }
+    }
+
+    public var listDescription: String {
+        switch self {
+        case .recording(let item): item.listDescription
+        case .knowledge(let item): item.listDescription
         }
     }
 }

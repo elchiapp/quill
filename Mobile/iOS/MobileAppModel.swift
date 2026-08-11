@@ -83,7 +83,7 @@ final class MobileAppModel: ObservableObject {
                 && (
                     query.isEmpty
                         || item.title.localizedCaseInsensitiveContains(query)
-                        || item.preview.localizedCaseInsensitiveContains(query)
+                        || item.listDescription.localizedCaseInsensitiveContains(query)
                 )
         }
     }
