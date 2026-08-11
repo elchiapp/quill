@@ -186,6 +186,9 @@ final class AppModel: ObservableObject {
     private var semanticAnalysisTask: Task<Void, Never>?
     private var requestedSemanticSourceIDs: [String] = []
     private var requestedPresentationSourceIDs: [String] = []
+    private var automaticPresentationSourceIDs: [String] = []
+    private var automaticSemanticSourceIDs: [String] = []
+    private var knownPresentationSourceIDs = Set<String>()
     private var requestedThreadTitles: [ThreadTitleRequest] = []
     private var failedPresentationKeys = Set<String>()
     private var aiDownloadProgress = 0.0
@@ -198,6 +201,12 @@ final class AppModel: ObservableObject {
     private static let legacyRecommendationKey = "quill.builtInAI.recommendationHandled"
     private static let meetingDetectionKey = "dropsift.meetingDetection.enabled"
     private static let pendingModelDownloadKey = "dropsift.builtInAI.pendingModelDownload"
+    private static let knownPresentationSourceIDsKey =
+        "dropsift.presentation.knownSourceIDs"
+    private static let automaticPresentationSourceIDsKey =
+        "dropsift.presentation.pendingSourceIDs"
+    private static let automaticSemanticSourceIDsKey =
+        "dropsift.semantics.pendingSourceIDs"
     private static let legacyDefaults = UserDefaults(suiteName: "com.digimata.quill")
     private static let audioLevelHistoryCount = 14
     private static var emptyAudioLevels: [Float] {
@@ -260,6 +269,7 @@ final class AppModel: ObservableObject {
         selectedTimelineItemID = nil
         selectedThreadID = threads.first?.id
         selectedTimelineItemID = timelineItems.first?.id
+        restoreAutomaticProcessingQueues()
     }
 
     var timelineItems: [TimelineItem] {
@@ -537,6 +547,7 @@ final class AppModel: ObservableObject {
 
     func reloadRecordings(selecting recordingID: String? = nil) {
         recordings = RecordingLibrary.load(from: root)
+        enqueueNewSourceProcessing()
         if let recordingID, recordings.contains(where: { $0.id == recordingID }) {
             selectedRecordingID = recordingID
             selectedTimelineItemID = "recording:\(recordingID)"
@@ -558,6 +569,7 @@ final class AppModel: ObservableObject {
         let loadedKnowledge = KnowledgeLibrary.load(from: knowledgeRoot)
         recordings = loadedRecordings
         knowledgeItems = loadedKnowledge
+        enqueueNewSourceProcessing()
         refreshSemantics()
         selectedTimelineItemID = Self.selectionAfterPassiveRefresh(
             current: selectionBeforeRefresh,
@@ -892,6 +904,8 @@ final class AppModel: ObservableObject {
         if !requestedSemanticSourceIDs.contains(sourceID) {
             requestedSemanticSourceIDs.append(sourceID)
         }
+        automaticSemanticSourceIDs.removeAll { $0 == sourceID }
+        persistAutomaticProcessingQueues()
         scanForSemanticCandidates()
     }
 
@@ -1004,6 +1018,8 @@ final class AppModel: ObservableObject {
         failedPresentationKeys = failedPresentationKeys.filter {
             !$0.hasPrefix(item.id + "|")
         }
+        automaticPresentationSourceIDs.removeAll { $0 == item.id }
+        persistAutomaticProcessingQueues()
         requestedPresentationSourceIDs.removeAll { $0 == item.id }
         requestedPresentationSourceIDs.insert(item.id, at: 0)
         scanForSemanticCandidates()
@@ -1579,6 +1595,7 @@ final class AppModel: ObservableObject {
 
     private func reloadKnowledge(selecting itemID: UUID? = nil) {
         knowledgeItems = KnowledgeLibrary.load(from: knowledgeRoot)
+        enqueueNewSourceProcessing()
         if let itemID, knowledgeItems.contains(where: { $0.id == itemID }) {
             selectedTimelineItemID = "knowledge:\(itemID.uuidString)"
         }
@@ -1686,33 +1703,52 @@ final class AppModel: ObservableObject {
                 $0.sourceID + "|" + $0.sourceRevision
             }
         )
-        let semanticSource = manuallyRequestedSource ?? sources.first(where: {
-            !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                && !semanticStore.isProcessed(
-                    sourceID: $0.sourceID,
-                    revision: $0.revision
-                )
-                && !pendingKeys.contains($0.sourceID + "|" + $0.revision)
-        })
+        removeCompletedAutomaticSemanticRequests(
+            from: sources,
+            pendingKeys: pendingKeys
+        )
+        let automaticSemanticSource = automaticSemanticSourceIDs.compactMap {
+            requestedID in
+            sources.first { source in
+                source.sourceID == requestedID
+                    && !source.text.trimmingCharacters(
+                        in: .whitespacesAndNewlines
+                    ).isEmpty
+                    && !semanticStore.isProcessed(
+                        sourceID: source.sourceID,
+                        revision: source.revision
+                    )
+                    && !pendingKeys.contains(
+                        source.sourceID + "|" + source.revision
+                    )
+            }
+        }.first
+        let semanticSource = manuallyRequestedSource
+            ?? automaticSemanticSource
         let modelIsCached = BuiltInLLMEngine.hasCachedModel(
             selectedModelPlan.model,
             in: Config.modelCacheRoot
         )
+        removeCompletedAutomaticPresentationRequests(from: sources)
         let automaticPresentationSource = modelIsCached
-            ? sources.first(where: {
-                !$0.text.trimmingCharacters(
-                    in: .whitespacesAndNewlines
-                ).isEmpty
-                    && !failedPresentationKeys.contains(
-                        $0.sourceID + "|" + $0.presentationRevision
-                    )
-                    && !ContentPresentationStore.isCurrent(
-                        in: $0.directory,
-                        revision: $0.presentationRevision
-                    )
-            })
+            ? automaticPresentationSourceIDs.compactMap { requestedID in
+                sources.first { source in
+                    source.sourceID == requestedID
+                        && !source.text.trimmingCharacters(
+                            in: .whitespacesAndNewlines
+                        ).isEmpty
+                        && !failedPresentationKeys.contains(
+                            source.sourceID + "|" + source.presentationRevision
+                        )
+                        && !ContentPresentationStore.isCurrent(
+                            in: source.directory,
+                            revision: source.presentationRevision
+                        )
+                }
+            }.first
             : nil
         let source = manuallyRequestedPresentation
+            ?? manuallyRequestedSource
             ?? automaticPresentationSource
             ?? semanticSource
         guard let source else {
@@ -1722,11 +1758,12 @@ final class AppModel: ObservableObject {
 
         let presentationWasRequested = manuallyRequestedPresentation?.sourceID
             == source.sourceID
+        let presentationWasQueued = automaticPresentationSource?.sourceID
+            == source.sourceID
+        let semanticsWereQueued = automaticSemanticSource?.sourceID
+            == source.sourceID
         let needsPresentation = presentationWasRequested
-            || (modelIsCached && !ContentPresentationStore.isCurrent(
-                in: source.directory,
-                revision: source.presentationRevision
-            ))
+            || presentationWasQueued
         let needsSemantics = semanticSource?.sourceID == source.sourceID
         semanticProcessingLabel = needsPresentation
             ? "Writing title and description for \(source.title)…"
@@ -1833,6 +1870,19 @@ final class AppModel: ObservableObject {
             self.semanticProcessingSourceID = nil
             self.metadataGenerationItemID = nil
             self.semanticAnalysisTask = nil
+            if presentationWasQueued {
+                self.automaticPresentationSourceIDs.removeAll {
+                    $0 == source.sourceID
+                }
+            }
+            if semanticsWereQueued {
+                self.automaticSemanticSourceIDs.removeAll {
+                    $0 == source.sourceID
+                }
+            }
+            if presentationWasQueued || semanticsWereQueued {
+                self.persistAutomaticProcessingQueues()
+            }
             if presentationSaved {
                 self.refreshLibrary()
             }
@@ -1924,6 +1974,128 @@ final class AppModel: ObservableObject {
             )
         }
         return recordingSources + knowledgeSources
+    }
+
+    private func restoreAutomaticProcessingQueues() {
+        let defaults = UserDefaults.standard
+        let currentIDs = Set(timelineItems.map(\.id))
+        let storedKnownIDs = defaults.stringArray(
+            forKey: Self.knownPresentationSourceIDsKey
+        )
+        let storedPendingIDs = defaults.stringArray(
+            forKey: Self.automaticPresentationSourceIDsKey
+        ) ?? []
+        let storedSemanticIDs = defaults.stringArray(
+            forKey: Self.automaticSemanticSourceIDsKey
+        ) ?? []
+        let previouslyKnown = storedKnownIDs.map(Set.init)
+        let newIDs = Self.newPresentationSourceIDs(
+            current: currentIDs,
+            previouslyKnown: previouslyKnown
+        )
+
+        if let previouslyKnown {
+            knownPresentationSourceIDs = previouslyKnown
+        } else {
+            // The first launch after this behavior ships establishes a
+            // baseline. Historical libraries are never silently backfilled.
+            knownPresentationSourceIDs = currentIDs
+        }
+        automaticPresentationSourceIDs = Self.mergedSourceIDs(
+            storedPendingIDs,
+            Array(newIDs)
+        )
+        automaticSemanticSourceIDs = Self.mergedSourceIDs(
+            storedSemanticIDs,
+            Array(newIDs)
+        )
+        knownPresentationSourceIDs.formUnion(currentIDs)
+        persistAutomaticProcessingQueues()
+    }
+
+    private func enqueueNewSourceProcessing() {
+        let currentIDs = Set(timelineItems.map(\.id))
+        let newIDs = Self.newPresentationSourceIDs(
+            current: currentIDs,
+            previouslyKnown: knownPresentationSourceIDs
+        )
+        guard !newIDs.isEmpty else { return }
+        automaticPresentationSourceIDs = Self.mergedSourceIDs(
+            automaticPresentationSourceIDs,
+            timelineItems.map(\.id).filter { newIDs.contains($0) }
+        )
+        automaticSemanticSourceIDs = Self.mergedSourceIDs(
+            automaticSemanticSourceIDs,
+            timelineItems.map(\.id).filter { newIDs.contains($0) }
+        )
+        knownPresentationSourceIDs.formUnion(currentIDs)
+        persistAutomaticProcessingQueues()
+    }
+
+    private func removeCompletedAutomaticPresentationRequests(
+        from sources: [SemanticSourceContent]
+    ) {
+        let completedIDs = Set(sources.compactMap { source in
+            ContentPresentationStore.isCurrent(
+                in: source.directory,
+                revision: source.presentationRevision
+            ) ? source.sourceID : nil
+        })
+        guard automaticPresentationSourceIDs.contains(where: {
+            completedIDs.contains($0)
+        }) else { return }
+        automaticPresentationSourceIDs.removeAll { completedIDs.contains($0) }
+        persistAutomaticProcessingQueues()
+    }
+
+    private func removeCompletedAutomaticSemanticRequests(
+        from sources: [SemanticSourceContent],
+        pendingKeys: Set<String>
+    ) {
+        let completedIDs = Set(sources.compactMap { source in
+            let isComplete = semanticStore.isProcessed(
+                sourceID: source.sourceID,
+                revision: source.revision
+            ) || pendingKeys.contains(source.sourceID + "|" + source.revision)
+            return isComplete ? source.sourceID : nil
+        })
+        guard automaticSemanticSourceIDs.contains(where: {
+            completedIDs.contains($0)
+        }) else { return }
+        automaticSemanticSourceIDs.removeAll { completedIDs.contains($0) }
+        persistAutomaticProcessingQueues()
+    }
+
+    private func persistAutomaticProcessingQueues() {
+        let defaults = UserDefaults.standard
+        defaults.set(
+            knownPresentationSourceIDs.sorted(),
+            forKey: Self.knownPresentationSourceIDsKey
+        )
+        defaults.set(
+            automaticPresentationSourceIDs,
+            forKey: Self.automaticPresentationSourceIDsKey
+        )
+        defaults.set(
+            automaticSemanticSourceIDs,
+            forKey: Self.automaticSemanticSourceIDsKey
+        )
+    }
+
+    nonisolated static func newPresentationSourceIDs(
+        current: Set<String>,
+        previouslyKnown: Set<String>?
+    ) -> Set<String> {
+        guard let previouslyKnown else { return [] }
+        return current.subtracting(previouslyKnown)
+    }
+
+    nonisolated private static func mergedSourceIDs(
+        _ first: [String],
+        _ second: [String]
+    ) -> [String] {
+        var seen = Set<String>()
+        return (first + second).filter { seen.insert($0).inserted }
     }
 
     private static func section(

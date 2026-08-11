@@ -211,6 +211,27 @@ func timelineRefreshPreservesSelectionWhileARecordingIsTemporarilyUnavailable() 
 }
 
 @Test
+func automaticPresentationGenerationSkipsTheExistingTimelineBaseline() {
+    let existing = Set([
+        "recording:existing",
+        "knowledge:existing",
+    ])
+
+    #expect(
+        AppModel.newPresentationSourceIDs(
+            current: existing,
+            previouslyKnown: nil
+        ).isEmpty
+    )
+    #expect(
+        AppModel.newPresentationSourceIDs(
+            current: existing.union(["recording:new"]),
+            previouslyKnown: existing
+        ) == Set(["recording:new"])
+    )
+}
+
+@Test
 func resumedRecordingManifestKeepsOriginalTracksAndBuildsOneTimeline() throws {
     let original = RecordingManifest(
         started: "2026-07-30T08:00:00Z",
