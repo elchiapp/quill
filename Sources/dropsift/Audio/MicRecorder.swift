@@ -30,6 +30,8 @@ final class MicRecorder: @unchecked Sendable {
     private var engine = AVAudioEngine()
     private var file: AVAudioFile?
     private var url: URL?
+    private let onLevel: @Sendable (Float) -> Void
+    private var lastLevelEmissionNanos: UInt64 = 0
     private(set) var isRecording = false
     /// Wall-clock time of the first captured buffer — the track's true start,
     /// used to offset-align the two tracks' transcript timestamps.
@@ -40,6 +42,10 @@ final class MicRecorder: @unchecked Sendable {
     private var livenessFrames = 0
     private var livenessPeak: Float = 0
     private var livenessSettled = false
+
+    init(onLevel: @escaping @Sendable (Float) -> Void = { _ in }) {
+        self.onLevel = onLevel
+    }
 
     /// Start capturing the mic, encoding AAC into `url` (use a .caf extension
     /// — CAF needs no finalization pass, so a crash loses nothing written).
@@ -154,6 +160,7 @@ final class MicRecorder: @unchecked Sendable {
         input.installTap(onBus: 0, bufferSize: 4096, format: format) { [weak self] buffer, _ in
             guard let self, let file = self.file else { return }
             if self.firstBufferAt == nil { self.firstBufferAt = Date() }
+            self.publishLevelIfNeeded(from: buffer)
 
             if !self.livenessSettled {
                 let frames = Int(buffer.frameLength)
@@ -199,6 +206,7 @@ final class MicRecorder: @unchecked Sendable {
             ) else { return }
             do {
                 try converter.convert(to: mono, from: buffer)
+                self.publishLevelIfNeeded(from: mono)
                 try file.write(from: mono)
             } catch {
                 FileHandle.standardError.write(Data("mic track write failed: \(error)\n".utf8))
@@ -229,5 +237,12 @@ final class MicRecorder: @unchecked Sendable {
             ))
             file = nil
         }
+    }
+
+    private func publishLevelIfNeeded(from buffer: AVAudioPCMBuffer) {
+        let now = DispatchTime.now().uptimeNanoseconds
+        guard now &- lastLevelEmissionNanos >= 70_000_000 else { return }
+        lastLevelEmissionNanos = now
+        onLevel(AudioLevelMeter.normalizedLevel(in: buffer))
     }
 }

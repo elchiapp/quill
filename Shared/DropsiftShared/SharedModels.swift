@@ -153,13 +153,33 @@ public struct SharedTranscriptDocument: Codable, Sendable, Equatable {
 }
 
 public struct SharedRecordingMetadata: Codable, Sendable, Equatable {
+    public struct Track: Codable, Sendable, Equatable {
+        public let file: String
+        public let speaker: String
+        public let offsetMs: Int
+
+        public init(file: String, speaker: String, offsetMs: Int) {
+            self.file = file
+            self.speaker = speaker
+            self.offsetMs = offsetMs
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case file
+            case speaker
+            case offsetMs = "offset_ms"
+        }
+    }
+
     public let started: String?
     public let ended: String?
     public let durationSeconds: Int?
     public let files: [String: String]?
     public let startOffsetMs: [String: Int]?
+    public let tracks: [Track]?
     public let imported: Bool?
     public let origin: String?
+    public let resumeCount: Int?
 
     public init(
         started: String?,
@@ -167,16 +187,20 @@ public struct SharedRecordingMetadata: Codable, Sendable, Equatable {
         durationSeconds: Int?,
         files: [String: String]?,
         startOffsetMs: [String: Int]? = nil,
+        tracks: [Track]? = nil,
         imported: Bool? = nil,
-        origin: String? = nil
+        origin: String? = nil,
+        resumeCount: Int? = nil
     ) {
         self.started = started
         self.ended = ended
         self.durationSeconds = durationSeconds
         self.files = files
         self.startOffsetMs = startOffsetMs
+        self.tracks = tracks
         self.imported = imported
         self.origin = origin
+        self.resumeCount = resumeCount
     }
 
     enum CodingKeys: String, CodingKey {
@@ -185,8 +209,22 @@ public struct SharedRecordingMetadata: Codable, Sendable, Equatable {
         case durationSeconds = "duration_seconds"
         case files
         case startOffsetMs = "start_offset_ms"
+        case tracks
         case imported
         case origin
+        case resumeCount = "resume_count"
+    }
+}
+
+public struct SharedRecordingAudioTrack: Sendable, Equatable {
+    public let url: URL
+    public let speaker: String
+    public let offsetMs: Int
+
+    public init(url: URL, speaker: String, offsetMs: Int) {
+        self.url = url
+        self.speaker = speaker
+        self.offsetMs = offsetMs
     }
 }
 
@@ -197,8 +235,14 @@ public struct SharedRecordingItem: Identifiable, Sendable, Equatable {
     public let startedAt: Date
     public let durationSeconds: Int
     public let audioURL: URL?
+    public let audioTracks: [SharedRecordingAudioTrack]
     public let transcript: SharedTranscriptDocument?
     public let notes: String
+    public let speakerNames: [String: String]
+
+    public func speakerName(for speakerID: String) -> String {
+        SharedSpeakerNameStore.displayName(for: speakerID, names: speakerNames)
+    }
 
     public var preview: String {
         if let first = transcript?.segments.first?.text, !first.isEmpty {
@@ -311,13 +355,19 @@ public struct SharedSearchResult: Identifiable, Sendable, Equatable {
 public struct SharedLibrarySnapshot: Sendable, Equatable {
     public let knowledgeItems: [SharedKnowledgeItem]
     public let recordings: [SharedRecordingItem]
+    public let tasks: [SharedTask]
+    public let entities: [SharedSemanticEntity]
 
     public init(
         knowledgeItems: [SharedKnowledgeItem],
-        recordings: [SharedRecordingItem]
+        recordings: [SharedRecordingItem],
+        tasks: [SharedTask] = [],
+        entities: [SharedSemanticEntity] = []
     ) {
         self.knowledgeItems = knowledgeItems
         self.recordings = recordings
+        self.tasks = tasks
+        self.entities = entities
     }
 
     public var timeline: [SharedTimelineItem] {

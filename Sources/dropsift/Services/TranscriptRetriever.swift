@@ -33,10 +33,71 @@ enum TranscriptRetriever {
         "about", "after", "again", "also", "and", "are", "been", "before",
         "but", "can", "could", "did", "does", "for", "from", "had", "has",
         "have", "how", "into", "its", "just", "more", "not", "our", "out",
-        "said", "that", "the", "their", "them", "then", "there", "they", "this",
+        "one", "said", "that", "the", "their", "them", "then", "there", "they", "this",
         "those", "was", "were", "what", "when", "where", "which", "who", "why",
         "will", "with", "would", "you", "your",
     ]
+    private static let scopeRoutingWords: Set<String> = [
+        "audio", "call", "conversation", "latest", "meeting", "newest", "recent",
+        "recording", "summary", "summarize",
+    ]
+
+    /// A recording-scoped chat should not silently exclude an item that the user
+    /// names in their question. Follow-up context is included in `query`, so a
+    /// message such as “the latest one” still retains the original item name.
+    static func resolvedScope(
+        query: String,
+        recordings: [RecordingItem],
+        requestedScope: ChatScope
+    ) -> ChatScope {
+        guard requestedScope.kind == .recording,
+              let recordingID = requestedScope.recordingID,
+              let selected = recordings.first(where: { $0.id == recordingID })
+        else {
+            return requestedScope
+        }
+
+        let queryTerms = Set(tokenize(query)).subtracting(scopeRoutingWords)
+        guard !queryTerms.isEmpty else { return requestedScope }
+
+        func matches(in text: String) -> Set<String> {
+            Set(tokenize(text)).intersection(queryTerms)
+        }
+
+        let selectedTitleMatches = matches(in: selected.title)
+        let otherTitleMatches = recordings
+            .filter { $0.id != recordingID }
+            .map { matches(in: $0.title) }
+            .max { $0.count < $1.count } ?? []
+
+        if !otherTitleMatches.isEmpty,
+           otherTitleMatches.count > selectedTitleMatches.count {
+            return .all
+        }
+
+        // If the selected recording has no evidence for the question but another
+        // recording does, search the library instead of feeding unrelated recent
+        // excerpts to the model.
+        func contentMatches(in recording: RecordingItem) -> Set<String> {
+            let namedSpeakers = recording.speakerNames.values.joined(separator: " ")
+            var found = matches(
+                in: recording.title + " " + recording.notes + " " + namedSpeakers
+            )
+            guard found.count < queryTerms.count else { return found }
+            for segment in recording.transcript?.segments ?? [] {
+                found.formUnion(matches(in: segment.text))
+                if found.count == queryTerms.count { break }
+            }
+            return found
+        }
+
+        let selectedMatches = contentMatches(in: selected)
+        guard selectedMatches.isEmpty else { return requestedScope }
+        let anotherRecordingMatches = recordings.lazy
+            .filter { $0.id != recordingID }
+            .contains { !contentMatches(in: $0).isEmpty }
+        return anotherRecordingMatches ? .all : requestedScope
+    }
 
     static func retrieve(
         query: String,
@@ -106,7 +167,7 @@ enum TranscriptRetriever {
             let end = min(index + groupSize, segments.count)
             let slice = Array(segments[index..<end])
             let text = slice.map { segment in
-                "\(segment.speaker): \(segment.text)"
+                "\(recording.speakerName(for: segment.speaker)): \(segment.text)"
             }.joined(separator: "\n")
             output.append(
                 TranscriptChunk(
@@ -141,8 +202,21 @@ enum TranscriptRetriever {
     }
 
     private static func tokenize(_ text: String) -> [String] {
-        text.lowercased()
+        let components = text.lowercased()
             .components(separatedBy: CharacterSet.alphanumerics.inverted)
-            .filter { $0.count > 2 && !stopWords.contains($0) }
+            .filter { !$0.isEmpty }
+        var expanded = components
+        for index in 0..<(max(0, components.count - 1)) {
+            let left = components[index]
+            let right = components[index + 1]
+            let leftIsLetters = left.unicodeScalars.allSatisfy(CharacterSet.letters.contains)
+            let leftIsDigits = left.unicodeScalars.allSatisfy(CharacterSet.decimalDigits.contains)
+            let rightIsLetters = right.unicodeScalars.allSatisfy(CharacterSet.letters.contains)
+            let rightIsDigits = right.unicodeScalars.allSatisfy(CharacterSet.decimalDigits.contains)
+            if (leftIsLetters && rightIsDigits) || (leftIsDigits && rightIsLetters) {
+                expanded.append(left + right)
+            }
+        }
+        return expanded.filter { $0.count > 2 && !stopWords.contains($0) }
     }
 }

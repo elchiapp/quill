@@ -23,6 +23,18 @@ default, the app is ad-hoc signed for local use. Set `SIGN_IDENTITY` to a
 Developer ID or Apple Development signing identity when a persistent identity
 is required.
 
+Every distributable update uses the same semantic version and build number on
+macOS, iPhone, and Apple Watch. Before packaging a new update, run:
+
+```sh
+scripts/bump-version.sh
+```
+
+This increments the patch version, creates a monotonically increasing dated
+build number, and updates the desktop and generated Xcode project metadata.
+The exact `version (build)` is visible in desktop Settings, iPhone Organize,
+and at the bottom of the Watch capture screen.
+
 **Requires:** macOS 15+ (Core Audio process taps for system audio — no
 virtual device, no kernel extension) on an Apple-silicon Mac.
 
@@ -49,9 +61,11 @@ The iPhone app includes the same Capture, Timeline, and Ask flow. It imports
 notes, documents, images with local OCR, existing audio, and phone voice
 messages; filters and previews the shared timeline; and searches everything.
 On iOS 26 with Apple Intelligence available, answers are generated locally
-with Foundation Models. Other devices get an extractive local answer with the
-same source cards. Transcript cards jump to and highlight the cited timestamp;
-PDF cards open the cited page.
+with Foundation Models. The model control at the top of Ask shows the engine
+actually in use and lets you choose Automatic, Apple Intelligence, or
+retrieval-only Local source search. Other devices get an extractive local
+answer with the same source cards. Transcript cards jump to and highlight the
+cited timestamp; PDF cards open the cited page.
 
 See [`Mobile/README.md`](Mobile/README.md) for build, signing, device-test, and
 TestFlight/archive instructions.
@@ -77,10 +91,22 @@ text and rich-document formats are converted locally, and images are OCRed
 with Apple's Vision framework. Imported audio enters the same on-device
 transcription and diarization queue as a new recording.
 
+Dropsift generates concise titles locally from note headings, extracted
+document/image text, recording notes, and transcripts. Generated titles can
+improve as more content arrives; once you type a title yourself, Dropsift keeps
+it unchanged.
+
 While recording, the main window shows a live notes editor above the current
 detail view. Notes autosave into the recording's `notes.md` in iCloud Drive,
-so they survive a crash and remain visible with the finished recording. The
-menu-bar Dropsift mark turns red and pulses gently until recording stops.
+so they survive a crash and remain visible with the finished recording. Tiny
+live waveforms show actual microphone and system-audio signal independently,
+making a silent or disconnected source immediately visible. The menu-bar
+Dropsift mark turns red and pulses gently until recording stops.
+
+If speaker playback leaks into the microphone, Dropsift compares both
+transcripts by timing and fuzzy text similarity, removes high-confidence
+duplicates from the “You” track, and keeps the cleaner diarized system segment.
+The same non-destructive filter is applied when older recordings are opened.
 
 Dropsift watches locally for known conferencing apps using a microphone. When
 it detects a likely Zoom, Teams, Webex, FaceTime, Slack, Discord, Skype, Lark,

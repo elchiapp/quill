@@ -79,7 +79,7 @@ struct MobileCaptureView: View {
                                 ? "Stop \(model.recorder.elapsedLabel)"
                                 : "Record",
                             subtitle: model.recorder.isRecording
-                                ? "Tap to save"
+                                ? recordingSubtitle
                                 : "Voice message",
                             icon: model.recorder.isRecording
                                 ? "stop.circle.fill"
@@ -163,6 +163,13 @@ struct MobileCaptureView: View {
                 selectedPhoto = nil
             }
         }
+    }
+
+    private var recordingSubtitle: String {
+        if case .append = model.recordingDestination {
+            return "Tap to append"
+        }
+        return "Tap to save"
     }
 
     private var connectBanner: some View {

@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import DropsiftShared
 import Foundation
 import UniformTypeIdentifiers
 
@@ -8,6 +9,13 @@ final class AppModel: ObservableObject {
     enum Section: String, CaseIterable, Identifiable {
         case capture
         case timeline
+        case tasks
+        case people
+        case places
+        case events
+        case organizations
+        case projects
+        case topics
         case chats
 
         var id: String { rawValue }
@@ -40,6 +48,14 @@ final class AppModel: ObservableObject {
         let itemID: UUID
         let page: Int?
         let token = UUID()
+    }
+
+    private struct SemanticSourceContent: Sendable {
+        let sourceID: String
+        let revision: String
+        let title: String
+        let text: String
+        let reference: SharedSemanticSourceReference
     }
 
     enum DeletionRequest: Identifiable, Equatable {
@@ -90,6 +106,13 @@ final class AppModel: ObservableObject {
     @Published var timelineSearch = ""
     @Published var timelineFilters = Set(TimelineItemKind.allCases)
     @Published var ingestionState: IngestionState?
+    @Published var tasks: [SharedTask]
+    @Published var entities: [SharedSemanticEntity]
+    @Published var selectedTaskID: UUID?
+    @Published var selectedEntityID: UUID?
+    @Published private(set) var semanticReviews: [SharedSemanticReview]
+    @Published var semanticProcessingLabel: String?
+    @Published private(set) var semanticProcessingSourceID: String?
 
     @Published var threads: [ChatThread]
     @Published var selectedThreadID: UUID?
@@ -98,15 +121,28 @@ final class AppModel: ObservableObject {
     @Published var chatError: String?
     @Published var transcriptJump: TranscriptJump?
     @Published var knowledgeJump: KnowledgeJump?
+    @Published var modelDeletionRequest: BuiltInModel?
 
     @Published var isRecording = false
+    @Published private(set) var isPreparingRecording = false
+    @Published private(set) var recordingSessionID: String?
     @Published var recordingElapsed = "0:00"
     @Published var liveNotes = ""
+    @Published private(set) var microphoneAudioLevels = Array(
+        repeating: Float.zero,
+        count: 14
+    )
+    @Published private(set) var systemAudioLevels = Array(
+        repeating: Float.zero,
+        count: 14
+    )
+    @Published private(set) var splittingRecordingID: String?
     @Published var transcriptionStatus: String?
     @Published var appError: String?
     @Published var deletionRequest: DeletionRequest?
 
     @Published var aiStatus: BuiltInAIState
+    @Published private(set) var aiDownloadIsStalled = false
     @Published var selectedModelID: String
     @Published var selectedModelPlan: BuiltInModelPlan
     @Published var showingSettings = false
@@ -120,24 +156,40 @@ final class AppModel: ObservableObject {
     var onRecordingStateChange: ((Bool, String?) -> Void)?
     var onTranscriptionStateChange: ((String?) -> Void)?
     var onMeetingDetected: ((DetectedMeeting) -> Void)?
+    var onMeetingEnded: ((DetectedMeeting) -> Void)?
 
     private let transcription = TranscriptionCoordinator()
     private let meetingDetector = MeetingDetector()
     private let llm: BuiltInLLMEngine
     private let chatStore: ChatStore
+    private let semanticStore: SharedSemanticStore
     private var session: RecordingSession?
     private var ticker: Timer?
     private var recordingStartedAt: Date?
+    private var recordingElapsedBaseSeconds = 0
+    private var recordingPreparationTask: Task<Void, Never>?
     private var notesSaveTask: Task<Void, Never>?
     private var knowledgeSaveTasks: [UUID: Task<Void, Never>] = [:]
     private var libraryRefreshTask: Task<Void, Never>?
+    private var aiPreparationTask: Task<Void, Never>?
+    private var aiDownloadStallTask: Task<Void, Never>?
+    private var semanticAnalysisTask: Task<Void, Never>?
+    private var requestedSemanticSourceIDs: [String] = []
+    private var aiDownloadProgress = 0.0
+    private var microphoneLevelUpdatedAt: Date?
+    private var systemLevelUpdatedAt: Date?
 
     private static let selectedModelKey = "dropsift.builtInAI.selectedModel"
     private static let recommendationKey = "dropsift.builtInAI.recommendationHandled"
     private static let legacySelectedModelKey = "quill.builtInAI.selectedModel"
     private static let legacyRecommendationKey = "quill.builtInAI.recommendationHandled"
     private static let meetingDetectionKey = "dropsift.meetingDetection.enabled"
+    private static let pendingModelDownloadKey = "dropsift.builtInAI.pendingModelDownload"
     private static let legacyDefaults = UserDefaults(suiteName: "com.digimata.quill")
+    private static let audioLevelHistoryCount = 14
+    private static var emptyAudioLevels: [Float] {
+        Array(repeating: 0, count: audioLevelHistoryCount)
+    }
 
     init(root: URL) {
         let profile = DeviceProfile.current
@@ -163,6 +215,9 @@ final class AppModel: ObservableObject {
             "Threads",
             isDirectory: true
         ))
+        semanticStore = SharedSemanticStore(
+            root: root.deletingLastPathComponent()
+        )
         aiStatus = BuiltInLLMEngine.hasCachedModel(
             selectedModel,
             in: Config.modelCacheRoot
@@ -179,10 +234,16 @@ final class AppModel: ObservableObject {
             withIntermediateDirectories: true
         )
         RecordingLibrary.copyLegacyRecordingsIfNeeded(to: root)
+        RecordingSession.clearStaleActiveMarkers(in: root)
         recordings = RecordingLibrary.load(from: root)
         knowledgeItems = KnowledgeLibrary.load(from: knowledgeRoot)
+        tasks = semanticStore.loadTasks()
+        entities = semanticStore.loadEntities()
+        semanticReviews = semanticStore.loadPendingReviews()
         threads = chatStore.load().sorted { $0.updatedAt > $1.updatedAt }
         selectedRecordingID = recordings.first?.id
+        selectedTaskID = tasks.first?.id
+        selectedEntityID = entities.first?.id
         selectedTimelineItemID = nil
         selectedThreadID = threads.first?.id
         selectedTimelineItemID = timelineItems.first?.id
@@ -256,6 +317,8 @@ final class AppModel: ObservableObject {
 
     var isAITransitioning: Bool {
         switch aiStatus {
+        case .downloading where aiDownloadIsStalled:
+            false
         case .downloading, .loading:
             true
         case .notDownloaded, .downloaded, .ready, .failed:
@@ -276,13 +339,25 @@ final class AppModel: ObservableObject {
                 Task { @MainActor in model.apply(status) }
             }
             await model.llm.setStateHandler { state in
-                Task { @MainActor in model.aiStatus = state }
+                Task { @MainActor in model.applyAIState(state) }
             }
             await transcription.resumePending(root: root)
-            if BuiltInLLMEngine.hasCachedModel(
-                model.selectedModelPlan.model,
+            let selectedModel = model.selectedModelPlan.model
+            let selectedModelIsCached = BuiltInLLMEngine.hasCachedModel(
+                selectedModel,
                 in: Config.modelCacheRoot
-            ) {
+            )
+            let selectedModelIsPartial = BuiltInLLMEngine.hasPartialModel(
+                selectedModel,
+                in: Config.modelCacheRoot
+            )
+            let pendingModelID = UserDefaults.standard.string(
+                forKey: Self.pendingModelDownloadKey
+            )
+            if selectedModelIsCached
+                || selectedModelIsPartial
+                || pendingModelID == selectedModel.id
+            {
                 await model.prepareBuiltInAI()
             }
             if model.shouldOfferModelRecommendation {
@@ -291,12 +366,18 @@ final class AppModel: ObservableObject {
         }
         if meetingDetectionEnabled {
             Task { [meetingDetector] in
-                await meetingDetector.start { [weak self] meeting in
-                    guard let self, !self.isRecording, self.meetingDetectionEnabled else {
-                        return
+                await meetingDetector.start(
+                    onDetected: { [weak self] meeting in
+                        guard let self, self.meetingDetectionEnabled
+                        else { return }
+                        self.onMeetingDetected?(meeting)
+                    },
+                    onEnded: { [weak self] meeting in
+                        guard let self, self.meetingDetectionEnabled
+                        else { return }
+                        self.onMeetingEnded?(meeting)
                     }
-                    self.onMeetingDetected?(meeting)
-                }
+                )
             }
         }
         if libraryRefreshTask == nil {
@@ -305,20 +386,31 @@ final class AppModel: ObservableObject {
                     try? await Task.sleep(for: .seconds(8))
                     guard let self, !Task.isCancelled else { return }
                     await transcription.resumePending(root: root)
-                    self.reloadRecordings()
-                    self.reloadKnowledge()
+                    self.refreshLibrary()
                 }
             }
         }
+        scanForSemanticCandidates()
     }
 
     func shutdown() {
         if isRecording {
             stopRecording()
         }
+        recordingPreparationTask?.cancel()
+        recordingPreparationTask = nil
+        isPreparingRecording = false
         Task { [meetingDetector] in await meetingDetector.stop() }
         libraryRefreshTask?.cancel()
         libraryRefreshTask = nil
+        aiPreparationTask?.cancel()
+        aiPreparationTask = nil
+        aiDownloadStallTask?.cancel()
+        aiDownloadStallTask = nil
+        semanticAnalysisTask?.cancel()
+        semanticAnalysisTask = nil
+        semanticProcessingSourceID = nil
+        semanticProcessingLabel = nil
     }
 
     func toggleRecording() {
@@ -326,22 +418,42 @@ final class AppModel: ObservableObject {
     }
 
     func startRecording() {
+        guard !isRecording, !isPreparingRecording else { return }
+        resetAudioLevels()
         do {
-            let newSession = try RecordingSession(root: root)
-            try newSession.start()
-            session = newSession
-            recordingStartedAt = newSession.startedAt
-            liveNotes = ""
-            isRecording = true
-            recordingElapsed = "0:00"
-            onRecordingStateChange?(true, recordingElapsed)
-            ticker = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) {
-                [weak self] _ in
-                MainActor.assumeIsolated { self?.tickRecording() }
-            }
+            try beginRecording()
         } catch {
-            appError = "Couldn’t start recording: \(error)"
-            notifyUser(title: "Dropsift — recording failed", body: "\(error)")
+            handleRecordingStartFailure(error)
+        }
+    }
+
+    func resumeRecording(_ recording: RecordingItem) {
+        guard !isRecording, !isPreparingRecording else { return }
+        isPreparingRecording = true
+        recordingPreparationTask = Task { [weak self, transcription] in
+            guard let self else { return }
+            let canResume = await transcription.prepareForResume(
+                recording.directory
+            )
+            guard !Task.isCancelled else {
+                self.isPreparingRecording = false
+                return
+            }
+            guard canResume else {
+                self.isPreparingRecording = false
+                self.appError =
+                    "This recording is still being transcribed. "
+                    + "Wait for transcription to finish, then resume it."
+                return
+            }
+
+            do {
+                try self.beginRecording(resuming: recording)
+            } catch {
+                self.handleRecordingStartFailure(error)
+            }
+            self.isPreparingRecording = false
+            self.recordingPreparationTask = nil
         }
     }
 
@@ -353,13 +465,61 @@ final class AppModel: ObservableObject {
         self.session = nil
         liveNotes = ""
         recordingStartedAt = nil
+        recordingElapsedBaseSeconds = 0
+        recordingSessionID = nil
         ticker?.invalidate()
         ticker = nil
         isRecording = false
         recordingElapsed = "0:00"
+        resetAudioLevels()
         onRecordingStateChange?(false, nil)
         reloadRecordings(selecting: directory.lastPathComponent)
         Task { [transcription] in await transcription.enqueue(directory) }
+    }
+
+    private func beginRecording(resuming recording: RecordingItem? = nil) throws {
+        resetAudioLevels()
+        let newSession: RecordingSession
+        if let recording {
+            newSession = try RecordingSession(resuming: recording) {
+                [weak self] source, level in
+                Task { @MainActor [weak self] in
+                    self?.recordAudioLevel(level, from: source)
+                }
+            }
+        } else {
+            newSession = try RecordingSession(root: root) {
+                [weak self] source, level in
+                Task { @MainActor [weak self] in
+                    self?.recordAudioLevel(level, from: source)
+                }
+            }
+        }
+
+        try newSession.start()
+        session = newSession
+        recordingStartedAt = newSession.startedAt
+        recordingElapsedBaseSeconds = newSession.elapsedBaseSeconds
+        recordingSessionID = newSession.dir.lastPathComponent
+        liveNotes = recording?.notes ?? ""
+        isRecording = true
+        recordingElapsed = Self.clock(recordingElapsedBaseSeconds)
+        if let recording {
+            selectedRecordingID = recording.id
+            selectedTimelineItemID = "recording:\(recording.id)"
+            section = .timeline
+        }
+        onRecordingStateChange?(true, recordingElapsed)
+        ticker = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) {
+            [weak self] _ in
+            MainActor.assumeIsolated { self?.tickRecording() }
+        }
+    }
+
+    private func handleRecordingStartFailure(_ error: Error) {
+        resetAudioLevels()
+        appError = "Couldn’t start recording: \(error)"
+        notifyUser(title: "Dropsift — recording failed", body: "\(error)")
     }
 
     func reloadRecordings(selecting recordingID: String? = nil) {
@@ -367,9 +527,45 @@ final class AppModel: ObservableObject {
         if let recordingID, recordings.contains(where: { $0.id == recordingID }) {
             selectedRecordingID = recordingID
             selectedTimelineItemID = "recording:\(recordingID)"
-        } else if !recordings.contains(where: { $0.id == selectedRecordingID }) {
-            selectedRecordingID = recordings.first?.id
+        } else if let selectedTimelineItemID,
+                  selectedTimelineItemID.hasPrefix("recording:") {
+            // Passive reloads update content only. In particular, do not
+            // reinterpret an iCloud/transcription write that briefly hides a
+            // directory as a request to navigate somewhere else.
+            selectedRecordingID = String(selectedTimelineItemID.dropFirst(10))
         }
+    }
+
+    func refreshLibrary() {
+        // Load the complete snapshot before publishing either collection.
+        // Publishing half a snapshot used to make SwiftUI reconcile selection
+        // against an intermediate timeline and write the previous row back.
+        let selectionBeforeRefresh = selectedTimelineItemID
+        let loadedRecordings = RecordingLibrary.load(from: root)
+        let loadedKnowledge = KnowledgeLibrary.load(from: knowledgeRoot)
+        recordings = loadedRecordings
+        knowledgeItems = loadedKnowledge
+        refreshSemantics()
+        selectedTimelineItemID = Self.selectionAfterPassiveRefresh(
+            current: selectionBeforeRefresh,
+            availableIDs: timelineItems.map(\.id)
+        )
+
+        if let selectedTimelineItemID,
+           selectedTimelineItemID.hasPrefix("recording:") {
+            selectedRecordingID = String(selectedTimelineItemID.dropFirst(10))
+        }
+        scanForSemanticCandidates()
+    }
+
+    nonisolated static func selectionAfterPassiveRefresh(
+        current: String?,
+        availableIDs _: [String]
+    ) -> String? {
+        // Availability is content state, not navigation state. iCloud and
+        // transcript writes can make an item temporarily unreadable; only a
+        // user action or confirmed deletion may change selection.
+        current
     }
 
     func renameSelectedRecording(to title: String) {
@@ -531,10 +727,199 @@ final class AppModel: ObservableObject {
             guard !Task.isCancelled else { return }
             do {
                 try RecordingLibrary.saveNotes(notes, to: recording.directory)
-                self?.reloadRecordings(selecting: recordingID)
+                self?.reloadRecordings()
             } catch {
                 self?.appError = "Couldn’t save recording notes: \(error.localizedDescription)"
             }
+        }
+    }
+
+    func updateSpeakerNames(
+        _ names: [String: String],
+        recordingID: String
+    ) {
+        guard let recording = recordings.first(where: { $0.id == recordingID })
+        else { return }
+        do {
+            try RecordingLibrary.saveSpeakerNames(names, for: recording)
+            reloadRecordings(selecting: recordingID)
+        } catch {
+            appError = "Couldn’t save speaker names: \(error.localizedDescription)"
+        }
+    }
+
+    func splitRecording(
+        _ recording: RecordingItem,
+        before segment: TranscriptDocument.Segment
+    ) {
+        guard splittingRecordingID == nil, !isRecording else { return }
+        splittingRecordingID = recording.id
+        Task { [weak self, transcription] in
+            guard let self else { return }
+            let canEdit = await transcription.prepareForResume(
+                recording.directory
+            )
+            guard canEdit else {
+                splittingRecordingID = nil
+                appError = "This recording is still being transcribed. Wait for it to finish, then split it."
+                return
+            }
+            do {
+                let newItem = try await RecordingLibrary.splitTranscript(
+                    recording,
+                    at: segment.startMs
+                )
+                try? semanticStore.resetProcessing(
+                    sourceID: "recording:\(recording.id)"
+                )
+                reloadRecordings(selecting: newItem.id)
+                refreshSemantics()
+                scanForSemanticCandidates()
+            } catch {
+                appError = "Couldn’t split this recording: "
+                    + error.localizedDescription
+            }
+            splittingRecordingID = nil
+        }
+    }
+
+    func createTask() {
+        do {
+            let task = try semanticStore.createTask()
+            refreshSemantics()
+            selectedTaskID = task.id
+            section = .tasks
+        } catch {
+            appError = "Couldn’t create the task: \(error.localizedDescription)"
+        }
+    }
+
+    func saveTask(_ task: SharedTask) {
+        do {
+            try semanticStore.saveTask(task)
+            refreshSemantics()
+            selectedTaskID = task.id
+        } catch {
+            appError = "Couldn’t save the task: \(error.localizedDescription)"
+        }
+    }
+
+    func toggleTaskCompletion(_ task: SharedTask) {
+        var updated = task
+        updated.isCompleted.toggle()
+        saveTask(updated)
+    }
+
+    func deleteTask(_ task: SharedTask) {
+        do {
+            try semanticStore.deleteTask(task.id)
+            refreshSemantics()
+            if selectedTaskID == task.id {
+                selectedTaskID = tasks.first?.id
+            }
+        } catch {
+            appError = "Couldn’t delete the task: \(error.localizedDescription)"
+        }
+    }
+
+    func createEntity(kind: SharedSemanticEntityKind) {
+        let entity = SharedSemanticEntity(
+            kind: kind,
+            name: "New \(kind.singularName.lowercased())"
+        )
+        do {
+            try semanticStore.saveEntity(entity)
+            refreshSemantics()
+            selectedEntityID = entity.id
+            section = Self.section(for: kind)
+        } catch {
+            appError = "Couldn’t create the \(kind.singularName.lowercased()): "
+                + error.localizedDescription
+        }
+    }
+
+    func saveEntity(_ entity: SharedSemanticEntity) {
+        do {
+            try semanticStore.saveEntity(entity)
+            refreshSemantics()
+            selectedEntityID = entity.id
+        } catch {
+            appError = "Couldn’t save this item: \(error.localizedDescription)"
+        }
+    }
+
+    func deleteEntity(_ entity: SharedSemanticEntity) {
+        do {
+            try semanticStore.deleteEntity(entity.id)
+            refreshSemantics()
+            if selectedEntityID == entity.id {
+                selectedEntityID = entities.first {
+                    $0.kind == entity.kind
+                }?.id
+            }
+        } catch {
+            appError = "Couldn’t delete this item: \(error.localizedDescription)"
+        }
+    }
+
+    func entities(of kind: SharedSemanticEntityKind) -> [SharedSemanticEntity] {
+        entities.filter { $0.kind == kind }
+    }
+
+    func semanticReview(for sourceID: String) -> SharedSemanticReview? {
+        semanticReviews.first { $0.sourceID == sourceID }
+    }
+
+    func requestSemanticExtraction(for sourceID: String) {
+        guard semanticSources().contains(where: { $0.sourceID == sourceID })
+        else {
+            appError = "There isn’t enough text in this item to extract tasks or details yet."
+            return
+        }
+        if !requestedSemanticSourceIDs.contains(sourceID) {
+            requestedSemanticSourceIDs.append(sourceID)
+        }
+        scanForSemanticCandidates()
+    }
+
+    func acceptSemanticReview(
+        _ review: SharedSemanticReview,
+        selectedCandidateIDs: Set<UUID>
+    ) {
+        do {
+            try semanticStore.acceptReview(
+                review,
+                selectedCandidateIDs: selectedCandidateIDs
+            )
+            refreshSemantics()
+        } catch {
+            appError = "Couldn’t add these findings: \(error.localizedDescription)"
+        }
+    }
+
+    func dismissSemanticReview(_ review: SharedSemanticReview) {
+        do {
+            try semanticStore.dismissReview(review)
+            refreshSemantics()
+        } catch {
+            appError = "Couldn’t dismiss these findings: \(error.localizedDescription)"
+        }
+    }
+
+    func openSemanticSource(_ source: SharedSemanticSourceReference) {
+        section = .timeline
+        selectTimelineItem(source.itemID)
+        if source.itemID.hasPrefix("recording:"),
+           let startMs = source.startMs {
+            transcriptJump = TranscriptJump(
+                recordingID: String(source.itemID.dropFirst(10)),
+                startMs: startMs
+            )
+        } else if source.itemID.hasPrefix("knowledge:"),
+                  let id = UUID(
+                    uuidString: String(source.itemID.dropFirst(10))
+                  ) {
+            knowledgeJump = KnowledgeJump(itemID: id, page: source.page)
         }
     }
 
@@ -559,12 +944,18 @@ final class AppModel: ObservableObject {
         UserDefaults.standard.set(enabled, forKey: Self.meetingDetectionKey)
         Task { [meetingDetector] in
             if enabled {
-                await meetingDetector.start { [weak self] meeting in
-                    guard let self, !self.isRecording, self.meetingDetectionEnabled else {
-                        return
+                await meetingDetector.start(
+                    onDetected: { [weak self] meeting in
+                        guard let self, self.meetingDetectionEnabled
+                        else { return }
+                        self.onMeetingDetected?(meeting)
+                    },
+                    onEnded: { [weak self] meeting in
+                        guard let self, self.meetingDetectionEnabled
+                        else { return }
+                        self.onMeetingEnded?(meeting)
                     }
-                    self.onMeetingDetected?(meeting)
-                }
+                )
             } else {
                 await meetingDetector.stop()
             }
@@ -673,16 +1064,22 @@ final class AppModel: ObservableObject {
 
         Task { [weak self, llm] in
             guard let self else { return }
+            var streamingResponseID: UUID?
             do {
-                let chunks = await Task.detached(priority: .userInitiated) {
+                let retrieval = await Task.detached(priority: .userInitiated) {
+                    let effectiveScope = TranscriptRetriever.resolvedScope(
+                        query: retrievalQuery,
+                        recordings: recordingsSnapshot,
+                        requestedScope: scope
+                    )
                     let transcripts = TranscriptRetriever.retrieve(
                         query: retrievalQuery,
                         recordings: recordingsSnapshot,
-                        scope: scope,
+                        scope: effectiveScope,
                         limit: retrievalLimit,
                         characterBudget: retrievalCharacterBudget
                     )
-                    let knowledge = scope.kind == .allRecordings
+                    let knowledge = effectiveScope.kind == .allRecordings
                         ? KnowledgeRetriever.retrieve(
                             query: retrievalQuery,
                             items: knowledgeSnapshot,
@@ -690,36 +1087,97 @@ final class AppModel: ObservableObject {
                             characterBudget: retrievalCharacterBudget
                         )
                         : []
-                    return RetrievedContext.interleave(
+                    let chunks = RetrievedContext.interleave(
                         transcripts: transcripts,
                         knowledge: knowledge,
                         limit: retrievalLimit,
                         characterBudget: retrievalCharacterBudget
                     )
+                    return (chunks: chunks, scope: effectiveScope)
                 }.value
+                if retrieval.scope != scope,
+                   let currentIndex = threads.firstIndex(where: { $0.id == threadID }),
+                   threads[currentIndex].scope == scope {
+                    threads[currentIndex].scope = retrieval.scope
+                    threads[currentIndex].updatedAt = Date()
+                    persistThreads()
+                }
                 chatStage = .preparingAI
                 try await llm.prepare()
                 chatStage = .generating
-                let answer = try await llm.complete(
-                    systemPrompt: Self.systemPrompt(chunks: chunks, scope: scope),
+                let responseID = UUID()
+                streamingResponseID = responseID
+                guard let responseThreadIndex = threads.firstIndex(
+                    where: { $0.id == threadID }
+                ) else {
+                    chatStage = .idle
+                    return
+                }
+                threads[responseThreadIndex].messages.append(
+                    ChatMessage(
+                        id: responseID,
+                        role: .assistant,
+                        content: ""
+                    )
+                )
+
+                let stream = try await llm.stream(
+                    systemPrompt: Self.systemPrompt(
+                        chunks: retrieval.chunks,
+                        scope: retrieval.scope
+                    ),
                     messages: conversation
                 )
+                var streamedAnswer = ""
+                for try await chunk in stream {
+                    streamedAnswer += chunk
+                    guard let currentIndex = threads.firstIndex(
+                        where: { $0.id == threadID }
+                    ),
+                    let messageIndex = threads[currentIndex].messages.firstIndex(
+                        where: { $0.id == responseID }
+                    ) else {
+                        continue
+                    }
+                    threads[currentIndex].messages[messageIndex].content = streamedAnswer
+                }
+
+                let answer = BuiltInLLMEngine.clean(streamedAnswer)
+                guard !answer.isEmpty else {
+                    throw BuiltInLLMEngine.EngineError.emptyResponse
+                }
                 guard let currentIndex = threads.firstIndex(where: { $0.id == threadID }) else {
                     chatStage = .idle
                     return
                 }
-                threads[currentIndex].messages.append(
-                    ChatMessage(
-                        role: .assistant,
-                        content: answer,
-                        sources: Self.citedSources(answer: answer, chunks: chunks)
-                    )
+                guard let messageIndex = threads[currentIndex].messages.firstIndex(
+                    where: { $0.id == responseID }
+                ) else {
+                    chatStage = .idle
+                    return
+                }
+                threads[currentIndex].messages[messageIndex].content = answer
+                threads[currentIndex].messages[messageIndex].sources = Self.citedSources(
+                    answer: answer,
+                    chunks: retrieval.chunks
                 )
                 threads[currentIndex].updatedAt = Date()
                 threads.sort { $0.updatedAt > $1.updatedAt }
                 persistThreads()
                 chatStage = .idle
             } catch {
+                if let streamingResponseID,
+                   let currentIndex = threads.firstIndex(where: { $0.id == threadID }),
+                   let messageIndex = threads[currentIndex].messages.firstIndex(
+                       where: { $0.id == streamingResponseID }
+                   ) {
+                    if threads[currentIndex].messages[messageIndex].content.isEmpty {
+                        threads[currentIndex].messages.remove(at: messageIndex)
+                    } else {
+                        threads[currentIndex].updatedAt = Date()
+                        persistThreads()
+                    }
+                }
                 chatError = error.localizedDescription
                 chatStage = .idle
                 aiStatus = .failed(error.localizedDescription)
@@ -731,12 +1189,33 @@ final class AppModel: ObservableObject {
         do {
             try await llm.prepare()
         } catch {
+            let cocoaError = error as NSError
+            guard !(error is CancellationError),
+                  !(cocoaError.domain == NSURLErrorDomain
+                    && cocoaError.code == NSURLErrorCancelled)
+            else { return }
             aiStatus = .failed(error.localizedDescription)
         }
     }
 
     func downloadBuiltInAI() {
-        Task { await prepareBuiltInAI() }
+        beginBuiltInAIPreparation(restarting: false)
+    }
+
+    func restartBuiltInAIDownload() {
+        beginBuiltInAIPreparation(restarting: true)
+    }
+
+    func cancelBuiltInAIDownload() {
+        aiPreparationTask?.cancel()
+        aiPreparationTask = nil
+        aiDownloadStallTask?.cancel()
+        aiDownloadStallTask = nil
+        aiDownloadIsStalled = false
+        UserDefaults.standard.removeObject(forKey: Self.pendingModelDownloadKey)
+        Task { [llm] in
+            await llm.cancelPreparation()
+        }
     }
 
     func selectModel(_ modelID: String, downloadAndUse: Bool = true) {
@@ -753,6 +1232,12 @@ final class AppModel: ObservableObject {
         selectedModelID = model.id
         selectedModelPlan = newPlan
         UserDefaults.standard.set(model.id, forKey: Self.selectedModelKey)
+        if downloadAndUse {
+            UserDefaults.standard.set(
+                model.id,
+                forKey: Self.pendingModelDownloadKey
+            )
+        }
         markRecommendationHandled()
 
         let cached = BuiltInLLMEngine.hasCachedModel(
@@ -766,6 +1251,70 @@ final class AppModel: ObservableObject {
             if downloadAndUse || cached {
                 await self.prepareBuiltInAI()
             }
+        }
+    }
+
+    private func beginBuiltInAIPreparation(restarting: Bool) {
+        UserDefaults.standard.set(
+            selectedModelPlan.model.id,
+            forKey: Self.pendingModelDownloadKey
+        )
+        aiDownloadIsStalled = false
+        aiDownloadStallTask?.cancel()
+        aiDownloadStallTask = nil
+        aiPreparationTask?.cancel()
+
+        aiPreparationTask = Task { [weak self, llm] in
+            if restarting {
+                await llm.cancelPreparation()
+            }
+            guard let self, !Task.isCancelled else { return }
+            await self.prepareBuiltInAI()
+            self.aiPreparationTask = nil
+        }
+    }
+
+    private func applyAIState(_ state: BuiltInAIState) {
+        let priorProgress = aiDownloadProgress
+        aiStatus = state
+
+        switch state {
+        case .downloading(let fraction):
+            let madeProgress = fraction > priorProgress + 0.000_001
+            aiDownloadProgress = max(aiDownloadProgress, fraction)
+            if madeProgress || aiDownloadStallTask == nil {
+                aiDownloadIsStalled = false
+                scheduleDownloadStallCheck(progress: fraction)
+            }
+        case .ready:
+            aiDownloadStallTask?.cancel()
+            aiDownloadStallTask = nil
+            aiDownloadIsStalled = false
+            aiDownloadProgress = 1
+            UserDefaults.standard.removeObject(
+                forKey: Self.pendingModelDownloadKey
+            )
+        case .notDownloaded, .downloaded, .loading, .failed:
+            aiDownloadStallTask?.cancel()
+            aiDownloadStallTask = nil
+            aiDownloadIsStalled = false
+            if case .notDownloaded = state {
+                aiDownloadProgress = 0
+            }
+        }
+    }
+
+    private func scheduleDownloadStallCheck(progress: Double) {
+        aiDownloadStallTask?.cancel()
+        aiDownloadStallTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(60))
+            guard let self, !Task.isCancelled else { return }
+            guard case .downloading(let currentProgress) = self.aiStatus,
+                  abs(currentProgress - progress) < 0.000_001
+            else { return }
+
+            self.aiDownloadIsStalled = true
+            self.aiDownloadStallTask = nil
         }
     }
 
@@ -794,6 +1343,65 @@ final class AppModel: ObservableObject {
 
     func isModelCached(_ model: BuiltInModel) -> Bool {
         BuiltInLLMEngine.hasCachedModel(model, in: Config.modelCacheRoot)
+    }
+
+    func requestDeleteModel(_ model: BuiltInModel) {
+        guard isModelCached(model) else { return }
+        modelDeletionRequest = model
+    }
+
+    func cancelModelDeletion() {
+        modelDeletionRequest = nil
+    }
+
+    func confirmModelDeletion(_ model: BuiltInModel) {
+        modelDeletionRequest = nil
+        let directory = BuiltInLLMEngine.modelCacheDirectory(
+            for: model,
+            in: Config.modelCacheRoot
+        )
+        guard FileManager.default.fileExists(atPath: directory.path) else {
+            if model.id == selectedModelID {
+                aiStatus = .notDownloaded
+            }
+            return
+        }
+
+        let deletingSelectedModel = model.id == selectedModelID
+        if deletingSelectedModel {
+            aiPreparationTask?.cancel()
+            aiPreparationTask = nil
+            aiDownloadStallTask?.cancel()
+            aiDownloadStallTask = nil
+            aiDownloadIsStalled = false
+            UserDefaults.standard.removeObject(
+                forKey: Self.pendingModelDownloadKey
+            )
+        }
+
+        Task { [weak self, llm] in
+            if deletingSelectedModel {
+                await llm.unloadModel(model.id)
+            }
+            guard let self else { return }
+            NSWorkspace.shared.recycle([directory]) { [weak self] _, error in
+                Task { @MainActor in
+                    guard let self else { return }
+                    if let error {
+                        self.appError =
+                            "Couldn’t move \(model.name) to Trash: \(error.localizedDescription)"
+                        if deletingSelectedModel {
+                            self.aiStatus = .downloaded
+                        }
+                        return
+                    }
+                    if deletingSelectedModel {
+                        self.aiStatus = .notDownloaded
+                    }
+                    self.objectWillChange.send()
+                }
+            }
+        }
     }
 
     func openModelFolder() {
@@ -923,10 +1531,211 @@ final class AppModel: ObservableObject {
         knowledgeItems = KnowledgeLibrary.load(from: knowledgeRoot)
         if let itemID, knowledgeItems.contains(where: { $0.id == itemID }) {
             selectedTimelineItemID = "knowledge:\(itemID.uuidString)"
-        } else if selectedKnowledgeItem == nil,
-                  let first = knowledgeItems.first {
-            selectedTimelineItemID = "knowledge:\(first.id.uuidString)"
         }
+        scanForSemanticCandidates()
+    }
+
+    private func refreshSemantics() {
+        tasks = semanticStore.loadTasks()
+        entities = semanticStore.loadEntities()
+        semanticReviews = semanticStore.loadPendingReviews()
+        if selectedTaskID == nil || !tasks.contains(where: { $0.id == selectedTaskID }) {
+            selectedTaskID = tasks.first?.id
+        }
+        if let selectedEntityID,
+           !entities.contains(where: { $0.id == selectedEntityID }) {
+            self.selectedEntityID = nil
+        }
+    }
+
+    private func scanForSemanticCandidates() {
+        guard semanticAnalysisTask == nil else { return }
+        let sources = semanticSources()
+        let manuallyRequestedSource = requestedSemanticSourceIDs
+            .compactMap { requestedID in
+                sources.first { $0.sourceID == requestedID }
+            }
+            .first
+        if let manuallyRequestedSource {
+            requestedSemanticSourceIDs.removeAll {
+                $0 == manuallyRequestedSource.sourceID
+            }
+            do {
+                try semanticStore.resetProcessing(
+                    sourceID: manuallyRequestedSource.sourceID
+                )
+                refreshSemantics()
+            } catch {
+                appError = "Couldn’t re-extract this item: "
+                    + error.localizedDescription
+                scanForSemanticCandidates()
+                return
+            }
+        }
+        let pendingKeys = Set(
+            semanticStore.loadPendingReviews().map {
+                $0.sourceID + "|" + $0.sourceRevision
+            }
+        )
+        let source = manuallyRequestedSource ?? sources.first(where: {
+            !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && !semanticStore.isProcessed(
+                    sourceID: $0.sourceID,
+                    revision: $0.revision
+                )
+                && !pendingKeys.contains($0.sourceID + "|" + $0.revision)
+        })
+        guard let source else {
+            refreshSemantics()
+            return
+        }
+
+        semanticProcessingLabel = "Organizing \(source.title)…"
+        semanticProcessingSourceID = source.sourceID
+        let useLocalModel = BuiltInLLMEngine.hasCachedModel(
+            selectedModelPlan.model,
+            in: Config.modelCacheRoot
+        )
+        let store = semanticStore
+        let engine = llm
+        semanticAnalysisTask = Task { [weak self] in
+            guard let self else { return }
+            var candidates: [SharedSemanticCandidate] = []
+            if useLocalModel {
+                do {
+                    let response = try await engine.complete(
+                        systemPrompt: SharedSemanticExtraction.systemPrompt,
+                        messages: [
+                            ChatMessage(
+                                role: .user,
+                                content: SharedSemanticExtraction.userPrompt(
+                                    text: source.text,
+                                    sourceTitle: source.title
+                                )
+                            ),
+                        ]
+                    )
+                    candidates = SharedSemanticExtraction.parse(
+                        response,
+                        source: source.reference
+                    )
+                } catch {
+                    candidates = []
+                }
+            }
+            if candidates.isEmpty {
+                candidates = SharedSemanticExtraction.heuristicCandidates(
+                    in: source.text,
+                    source: source.reference
+                )
+            }
+            let review = SharedSemanticReview(
+                sourceID: source.sourceID,
+                sourceRevision: source.revision,
+                sourceTitle: source.title,
+                source: source.reference,
+                candidates: candidates
+            )
+            do {
+                _ = try store.enqueueReview(review)
+            } catch {
+                self.appError = "Couldn’t save extracted findings: "
+                    + error.localizedDescription
+            }
+            self.semanticProcessingLabel = nil
+            self.semanticProcessingSourceID = nil
+            self.semanticAnalysisTask = nil
+            self.refreshSemantics()
+            self.scanForSemanticCandidates()
+        }
+    }
+
+    private func semanticSources() -> [SemanticSourceContent] {
+        let recordingSources = recordings.compactMap {
+            recording -> SemanticSourceContent? in
+            let transcript = recording.transcript
+            let text = (transcript?.segments ?? []).map {
+                "\(recording.speakerName(for: $0.speaker)): \($0.text)"
+            }
+            .joined(separator: "\n")
+            let notes = recording.notes.trimmingCharacters(
+                in: .whitespacesAndNewlines
+            )
+            let combined = notes.isEmpty
+                ? text
+                : "Notes:\n\(notes)\n\nTranscript:\n\(text)"
+            guard !combined.trimmingCharacters(
+                in: .whitespacesAndNewlines
+            ).isEmpty else { return nil }
+            let first = transcript?.segments.first
+            let itemID = "recording:\(recording.id)"
+            return SemanticSourceContent(
+                sourceID: itemID,
+                revision: (transcript?.createdAt ?? "notes-only") + "|"
+                    + Self.stableTextSignature(recording.notes),
+                title: recording.title,
+                text: combined,
+                reference: SharedSemanticSourceReference(
+                    itemID: itemID,
+                    title: recording.title,
+                    locator: first.map {
+                        "Transcript · \(TranscriptDocument.clock($0.startMs))"
+                    } ?? "Transcript",
+                    excerpt: first?.text ?? recording.preview,
+                    startMs: first?.startMs
+                )
+            )
+        }
+        let knowledgeSources = knowledgeItems.map {
+            item -> SemanticSourceContent in
+            let primary = item.kind == .note ? item.content : item.extractedText
+            let notes = item.additionalNotes.trimmingCharacters(
+                in: .whitespacesAndNewlines
+            )
+            let text = notes.isEmpty
+                ? primary
+                : "\(primary)\n\nAdditional notes:\n\(notes)"
+            let itemID = "knowledge:\(item.id.uuidString)"
+            return SemanticSourceContent(
+                sourceID: itemID,
+                revision: ISO8601DateFormatter().string(from: item.updatedAt),
+                title: item.title,
+                text: text,
+                reference: SharedSemanticSourceReference(
+                    itemID: itemID,
+                    title: item.title,
+                    locator: item.blocks.first?.locator
+                        ?? (item.kind == .note ? "Note" : item.kind.displayName),
+                    excerpt: item.blocks.first?.text ?? item.preview,
+                    page: item.blocks.first?.page
+                )
+            )
+        }
+        return recordingSources + knowledgeSources
+    }
+
+    private static func section(
+        for kind: SharedSemanticEntityKind
+    ) -> Section {
+        switch kind {
+        case .person: .people
+        case .place: .places
+        case .event: .events
+        case .organization: .organizations
+        case .project: .projects
+        case .topic: .topics
+        }
+    }
+
+    nonisolated private static func stableTextSignature(
+        _ value: String
+    ) -> String {
+        var hash: UInt64 = 14_695_981_039_346_656_037
+        for byte in value.utf8 {
+            hash ^= UInt64(byte)
+            hash = hash &* 1_099_511_628_211
+        }
+        return String(hash, radix: 16)
     }
 
     private func scheduleKnowledgeSave(
@@ -941,7 +1750,7 @@ final class AppModel: ObservableObject {
                 try await Task.detached(priority: .utility) {
                     try action()
                 }.value
-                self?.reloadKnowledge(selecting: itemID)
+                self?.reloadKnowledge()
             } catch {
                 self?.appError = "Couldn’t save this item: \(error.localizedDescription)"
             }
@@ -1047,9 +1856,51 @@ final class AppModel: ObservableObject {
 
     private func tickRecording() {
         guard let recordingStartedAt else { return }
-        let seconds = Int(Date().timeIntervalSince(recordingStartedAt))
+        let seconds = recordingElapsedBaseSeconds
+            + Int(Date().timeIntervalSince(recordingStartedAt))
         recordingElapsed = Self.clock(seconds)
+        clearStaleAudioLevels()
         onRecordingStateChange?(true, recordingElapsed)
+    }
+
+    private func recordAudioLevel(
+        _ level: Float,
+        from source: RecordingSession.AudioSource
+    ) {
+        guard isRecording else { return }
+        let normalized = min(max(level, 0), 1)
+        switch source {
+        case .microphone:
+            microphoneLevelUpdatedAt = Date()
+            microphoneAudioLevels = appending(
+                normalized,
+                to: microphoneAudioLevels
+            )
+        case .system:
+            systemLevelUpdatedAt = Date()
+            systemAudioLevels = appending(normalized, to: systemAudioLevels)
+        }
+    }
+
+    private func resetAudioLevels() {
+        microphoneAudioLevels = Self.emptyAudioLevels
+        systemAudioLevels = Self.emptyAudioLevels
+        microphoneLevelUpdatedAt = nil
+        systemLevelUpdatedAt = nil
+    }
+
+    private func appending(_ level: Float, to history: [Float]) -> [Float] {
+        Array((history + [level]).suffix(Self.audioLevelHistoryCount))
+    }
+
+    private func clearStaleAudioLevels() {
+        let cutoff = Date().addingTimeInterval(-0.6)
+        if microphoneLevelUpdatedAt.map({ $0 < cutoff }) ?? true {
+            microphoneAudioLevels = Self.emptyAudioLevels
+        }
+        if systemLevelUpdatedAt.map({ $0 < cutoff }) ?? true {
+            systemAudioLevels = Self.emptyAudioLevels
+        }
     }
 
     private static func clock(_ totalSeconds: Int) -> String {

@@ -21,6 +21,12 @@ struct KnowledgeDetailView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
+            ItemSemanticInsightsView(
+                model: model,
+                sourceID: "knowledge:\(item.id.uuidString)"
+            )
+            .padding(.horizontal, 24)
+            .padding(.bottom, 16)
             Divider()
             if item.kind == .note {
                 MarkdownNoteEditor(text: $content)
@@ -32,6 +38,11 @@ struct KnowledgeDetailView: View {
             }
         }
         .background(Color(nsColor: .textBackgroundColor))
+        .onChange(of: item.title) { oldTitle, newTitle in
+            if title == oldTitle {
+                title = newTitle
+            }
+        }
     }
 
     private var header: some View {
@@ -179,14 +190,11 @@ struct KnowledgeDetailView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            TextEditor(text: $notes)
-                .font(.body)
-                .lineSpacing(4)
-                .padding(8)
-                .background(
-                    Color(nsColor: .controlBackgroundColor),
-                    in: RoundedRectangle(cornerRadius: 12)
-                )
+            MarkdownNoteEditor(
+                text: $notes,
+                placeholder: "Add notes about this \(item.kind.displayName.lowercased())…",
+                accessibilityIdentifier: "knowledge-notes-editor"
+            )
                 .onChange(of: notes) {
                     model.updateKnowledgeNotes(notes, itemID: item.id)
                 }

@@ -1,3 +1,4 @@
+import DropsiftShared
 import Foundation
 
 struct TranscriptDocument: Codable, Sendable {
@@ -68,11 +69,12 @@ struct TranscriptDocument: Codable, Sendable {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try encoder.encode(self)
             .write(to: directory.appendingPathComponent("transcript.json"), options: .atomic)
-        try Data(rendered(title: title).utf8)
+        let speakerNames = SharedSpeakerNameStore.load(from: directory)
+        try Data(rendered(title: title, speakerNames: speakerNames).utf8)
             .write(to: directory.appendingPathComponent("transcript.md"), options: .atomic)
     }
 
-    private func rendered(title: String) -> String {
+    private func rendered(title: String, speakerNames: [String: String]) -> String {
         var lines = ["# \(title)", "", "engine: \(engine) (\(model))", ""]
         if let languageCode {
             lines.append("language: \(languageCode) (detected from transcript text)")
@@ -86,8 +88,12 @@ struct TranscriptDocument: Codable, Sendable {
             lines.append("")
         }
         for segment in segments {
+            let speaker = SharedSpeakerNameStore.displayName(
+                for: segment.speaker,
+                names: speakerNames
+            )
             lines.append(
-                "**[\(Self.clock(segment.startMs))] \(segment.speaker):** \(segment.text)"
+                "**[\(Self.clock(segment.startMs))] \(speaker):** \(segment.text)"
             )
             lines.append("")
         }
@@ -130,6 +136,37 @@ struct RecordingItem: Identifiable, Sendable {
     let systemURL: URL?
     let transcript: TranscriptDocument?
     let notes: String
+    let speakerNames: [String: String]
+
+    init(
+        id: String,
+        directory: URL,
+        title: String,
+        startedAt: Date?,
+        endedAt: Date?,
+        durationSeconds: Int,
+        micURL: URL?,
+        systemURL: URL?,
+        transcript: TranscriptDocument?,
+        notes: String,
+        speakerNames: [String: String] = [:]
+    ) {
+        self.id = id
+        self.directory = directory
+        self.title = title
+        self.startedAt = startedAt
+        self.endedAt = endedAt
+        self.durationSeconds = durationSeconds
+        self.micURL = micURL
+        self.systemURL = systemURL
+        self.transcript = transcript
+        self.notes = notes
+        self.speakerNames = speakerNames
+    }
+
+    func speakerName(for speakerID: String) -> String {
+        SharedSpeakerNameStore.displayName(for: speakerID, names: speakerNames)
+    }
 
     var isTranscribed: Bool { transcript != nil }
     var segmentCount: Int { transcript?.segments.count ?? 0 }
@@ -177,7 +214,24 @@ struct RecordingItem: Identifiable, Sendable {
         let transcript: TranscriptDocument? = {
             let url = directory.appendingPathComponent("transcript.json")
             guard let data = try? Data(contentsOf: url) else { return nil }
-            return try? decoder.decode(TranscriptDocument.self, from: data)
+            guard let document = try? decoder.decode(
+                TranscriptDocument.self,
+                from: data
+            ) else { return nil }
+            let deduplicated = TranscriptEchoDeduplicator.removeEchoes(
+                from: document.segments
+            )
+            guard deduplicated.count != document.segments.count else {
+                return document
+            }
+            return TranscriptDocument(
+                engine: document.engine,
+                model: document.model,
+                createdAt: document.createdAt,
+                segments: deduplicated,
+                languageCode: document.languageCode,
+                diarization: document.diarization
+            )
         }()
 
         guard metadata != nil || transcript != nil else { return nil }
@@ -216,7 +270,8 @@ struct RecordingItem: Identifiable, Sendable {
             micURL: trackURL("mic"),
             systemURL: trackURL("system"),
             transcript: transcript,
-            notes: notes
+            notes: notes,
+            speakerNames: SharedSpeakerNameStore.load(from: directory)
         )
     }
 

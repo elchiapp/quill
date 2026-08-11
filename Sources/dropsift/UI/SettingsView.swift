@@ -100,9 +100,54 @@ struct SettingsView: View {
                 Spacer()
                 Button("Open in Finder") { model.openRecordingsFolder() }
             }
+
+            Divider()
+
+            HStack {
+                Text("Dropsift version")
+                    .font(.caption.weight(.semibold))
+                Spacer()
+                Text(versionLabel)
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
         }
         .padding(24)
         .frame(width: 740)
+        .confirmationDialog(
+            model.modelDeletionRequest.map {
+                "Delete \($0.name)?"
+            } ?? "Delete downloaded model?",
+            isPresented: modelDeletionConfirmationPresented,
+            titleVisibility: .visible,
+            presenting: model.modelDeletionRequest
+        ) { requestedModel in
+            Button("Move Model to Trash", role: .destructive) {
+                model.confirmModelDeletion(requestedModel)
+            }
+            Button("Cancel", role: .cancel) {
+                model.cancelModelDeletion()
+            }
+        } message: { requestedModel in
+            Text(
+                "\(requestedModel.name)’s downloaded files (\(requestedModel.downloadLabel)) will be moved to the macOS Trash. "
+                    + (requestedModel.id == model.selectedModelID
+                        ? "Dropsift will unload it first. "
+                        : "")
+                    + "Your recordings, notes, and conversations will not be affected."
+            )
+        }
+    }
+
+    private var versionLabel: String {
+        let version = Bundle.main.object(
+            forInfoDictionaryKey: "CFBundleShortVersionString"
+        ) as? String ?? "Development"
+        let build = Bundle.main.object(
+            forInfoDictionaryKey: "CFBundleVersion"
+        ) as? String
+        return build.map { "\(version) (\($0))" } ?? version
     }
 
     private var status: some View {
@@ -172,8 +217,17 @@ struct SettingsView: View {
 
                 if selected, case .downloading(let fraction) = model.aiStatus {
                     ProgressView(value: fraction) {
-                        Text("Downloading · \(Int(fraction * 100))%")
+                        Text(
+                            model.aiDownloadIsStalled
+                                ? "Download stalled at \(Self.percent(fraction))"
+                                : "Downloading · \(Self.percent(fraction))"
+                        )
                             .font(.caption2)
+                            .foregroundStyle(
+                                model.aiDownloadIsStalled
+                                    ? Color.red
+                                    : Color.secondary
+                            )
                     }
                     .frame(width: 300)
                 } else if selected, case .loading = model.aiStatus {
@@ -189,17 +243,29 @@ struct SettingsView: View {
 
             Spacer()
 
-            if selected {
-                selectedModelAction
-            } else {
-                Button(model.isModelCached(plan.model) ? "Load & use" : "Download & use") {
-                    model.selectModel(plan.model.id)
+            HStack(spacing: 8) {
+                if selected {
+                    selectedModelAction
+                } else {
+                    Button(model.isModelCached(plan.model) ? "Load & use" : "Download & use") {
+                        model.selectModel(plan.model.id)
+                    }
+                    .disabled(
+                        !compatible
+                            || model.isAITransitioning
+                            || model.isAnswering
+                    )
                 }
-                .disabled(
-                    !compatible
-                        || model.isAITransitioning
-                        || model.isAnswering
-                )
+
+                if model.isModelCached(plan.model) {
+                    Button("Delete", role: .destructive) {
+                        model.requestDeleteModel(plan.model)
+                    }
+                    .disabled(
+                        model.isAnswering
+                            || (selected && model.isAITransitioning)
+                    )
+                }
             }
         }
         .padding(.vertical, 2)
@@ -221,8 +287,21 @@ struct SettingsView: View {
             Label("In use", systemImage: "checkmark")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.green)
-        case .downloading, .loading:
-            EmptyView()
+        case .downloading:
+            HStack(spacing: 8) {
+                Button(model.aiDownloadIsStalled ? "Retry" : "Restart") {
+                    model.restartBuiltInAIDownload()
+                }
+                if !model.aiDownloadIsStalled {
+                    Button("Cancel") {
+                        model.cancelBuiltInAIDownload()
+                    }
+                }
+            }
+        case .loading:
+            Button("Cancel") {
+                model.cancelBuiltInAIDownload()
+            }
         }
     }
 
@@ -242,7 +321,9 @@ struct SettingsView: View {
         case .downloaded:
             "Downloaded · not loaded"
         case .downloading(let fraction):
-            "Downloading \(model.selectedModelPlan.model.name) · \(Int(fraction * 100))%"
+            model.aiDownloadIsStalled
+                ? "Download stalled · \(Self.percent(fraction))"
+                : "Downloading \(model.selectedModelPlan.model.name) · \(Self.percent(fraction))"
         case .loading:
             "Loading \(model.selectedModelPlan.model.name)…"
         case .ready:
@@ -250,6 +331,20 @@ struct SettingsView: View {
         case .failed(let message):
             message
         }
+    }
+
+    private static func percent(_ fraction: Double) -> String {
+        let percentage = max(0, min(100, fraction * 100))
+        return percentage < 10
+            ? String(format: "%.1f%%", percentage)
+            : String(format: "%.0f%%", percentage)
+    }
+
+    private var modelDeletionConfirmationPresented: Binding<Bool> {
+        Binding(
+            get: { model.modelDeletionRequest != nil },
+            set: { if !$0 { model.cancelModelDeletion() } }
+        )
     }
 }
 

@@ -18,6 +18,7 @@ actor TranscriptionCoordinator {
 
     private var queue: [URL] = []
     private var draining = false
+    private var activeSession: URL?
     private var engine: TranscriptionEngine?
     private var diarizer: SpeakerDiarizationEngine?
     private var lastFailure: String?
@@ -34,8 +35,19 @@ actor TranscriptionCoordinator {
             runHook(for: sessionDir)
             return
         }
+        queue.removeAll { $0.standardizedFileURL == sessionDir.standardizedFileURL }
         queue.append(sessionDir)
         drainIfIdle()
+    }
+
+    /// Remove a waiting transcription before appending more audio. An active
+    /// transcription cannot be mutated safely, so callers must wait for it to
+    /// finish before resuming that recording.
+    func prepareForResume(_ sessionDir: URL) -> Bool {
+        let target = sessionDir.standardizedFileURL
+        guard activeSession?.standardizedFileURL != target else { return false }
+        queue.removeAll { $0.standardizedFileURL == target }
+        return true
     }
 
     /// Scan the recordings root for sessions that finished (meta.json exists)
@@ -51,7 +63,19 @@ actor TranscriptionCoordinator {
         let pending = entries
             .filter {
                 fm.fileExists(atPath: $0.appendingPathComponent("meta.json").path)
-                    && !fm.fileExists(atPath: $0.appendingPathComponent("transcript.json").path)
+                    && (
+                        !fm.fileExists(
+                            atPath: $0.appendingPathComponent("transcript.json").path
+                        )
+                            || fm.fileExists(
+                                atPath: $0.appendingPathComponent(
+                                    ".transcription-pending"
+                                ).path
+                            )
+                    )
+                    && !fm.fileExists(
+                        atPath: $0.appendingPathComponent(".recording-active").path
+                    )
             }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
         for dir in pending where !queue.contains(dir) {
@@ -77,9 +101,13 @@ actor TranscriptionCoordinator {
     private func drain() async {
         while !queue.isEmpty {
             let dir = queue.removeFirst()
+            activeSession = dir
             publish(.transcribing(session: dir.lastPathComponent, queued: queue.count))
             do {
                 try await transcribe(dir)
+                try? FileManager.default.removeItem(
+                    at: dir.appendingPathComponent(".transcription-pending")
+                )
                 notifyUser(title: "Dropsift — transcript ready", body: dir.lastPathComponent)
                 runHook(for: dir)
             } catch {
@@ -90,6 +118,7 @@ actor TranscriptionCoordinator {
                     body: "\(dir.lastPathComponent) — see transcribe.log"
                 )
             }
+            activeSession = nil
         }
         await engine?.release()
         engine = nil
@@ -162,6 +191,15 @@ actor TranscriptionCoordinator {
             }
         }
         merged.sort { $0.startMs < $1.startMs }
+        let segmentCountBeforeDeduplication = merged.count
+        merged = TranscriptEchoDeduplicator.removeEchoes(from: merged)
+        let removedEchoes = segmentCountBeforeDeduplication - merged.count
+        if removedEchoes > 0 {
+            log(
+                dir,
+                "removed \(removedEchoes) duplicate mic echo segment(s)"
+            )
+        }
 
         let transcript = TranscriptDocument(
             engine: engine.name,
@@ -178,13 +216,13 @@ actor TranscriptionCoordinator {
                 )
                 : nil
         )
-        let savedTitle = try? String(
-            contentsOf: dir.appendingPathComponent("title.txt"),
-            encoding: .utf8
-        ).trimmingCharacters(in: .whitespacesAndNewlines)
+        let title = try RecordingLibrary.refreshGeneratedTitle(
+            in: dir,
+            transcript: transcript
+        )
         try transcript.write(
             to: dir,
-            title: savedTitle.flatMap { $0.isEmpty ? nil : $0 } ?? dir.lastPathComponent
+            title: title
         )
         log(dir, "done — \(merged.count) segments")
     }
@@ -267,7 +305,7 @@ actor TranscriptionCoordinator {
 
 /// The slice of meta.json the coordinator needs: which files exist, who they
 /// represent, and how far each track started after the earliest one.
-private struct SessionMeta {
+struct SessionMeta {
     struct Track {
         let file: String
         let speaker: String
@@ -288,22 +326,17 @@ private struct SessionMeta {
 
     static func read(from dir: URL) throws -> SessionMeta {
         let url = dir.appendingPathComponent("meta.json")
-        guard
-            let data = try? Data(contentsOf: url),
-            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let files = json["files"] as? [String: String]
-        else { throw MetaError.unreadable(url) }
-
-        // Sessions recorded before offsets were captured default to 0 —
-        // tracks start within tens of milliseconds of each other anyway.
-        let offsets = json["start_offset_ms"] as? [String: Int] ?? [:]
-        var tracks: [Track] = []
-        if let mic = files["mic"] {
-            tracks.append(Track(file: mic, speaker: "me", offsetMs: offsets["mic"] ?? 0))
+        guard let manifest = RecordingManifest.read(from: dir) else {
+            throw MetaError.unreadable(url)
         }
-        if let system = files["system"] {
-            tracks.append(Track(file: system, speaker: "them", offsetMs: offsets["system"] ?? 0))
-        }
-        return SessionMeta(tracks: tracks)
+        return SessionMeta(
+            tracks: manifest.transcriptionTracks.map {
+                Track(
+                    file: $0.file,
+                    speaker: $0.speaker,
+                    offsetMs: $0.offsetMs
+                )
+            }
+        )
     }
 }

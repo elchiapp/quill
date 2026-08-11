@@ -15,14 +15,34 @@ final class SpeakerDiarizationEngine: @unchecked Sendable {
     let name = "offline-vbx"
     let model = "pyannote-community-1-wespeaker-vbx-coreml"
 
+    private let config: OfflineDiarizerConfig
+
     // OfflineDiarizerManager uses read-only Core ML models after preparation
     // but does not declare Sendable. TranscriptionCoordinator is an actor and
     // serializes every call into this wrapper.
     private var manager: OfflineDiarizerManager?
 
+    init(
+        expectedSpeakerCount: Int? = nil,
+        clusteringThreshold: Double? = nil,
+        recoverUnassignedSpeech: Bool = false
+    ) {
+        var config = OfflineDiarizerConfig.default
+        if let expectedSpeakerCount {
+            config.clustering.numSpeakers = max(1, expectedSpeakerCount)
+        }
+        if let clusteringThreshold {
+            config.clustering.threshold = clusteringThreshold
+        }
+        if recoverUnassignedSpeech {
+            config.zeroVoteReembed = .init(enabled: true, minDurationSeconds: 0.4)
+        }
+        self.config = config
+    }
+
     func prepare() async throws {
         guard manager == nil else { return }
-        let manager = OfflineDiarizerManager()
+        let manager = OfflineDiarizerManager(config: config)
         try await manager.prepareModels()
         self.manager = manager
     }
@@ -32,10 +52,20 @@ final class SpeakerDiarizationEngine: @unchecked Sendable {
             throw DiarizerError.notInitialized
         }
         let result = try await manager.process(audio)
-        let rawIDs = Set(result.segments.map(\.speakerId))
-            .sorted { lhs, rhs in
-                lhs.localizedStandardCompare(rhs) == .orderedAscending
+        let firstAppearance = Dictionary(
+            grouping: result.segments,
+            by: \.speakerId
+        ).mapValues { segments in
+            segments.map(\.startTimeSeconds).min() ?? .greatestFiniteMagnitude
+        }
+        let rawIDs = Set(result.segments.map(\.speakerId)).sorted { lhs, rhs in
+            let lhsStart = firstAppearance[lhs] ?? .greatestFiniteMagnitude
+            let rhsStart = firstAppearance[rhs] ?? .greatestFiniteMagnitude
+            if lhsStart == rhsStart {
+                return lhs.localizedStandardCompare(rhs) == .orderedAscending
             }
+            return lhsStart < rhsStart
+        }
         let labels = Dictionary(
             uniqueKeysWithValues: rawIDs.enumerated().map {
                 ($0.element, "speaker_\($0.offset + 1)")
@@ -70,7 +100,8 @@ enum SpeakerAssignment {
     static func speaker(
         for transcriptSegment: TranscriptSegment,
         turns: [DetectedSpeakerTurn],
-        fallback: String = "them"
+        fallback: String = "them",
+        maximumFallbackDistance: TimeInterval = 1.5
     ) -> String {
         guard !turns.isEmpty else { return fallback }
 
@@ -97,7 +128,8 @@ enum SpeakerAssignment {
         let nearest = turns.min { lhs, rhs in
             distance(from: midpoint, to: lhs) < distance(from: midpoint, to: rhs)
         }
-        if let nearest, distance(from: midpoint, to: nearest) <= 1.5 {
+        if let nearest,
+           distance(from: midpoint, to: nearest) <= maximumFallbackDistance {
             return nearest.speaker
         }
         return fallback

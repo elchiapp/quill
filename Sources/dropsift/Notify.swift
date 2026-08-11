@@ -17,11 +17,11 @@ func notifyUser(title: String, body: String) {
 
 final class MeetingNotificationController: NSObject, UNUserNotificationCenterDelegate,
     @unchecked Sendable {
-    static let categoryID = "DROPSIFT_MEETING_DETECTED"
+    static let detectedCategoryID = "DROPSIFT_MEETING_DETECTED"
     static let startActionID = "DROPSIFT_START_RECORDING"
     static let dismissActionID = "DROPSIFT_NOT_NOW"
 
-    @MainActor var onStartRecording: (() -> Void)?
+    @MainActor var onStartRecording: ((DetectedMeeting) -> Void)?
 
     @MainActor
     func configure() {
@@ -39,7 +39,7 @@ final class MeetingNotificationController: NSObject, UNUserNotificationCenterDel
         )
         center.setNotificationCategories([
             UNNotificationCategory(
-                identifier: Self.categoryID,
+                identifier: Self.detectedCategoryID,
                 actions: [start, dismiss],
                 intentIdentifiers: [],
                 options: []
@@ -56,9 +56,27 @@ final class MeetingNotificationController: NSObject, UNUserNotificationCenterDel
             ? "This browser is using your microphone. Start a Dropsift recording?"
             : "\(meeting.appName) is using your microphone. Start a Dropsift recording?"
         content.sound = .default
-        content.categoryIdentifier = Self.categoryID
+        content.categoryIdentifier = Self.detectedCategoryID
+        content.userInfo = [
+            "bundleID": meeting.bundleID,
+            "appName": meeting.appName,
+            "isBrowser": meeting.isBrowser,
+        ]
         let request = UNNotificationRequest(
             identifier: "meeting-\(meeting.bundleID)-\(Date().timeIntervalSince1970)",
+            content: content,
+            trigger: nil
+        )
+        UNUserNotificationCenter.current().add(request)
+    }
+
+    @MainActor
+    func reportAutomaticallyStopped(for meeting: DetectedMeeting) {
+        let content = UNMutableNotificationContent()
+        content.title = "Recording stopped"
+        content.body = "\(meeting.appName) stopped using the microphone, so Dropsift ended the meeting recording."
+        let request = UNNotificationRequest(
+            identifier: "meeting-stopped-\(meeting.bundleID)-\(Date().timeIntervalSince1970)",
             content: content,
             trigger: nil
         )
@@ -76,7 +94,28 @@ final class MeetingNotificationController: NSObject, UNUserNotificationCenterDel
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse
     ) async {
-        guard response.actionIdentifier == Self.startActionID else { return }
-        await MainActor.run { onStartRecording?() }
+        switch response.actionIdentifier {
+        case Self.startActionID:
+            guard let meeting = Self.meeting(
+                from: response.notification.request.content.userInfo
+            ) else { return }
+            await MainActor.run { onStartRecording?(meeting) }
+        default:
+            break
+        }
+    }
+
+    private static func meeting(
+        from userInfo: [AnyHashable: Any]
+    ) -> DetectedMeeting? {
+        guard let bundleID = userInfo["bundleID"] as? String,
+              let appName = userInfo["appName"] as? String,
+              let isBrowser = userInfo["isBrowser"] as? Bool
+        else { return nil }
+        return DetectedMeeting(
+            bundleID: bundleID,
+            appName: appName,
+            isBrowser: isBrowser
+        )
     }
 }

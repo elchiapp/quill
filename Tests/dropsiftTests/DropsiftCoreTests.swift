@@ -1,6 +1,320 @@
+import AVFoundation
+import DropsiftShared
 import Foundation
 import Testing
 @testable import dropsift
+
+@Test
+func meetingDetectionWaitsTenSecondsBeforeReportingAnEnd() {
+    var tracker = MeetingDetectionTracker()
+    let meeting = DetectedMeeting(
+        bundleID: "us.zoom.xos",
+        appName: "Zoom",
+        isBrowser: false
+    )
+    let started = Date(timeIntervalSince1970: 1_000)
+
+    #expect(tracker.update(current: meeting, now: started) == nil)
+    #expect(
+        tracker.update(current: meeting, now: started.addingTimeInterval(4))
+            == .detected(meeting)
+    )
+    #expect(tracker.update(current: nil, now: started.addingTimeInterval(5)) == nil)
+    #expect(tracker.update(current: nil, now: started.addingTimeInterval(14.9)) == nil)
+    #expect(
+        tracker.update(current: nil, now: started.addingTimeInterval(15))
+            == .ended(meeting)
+    )
+}
+
+@Test
+func meetingDetectionIgnoresBriefMicrophoneDropouts() {
+    var tracker = MeetingDetectionTracker()
+    let meeting = DetectedMeeting(
+        bundleID: "com.microsoft.teams",
+        appName: "Microsoft Teams",
+        isBrowser: false
+    )
+    let started = Date(timeIntervalSince1970: 2_000)
+
+    #expect(tracker.update(current: meeting, now: started) == nil)
+    #expect(
+        tracker.update(current: meeting, now: started.addingTimeInterval(4))
+            == .detected(meeting)
+    )
+    #expect(tracker.update(current: nil, now: started.addingTimeInterval(5)) == nil)
+    #expect(tracker.update(current: meeting, now: started.addingTimeInterval(9)) == nil)
+    #expect(tracker.update(current: nil, now: started.addingTimeInterval(10)) == nil)
+    #expect(tracker.update(current: nil, now: started.addingTimeInterval(20)) == .ended(meeting))
+}
+
+@Test
+func meetingAutoStopOnlyMatchesTheMeetingThatStartedTheRecording() {
+    let zoom = DetectedMeeting(
+        bundleID: "us.zoom.xos",
+        appName: "Zoom",
+        isBrowser: false
+    )
+    let browser = DetectedMeeting(
+        bundleID: "com.apple.Safari",
+        appName: "Safari",
+        isBrowser: true
+    )
+    var state = MeetingRecordingAutoStopState()
+
+    state.recordingStarted()
+    let endedWithoutDetectedMeeting = state.meetingEnded(zoom)
+    #expect(!endedWithoutDetectedMeeting)
+
+    state.meetingDetected(zoom)
+    state.recordingStarted()
+    let endedDifferentMeeting = state.meetingEnded(browser)
+    let endedMatchingMeeting = state.meetingEnded(zoom)
+    #expect(!endedDifferentMeeting)
+    #expect(endedMatchingMeeting)
+
+    state.meetingDetected(zoom)
+    state.recordingStarted()
+    state.meetingDetected(browser)
+    let endedAfterMeetingAppChanged = state.meetingEnded(browser)
+    #expect(endedAfterMeetingAppChanged)
+
+    state.meetingDetected(zoom)
+    state.recordingStarted()
+    state.recordingStopped()
+    let endedAfterManualStop = state.meetingEnded(zoom)
+    #expect(!endedAfterManualStop)
+}
+
+@Test
+func transcriptEchoDeduplicatorRemovesSystemPlaybackFromYouTrack() {
+    let segments = [
+        TranscriptDocument.Segment(
+            speaker: "speaker_3",
+            startMs: 161_000,
+            endMs: 165_000,
+            text: "So it's it's obviously a balance um that we always walk."
+        ),
+        TranscriptDocument.Segment(
+            speaker: "me",
+            startMs: 162_000,
+            endMs: 166_000,
+            text: "So it's it's obviously a a balance um that we always walk."
+        ),
+        TranscriptDocument.Segment(
+            speaker: "speaker_3",
+            startMs: 166_000,
+            endMs: 171_000,
+            text: "But luckily there's many ways to do this very safely with a lot of stuff."
+        ),
+        TranscriptDocument.Segment(
+            speaker: "me",
+            startMs: 167_000,
+            endMs: 172_000,
+            text: "But luckily there's many ways to do this very safely with other stuff."
+        ),
+        TranscriptDocument.Segment(
+            speaker: "speaker_3",
+            startMs: 180_000,
+            endMs: 185_000,
+            text: "The threat picture is always changing."
+        ),
+        TranscriptDocument.Segment(
+            speaker: "me",
+            startMs: 190_000,
+            endMs: 194_000,
+            text: "I think we should pause and discuss this."
+        ),
+        TranscriptDocument.Segment(
+            speaker: "speaker_2",
+            startMs: 190_000,
+            endMs: 194_000,
+            text: "Can everybody see the presentation?"
+        ),
+    ]
+
+    let deduplicated = TranscriptEchoDeduplicator.removeEchoes(from: segments)
+
+    #expect(deduplicated.count == 5)
+    #expect(
+        deduplicated.contains {
+            $0.speaker == "me" && $0.text.contains("pause and discuss")
+        }
+    )
+    #expect(
+        !deduplicated.contains {
+            $0.speaker == "me" && $0.text.contains("balance")
+        }
+    )
+}
+
+@Test
+func recordingLoaderDeduplicatesExistingTranscriptEchoes() throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    try FileManager.default.createDirectory(
+        at: directory,
+        withIntermediateDirectories: true
+    )
+    try Data(#"{"duration_seconds": 10}"#.utf8).write(
+        to: directory.appendingPathComponent("meta.json")
+    )
+    let transcript = TranscriptDocument(
+        engine: "test",
+        model: "test",
+        createdAt: "2026-07-29T12:00:00Z",
+        segments: [
+            .init(
+                speaker: "speaker_1",
+                startMs: 1_000,
+                endMs: 5_000,
+                text: "The release is ready for Friday."
+            ),
+            .init(
+                speaker: "me",
+                startMs: 1_400,
+                endMs: 5_400,
+                text: "The release is ready for Friday."
+            ),
+        ]
+    )
+    try transcript.write(to: directory, title: "Release")
+
+    let recording = try #require(RecordingItem.load(from: directory))
+    #expect(recording.transcript?.segments.count == 1)
+    #expect(recording.transcript?.segments.first?.speaker == "speaker_1")
+}
+
+@Test
+func timelineRefreshPreservesSelectionWhileARecordingIsTemporarilyUnavailable() {
+    let selectedID = "recording:2026.07.30-1200"
+
+    #expect(
+        AppModel.selectionAfterPassiveRefresh(
+            current: selectedID,
+            availableIDs: ["recording:another-item"]
+        ) == selectedID
+    )
+    #expect(
+        AppModel.selectionAfterPassiveRefresh(
+            current: selectedID,
+            availableIDs: ["recording:another-item", selectedID]
+        ) == selectedID
+    )
+    #expect(
+        AppModel.selectionAfterPassiveRefresh(
+            current: nil,
+            availableIDs: ["recording:another-item"]
+        ) == nil
+    )
+}
+
+@Test
+func resumedRecordingManifestKeepsOriginalTracksAndBuildsOneTimeline() throws {
+    let original = RecordingManifest(
+        started: "2026-07-30T08:00:00Z",
+        ended: "2026-07-30T08:01:00Z",
+        durationSeconds: 60,
+        files: ["mic": "mic.caf", "system": "system.caf"],
+        startOffsetMs: ["mic": 12, "system": 0],
+        tracks: nil,
+        imported: true,
+        resumeCount: nil
+    )
+
+    let resumed = original.appendingResume(
+        ended: "2026-07-30T10:00:15Z",
+        addedDurationSeconds: 15,
+        micFile: "mic-part-2.caf",
+        systemFile: "system-part-2.caf",
+        micOffsetMs: 60_020,
+        systemOffsetMs: 60_000
+    )
+
+    #expect(resumed.started == original.started)
+    #expect(resumed.durationSeconds == 75)
+    #expect(resumed.resumeCount == 1)
+    #expect(resumed.imported == true)
+    #expect(resumed.files == original.files)
+    #expect(
+        resumed.transcriptionTracks == [
+            .init(file: "mic.caf", speaker: "me", offsetMs: 12),
+            .init(file: "system.caf", speaker: "them", offsetMs: 0),
+            .init(file: "mic-part-2.caf", speaker: "me", offsetMs: 60_020),
+            .init(file: "system-part-2.caf", speaker: "them", offsetMs: 60_000),
+        ]
+    )
+
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    try FileManager.default.createDirectory(
+        at: directory,
+        withIntermediateDirectories: true
+    )
+    try resumed.write(to: directory)
+
+    let transcriptionMeta = try SessionMeta.read(from: directory)
+    #expect(transcriptionMeta.tracks.count == 4)
+    #expect(transcriptionMeta.tracks[2].offsetMs == 60_020)
+    #expect(transcriptionMeta.tracks[3].speaker == "them")
+}
+
+@Test
+func staleRecordingMarkerIsClearedWithoutTouchingSessionContent() throws {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let session = root.appendingPathComponent(
+        "2026.07.30-1000",
+        isDirectory: true
+    )
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(
+        at: session,
+        withIntermediateDirectories: true
+    )
+    try Data().write(to: session.appendingPathComponent(".recording-active"))
+    try Data("preserve me".utf8).write(
+        to: session.appendingPathComponent("notes.md")
+    )
+
+    RecordingSession.clearStaleActiveMarkers(in: root)
+
+    #expect(
+        !FileManager.default.fileExists(
+            atPath: session.appendingPathComponent(".recording-active").path
+        )
+    )
+    #expect(
+        try String(
+            contentsOf: session.appendingPathComponent("notes.md"),
+            encoding: .utf8
+        ) == "preserve me"
+    )
+}
+
+@Test
+func liveAudioMeterDistinguishesSilenceFromSignal() throws {
+    let format = try #require(AVAudioFormat(
+        commonFormat: .pcmFormatFloat32,
+        sampleRate: 48_000,
+        channels: 1,
+        interleaved: false
+    ))
+    let buffer = try #require(AVAudioPCMBuffer(
+        pcmFormat: format,
+        frameCapacity: 1_024
+    ))
+    buffer.frameLength = 1_024
+
+    #expect(AudioLevelMeter.normalizedLevel(in: buffer) == 0)
+    let samples = try #require(buffer.floatChannelData?[0])
+    for index in 0..<Int(buffer.frameLength) {
+        samples[index] = 0.1
+    }
+    #expect(AudioLevelMeter.normalizedLevel(in: buffer) > 0.5)
+}
 
 @Test
 func transcriptRetrieverFindsRelevantMeetingAcrossLibrary() {
@@ -49,6 +363,43 @@ func transcriptRetrieverFindsRelevantMeetingAcrossLibrary() {
 }
 
 @Test
+func transcriptRetrieverUsesAssignedSpeakerNames() {
+    let recording = RecordingItem(
+        id: "named-speaker",
+        directory: URL(fileURLWithPath: "/tmp/named-speaker"),
+        title: "Customer interview",
+        startedAt: Date(),
+        endedAt: Date(),
+        durationSeconds: 30,
+        micURL: nil,
+        systemURL: nil,
+        transcript: TranscriptDocument(
+            engine: "test",
+            model: "test",
+            createdAt: "2026-07-31T10:00:00Z",
+            segments: [
+                .init(
+                    speaker: "speaker_2",
+                    startMs: 0,
+                    endMs: 3_000,
+                    text: "We need the final proposal tomorrow."
+                ),
+            ]
+        ),
+        notes: "",
+        speakerNames: ["speaker_2": "Alice"]
+    )
+
+    let matches = TranscriptRetriever.retrieve(
+        query: "What did Alice request?",
+        recordings: [recording],
+        scope: .all
+    )
+
+    #expect(matches.first?.text.contains("Alice: We need") == true)
+}
+
+@Test
 func transcriptRetrieverIndexesRecordingNotes() {
     let recording = RecordingItem(
         id: "meeting-notes",
@@ -73,6 +424,120 @@ func transcriptRetrieverIndexesRecordingNotes() {
     #expect(matches[0].text.contains("sapphire"))
     #expect(matches[0].locator == "Recording notes")
     #expect(matches[0].source(number: 1).locationLabel == "Recording notes")
+}
+
+@Test
+func transcriptRetrieverBroadensWrongScopeAndFindsLatestNamedCall() {
+    func recording(
+        id: String,
+        title: String,
+        startedAt: Date,
+        text: String
+    ) -> RecordingItem {
+        RecordingItem(
+            id: id,
+            directory: URL(fileURLWithPath: "/tmp/\(id)"),
+            title: title,
+            startedAt: startedAt,
+            endedAt: startedAt.addingTimeInterval(60),
+            durationSeconds: 60,
+            micURL: nil,
+            systemURL: nil,
+            transcript: TranscriptDocument(
+                engine: "test",
+                model: "test",
+                createdAt: "2026-07-30T12:00:00Z",
+                segments: [
+                    .init(
+                        speaker: "speaker_1",
+                        startMs: 0,
+                        endMs: 10_000,
+                        text: text
+                    )
+                ]
+            ),
+            notes: ""
+        )
+    }
+
+    let now = Date()
+    let security = recording(
+        id: "security",
+        title: "This is Security AMA",
+        startedAt: now.addingTimeInterval(-86_400),
+        text: "We discussed dependency security and package isolation."
+    )
+    let firstCall = recording(
+        id: "bkn-1",
+        title: "BKN301 discovery call",
+        startedAt: now.addingTimeInterval(-3_600),
+        text: "The first discovery session covered onboarding."
+    )
+    let latestCall = recording(
+        id: "bkn-2",
+        title: "BKN 301 discovery call part 2",
+        startedAt: now,
+        text: "The latest session covered the knowledge base and data access."
+    )
+    let recordings = [security, firstCall, latestCall]
+    let query = "What was the call with BKN301 about?\nThe latest one"
+
+    let scope = TranscriptRetriever.resolvedScope(
+        query: query,
+        recordings: recordings,
+        requestedScope: .recording(security.id)
+    )
+    #expect(scope == .all)
+
+    let matches = TranscriptRetriever.retrieve(
+        query: query,
+        recordings: recordings,
+        scope: scope
+    )
+    #expect(matches.first?.recordingID == latestCall.id)
+    #expect(matches.first?.text.contains("knowledge base") == true)
+}
+
+@Test
+func richMarkdownEditorRendersAndRoundTripsFormatting() {
+    let markdown = """
+    # Discovery notes
+
+    **Bold decision** and *important context* with [source](https://example.com).
+
+    - First action
+    - [ ] Follow up
+    """
+    let attributed = MarkdownRichTextCodec.attributedString(from: markdown)
+
+    #expect(attributed.string.contains("Discovery notes"))
+    #expect(!attributed.string.contains("**"))
+    #expect(attributed.string.contains("• First action"))
+    #expect(attributed.string.contains("☐ Follow up"))
+
+    let encoded = MarkdownRichTextCodec.markdown(from: attributed)
+    #expect(encoded.contains("# Discovery notes"))
+    #expect(encoded.contains("**Bold decision**"))
+    #expect(encoded.contains("*important context*"))
+    #expect(encoded.contains("[source](https://example.com)"))
+    #expect(encoded.contains("- [ ] Follow up"))
+}
+
+@Test
+func streamingResponseCleanerHidesSplitThinkingBlocks() {
+    var cleaner = StreamingResponseCleaner()
+    let chunks = [
+        "<thi",
+        "nk>private chain of thought",
+        "</thi",
+        "nk>\nThe grounded ",
+        "answer is here.",
+    ]
+
+    let visible = chunks.map { cleaner.consume($0) }.joined() + cleaner.finish()
+    #expect(visible == "\nThe grounded answer is here.")
+    #expect(!visible.contains("private"))
+    #expect(!visible.contains("<think>"))
 }
 
 @Test
@@ -102,12 +567,22 @@ func builtInModelCacheDetectionAndResponseCleanup() throws {
         .appendingPathComponent(
             "models--mlx-community--Qwen3.5-2B-4bit/snapshots/test",
             isDirectory: true
-        )
+    )
     try FileManager.default.createDirectory(at: snapshot, withIntermediateDirectories: true)
     try Data("{}".utf8).write(to: snapshot.appendingPathComponent("config.json"))
+
+    #expect(
+        BuiltInLLMEngine.modelCacheDirectory(for: model, in: root)
+            .lastPathComponent
+            == "models--mlx-community--Qwen3.5-2B-4bit"
+    )
+    #expect(!BuiltInLLMEngine.hasCachedModel(model, in: root))
+    #expect(BuiltInLLMEngine.hasPartialModel(model, in: root))
+
     try Data().write(to: snapshot.appendingPathComponent("model.safetensors"))
 
     #expect(BuiltInLLMEngine.hasCachedModel(model, in: root))
+    #expect(!BuiltInLLMEngine.hasPartialModel(model, in: root))
     #expect(
         BuiltInLLMEngine.clean("<think>private reasoning</think>\nShip Friday. [1]")
             == "Ship Friday. [1]"
@@ -184,7 +659,8 @@ func recordingLoaderReadsCanonicalTranscriptSchema() throws {
         )
     )
     try document.write(to: root, title: "Test meeting")
-    try Data("My meeting".utf8).write(to: root.appendingPathComponent("title.txt"))
+    let untitledRecording = try #require(RecordingItem.load(from: root))
+    try RecordingLibrary.saveTitle("My meeting", for: untitledRecording)
     try RecordingLibrary.saveNotes("- Follow up with Marco", to: root)
 
     let recording = try #require(RecordingItem.load(from: root))
@@ -276,6 +752,29 @@ func knowledgeLibraryPersistsNotesAndRetrievesTheirContents() throws {
 }
 
 @Test
+func desktopKnowledgeTitlesFollowContentUntilManuallyRenamed() throws {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+
+    let created = try KnowledgeLibrary.createNote(in: root)
+    try KnowledgeLibrary.saveContent(
+        "# September launch review\n\nCheck the offline search results.",
+        for: created
+    )
+    let generated = try #require(KnowledgeLibrary.load(from: root).first)
+    #expect(generated.title == "September launch review")
+
+    try KnowledgeLibrary.saveTitle("Marco’s launch notes", for: generated)
+    try KnowledgeLibrary.saveContent(
+        "# A later heading must not win",
+        for: generated
+    )
+    #expect(KnowledgeLibrary.load(from: root).first?.title == "Marco’s launch notes")
+}
+
+@Test
 func documentImportCopiesAndExtractsPlainText() throws {
     let base = FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -291,10 +790,191 @@ func documentImportCopiesAndExtractsPlainText() throws {
         into: items
     )
 
-    #expect(imported.title == "Strategy")
+    #expect(imported.title == "Project Kestrel targets the education market")
     #expect(imported.assetURL != nil)
     #expect(imported.extractedText.contains("Kestrel"))
     #expect(imported.blocks.first?.locator == "Document")
+}
+
+@Test
+func desktopRecordingNotesGenerateATitleButManualTitlesWin() throws {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("2026.07.29-1130", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    try Data(#"{"duration_seconds": 30}"#.utf8).write(
+        to: root.appendingPathComponent("meta.json")
+    )
+
+    try RecordingLibrary.saveNotes(
+        "- Review the multilingual onboarding flow",
+        to: root
+    )
+    let generated = try #require(RecordingItem.load(from: root))
+    #expect(generated.title == "Review the multilingual onboarding flow")
+
+    try RecordingLibrary.saveTitle("Design sync", for: generated)
+    try RecordingLibrary.saveNotes("- A later note should not rename this", to: root)
+    #expect(RecordingItem.load(from: root)?.title == "Design sync")
+}
+
+@Test
+func recordingTranscriptCanBeSplitIntoASecondTimelineItem() async throws {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let directory = root.appendingPathComponent(
+        "2026.08.10-1500",
+        isDirectory: true
+    )
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(
+        at: directory,
+        withIntermediateDirectories: true
+    )
+    let manifest = RecordingManifest(
+        started: "2026-08-10T13:00:00Z",
+        ended: "2026-08-10T13:00:20Z",
+        durationSeconds: 20,
+        files: [:],
+        startOffsetMs: [:],
+        tracks: [],
+        imported: nil,
+        resumeCount: nil
+    )
+    try manifest.write(to: directory)
+    let transcript = TranscriptDocument(
+        engine: "test",
+        model: "test",
+        createdAt: "2026-08-10T13:01:00Z",
+        segments: [
+            .init(
+                speaker: "speaker_1",
+                startMs: 0,
+                endMs: 5_000,
+                text: "Fineco integration planning."
+            ),
+            .init(
+                speaker: "speaker_2",
+                startMs: 5_000,
+                endMs: 9_000,
+                text: "We should prepare the data model."
+            ),
+            .init(
+                speaker: "speaker_3",
+                startMs: 10_000,
+                endMs: 14_000,
+                text: "This is a different conversation."
+            ),
+            .init(
+                speaker: "me",
+                startMs: 15_000,
+                endMs: 19_000,
+                text: "Let’s discuss it separately."
+            ),
+        ]
+    )
+    try transcript.write(to: directory, title: "Meeting")
+    try ContentTitleGenerator.markGenerated(in: directory)
+    let recording = try #require(RecordingItem.load(from: directory))
+
+    let newItem = try await RecordingLibrary.splitTranscript(
+        recording,
+        at: 10_000
+    )
+    let updatedOriginal = try #require(RecordingItem.load(from: directory))
+
+    #expect(updatedOriginal.transcript?.segments.count == 2)
+    #expect(updatedOriginal.durationSeconds == 10)
+    #expect(newItem.transcript?.segments.count == 2)
+    #expect(newItem.transcript?.segments.first?.startMs == 0)
+    #expect(newItem.transcript?.segments.first?.speaker == "speaker_3")
+    #expect(newItem.durationSeconds == 10)
+}
+
+@Test
+func recordingSplitClipsAudioAndKeepsTheUntouchedSource() async throws {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let directory = root.appendingPathComponent(
+        "2026.08.10-1600",
+        isDirectory: true
+    )
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(
+        at: directory,
+        withIntermediateDirectories: true
+    )
+    let sourceAudio = directory.appendingPathComponent("system.caf")
+    let format = try #require(
+        AVAudioFormat(
+            standardFormatWithSampleRate: 16_000,
+            channels: 1
+        )
+    )
+    let buffer = try #require(
+        AVAudioPCMBuffer(
+            pcmFormat: format,
+            frameCapacity: 64_000
+        )
+    )
+    buffer.frameLength = 64_000
+    let samples = try #require(buffer.floatChannelData?[0])
+    for frame in 0 ..< 64_000 {
+        samples[frame] = sin(Float(frame) * 0.03) * 0.1
+    }
+    let file = try AVAudioFile(
+        forWriting: sourceAudio,
+        settings: format.settings
+    )
+    try file.write(from: buffer)
+
+    try RecordingManifest(
+        started: "2026-08-10T14:00:00Z",
+        ended: "2026-08-10T14:00:04Z",
+        durationSeconds: 4,
+        files: ["system": "system.caf"],
+        startOffsetMs: ["system": 0],
+        tracks: nil,
+        imported: nil,
+        resumeCount: nil
+    ).write(to: directory)
+    let transcript = TranscriptDocument(
+        engine: "test",
+        model: "test",
+        createdAt: "2026-08-10T14:01:00Z",
+        segments: [
+            .init(
+                speaker: "speaker_1",
+                startMs: 0,
+                endMs: 1_900,
+                text: "First conversation."
+            ),
+            .init(
+                speaker: "speaker_2",
+                startMs: 2_000,
+                endMs: 3_900,
+                text: "Second conversation."
+            ),
+        ]
+    )
+    try transcript.write(to: directory, title: "Meeting")
+    try ContentTitleGenerator.markGenerated(in: directory)
+    let recording = try #require(RecordingItem.load(from: directory))
+
+    let newItem = try await RecordingLibrary.splitTranscript(
+        recording,
+        at: 2_000
+    )
+    let updatedOriginal = try #require(RecordingItem.load(from: directory))
+    let headAudio = try #require(updatedOriginal.systemURL)
+    let tailAudio = try #require(newItem.systemURL)
+    let headDuration = try await AVURLAsset(url: headAudio).load(.duration)
+    let tailDuration = try await AVURLAsset(url: tailAudio).load(.duration)
+
+    #expect(FileManager.default.fileExists(atPath: sourceAudio.path))
+    #expect(headAudio.lastPathComponent != sourceAudio.lastPathComponent)
+    #expect(CMTimeGetSeconds(headDuration) > 1.8)
+    #expect(CMTimeGetSeconds(tailDuration) > 1.8)
 }
 
 @Test

@@ -80,6 +80,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     private let model: AppModel
     private let menuBar = MenuBarController()
     private let meetingNotifications = MeetingNotificationController()
+    private var meetingAutoStop = MeetingRecordingAutoStopState()
     private lazy var mainWindow = DropsiftWindowController(model: model)
 
     init(root: URL) {
@@ -91,17 +92,34 @@ final class AppController: NSObject, NSApplicationDelegate {
         menuBar.onOpenFolder = { [weak self] in self?.model.openRecordingsFolder() }
         menuBar.onQuit = { [weak self] in self?.shutdown() }
         menuBar.update(recording: false, elapsed: nil)
-        meetingNotifications.onStartRecording = { [weak self] in
+        meetingNotifications.onStartRecording = { [weak self] meeting in
             guard let self, !self.model.isRecording else { return }
+            self.meetingAutoStop.meetingDetected(meeting)
             self.model.startRecording()
             self.showWindow()
         }
         model.onMeetingDetected = { [weak self] meeting in
-            self?.meetingNotifications.proposeRecording(for: meeting)
+            guard let self else { return }
+            self.meetingAutoStop.meetingDetected(meeting)
+            if !self.model.isRecording {
+                self.meetingNotifications.proposeRecording(for: meeting)
+            }
+        }
+        model.onMeetingEnded = { [weak self] meeting in
+            guard let self else { return }
+            let shouldStop = self.meetingAutoStop.meetingEnded(meeting)
+            guard self.model.isRecording, shouldStop else { return }
+            self.model.stopRecording()
+            self.meetingNotifications.reportAutomaticallyStopped(for: meeting)
         }
 
         model.onRecordingStateChange = { [weak self] recording, elapsed in
             self?.menuBar.update(recording: recording, elapsed: elapsed)
+            if recording {
+                self?.meetingAutoStop.recordingStarted()
+            } else {
+                self?.meetingAutoStop.recordingStopped()
+            }
         }
         model.onTranscriptionStateChange = { [weak self] status in
             self?.menuBar.updateTranscription(status)
@@ -328,5 +346,36 @@ final class AppController: NSObject, NSApplicationDelegate {
         NSApp.helpMenu = helpMenu
 
         NSApp.mainMenu = mainMenu
+    }
+}
+
+struct MeetingRecordingAutoStopState: Sendable {
+    private(set) var detectedMeetingBundleID: String?
+    private(set) var recordingMeetingBundleID: String?
+
+    mutating func meetingDetected(_ meeting: DetectedMeeting) {
+        detectedMeetingBundleID = meeting.bundleID
+        if recordingMeetingBundleID != nil {
+            recordingMeetingBundleID = meeting.bundleID
+        }
+    }
+
+    mutating func recordingStarted() {
+        recordingMeetingBundleID = detectedMeetingBundleID
+    }
+
+    mutating func recordingStopped() {
+        recordingMeetingBundleID = nil
+    }
+
+    mutating func meetingEnded(_ meeting: DetectedMeeting) -> Bool {
+        let shouldStop = recordingMeetingBundleID == meeting.bundleID
+        if detectedMeetingBundleID == meeting.bundleID {
+            detectedMeetingBundleID = nil
+        }
+        if shouldStop {
+            recordingMeetingBundleID = nil
+        }
+        return shouldStop
     }
 }

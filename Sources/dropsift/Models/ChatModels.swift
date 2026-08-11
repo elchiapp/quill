@@ -71,9 +71,9 @@ struct ChatMessage: Codable, Identifiable, Sendable {
 
     let id: UUID
     let role: Role
-    let content: String
+    var content: String
     let createdAt: Date
-    let sources: [ChatSource]
+    var sources: [ChatSource]
 
     init(
         id: UUID = UUID(),

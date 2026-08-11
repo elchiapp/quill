@@ -1,17 +1,21 @@
+import DropsiftShared
+import Foundation
 import SwiftUI
 
 struct DropsiftRootView: View {
     @ObservedObject var model: AppModel
+    @State private var showingLiveNotesPanel = true
 
     var body: some View {
-        NavigationSplitView {
+        HStack(spacing: 0) {
             sidebar
-                .navigationSplitViewColumnWidth(min: 190, ideal: 220, max: 260)
-        } detail: {
+                .frame(width: 220)
+                .background(Color(nsColor: .controlBackgroundColor))
+            Divider()
             detail
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .navigationSplitViewStyle(.balanced)
-        .frame(minWidth: 1_050, minHeight: 680)
+        .frame(minWidth: minimumWindowWidth, minHeight: 680)
         .toolbar {
             ToolbarItemGroup {
                 if let status = model.transcriptionStatus {
@@ -29,7 +33,34 @@ struct DropsiftRootView: View {
                     .foregroundStyle(.secondary)
                 }
 
-                if model.isRecording {
+                if let label = model.semanticProcessingLabel {
+                    HStack(spacing: 7) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text(label)
+                            .lineLimit(1)
+                    }
+                    .foregroundStyle(.secondary)
+                }
+
+                if isShowingRecordingUI {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            showingLiveNotesPanel.toggle()
+                        }
+                    } label: {
+                        Image(
+                            systemName: showingLiveNotesPanel
+                                ? "rectangle.righthalf.inset.filled"
+                                : "note.text"
+                        )
+                    }
+                    .help(
+                        showingLiveNotesPanel
+                            ? "Collapse live notes"
+                            : "Show live notes"
+                    )
+
                     Button {
                         model.stopRecording()
                     } label: {
@@ -96,12 +127,31 @@ struct DropsiftRootView: View {
             .padding(.bottom, 8)
 
             List(selection: $model.section) {
-                Label("Capture", systemImage: "plus.app")
-                    .tag(AppModel.Section.capture)
-                Label("Timeline", systemImage: "clock.arrow.circlepath")
-                    .tag(AppModel.Section.timeline)
-                Label("Ask Dropsift", systemImage: "sparkles")
-                    .tag(AppModel.Section.chats)
+                Section {
+                    Label("Capture", systemImage: "plus.app")
+                        .tag(AppModel.Section.capture)
+                    Label("Timeline", systemImage: "clock.arrow.circlepath")
+                        .tag(AppModel.Section.timeline)
+                    Label("Ask Dropsift", systemImage: "sparkles")
+                        .tag(AppModel.Section.chats)
+                }
+
+                Section("Organize") {
+                    Label("Tasks", systemImage: "checklist")
+                        .tag(AppModel.Section.tasks)
+                    Label("People", systemImage: "person.2")
+                        .tag(AppModel.Section.people)
+                    Label("Places", systemImage: "mappin.and.ellipse")
+                        .tag(AppModel.Section.places)
+                    Label("Events", systemImage: "calendar")
+                        .tag(AppModel.Section.events)
+                    Label("Organizations", systemImage: "building.2")
+                        .tag(AppModel.Section.organizations)
+                    Label("Projects", systemImage: "folder")
+                        .tag(AppModel.Section.projects)
+                    Label("Topics", systemImage: "tag")
+                        .tag(AppModel.Section.topics)
+                }
             }
             .listStyle(.sidebar)
 
@@ -131,13 +181,52 @@ struct DropsiftRootView: View {
 
     @ViewBuilder
     private var detail: some View {
-        VStack(spacing: 0) {
-            if model.isRecording {
-                LiveRecordingNotesView(model: model)
-                Divider()
+        if isShowingRecordingUI, showingLiveNotesPanel {
+            HSplitView {
+                detailContent
+                    .frame(minWidth: 520, maxWidth: .infinity, maxHeight: .infinity)
+
+                LiveRecordingNotesView(model: model) {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        showingLiveNotesPanel = false
+                    }
+                }
+                .frame(minWidth: 340, idealWidth: 400, maxWidth: 520)
+                .transition(.move(edge: .trailing).combined(with: .opacity))
             }
+            .onChange(of: model.isRecording) { _, recording in
+                if recording {
+                    showingLiveNotesPanel = true
+                }
+            }
+        } else {
             detailContent
+                .onChange(of: model.isRecording) { _, recording in
+                    if recording {
+                        showingLiveNotesPanel = true
+                    }
+                }
         }
+    }
+
+    private var isShowingRecordingUI: Bool {
+        model.isRecording
+            || ProcessInfo.processInfo.environment[
+                "DROPSIFT_PREVIEW_RECORDING_PANEL"
+            ] == "1"
+    }
+
+    private var minimumWindowWidth: CGFloat {
+        if isShowingRecordingUI, showingLiveNotesPanel {
+            return 1_400
+        }
+
+        if model.section == .timeline,
+           case .recording? = model.selectedTimelineItem {
+            return 1_400
+        }
+
+        return 1_050
     }
 
     @ViewBuilder
@@ -147,6 +236,20 @@ struct DropsiftRootView: View {
             CaptureView(model: model)
         case .timeline:
             TimelineView(model: model)
+        case .tasks:
+            TasksView(model: model)
+        case .people:
+            SemanticEntitiesView(model: model, kind: .person)
+        case .places:
+            SemanticEntitiesView(model: model, kind: .place)
+        case .events:
+            SemanticEntitiesView(model: model, kind: .event)
+        case .organizations:
+            SemanticEntitiesView(model: model, kind: .organization)
+        case .projects:
+            SemanticEntitiesView(model: model, kind: .project)
+        case .topics:
+            SemanticEntitiesView(model: model, kind: .topic)
         case .chats:
             chatWorkspace
         }
@@ -198,7 +301,9 @@ struct DropsiftRootView: View {
         case .downloaded:
             "\(model.selectedModelPlan.model.name) · ready to load"
         case .downloading(let fraction):
-            "Downloading \(model.selectedModelPlan.model.name) · \(Int(fraction * 100))%"
+            model.aiDownloadIsStalled
+                ? "Download stalled · open Settings to retry"
+                : "Downloading \(model.selectedModelPlan.model.name) · \(Self.percent(fraction))"
         case .loading:
             "Loading \(model.selectedModelPlan.model.name)…"
         case .ready:
@@ -206,6 +311,13 @@ struct DropsiftRootView: View {
         case .failed:
             "Built-in AI needs attention"
         }
+    }
+
+    private static func percent(_ fraction: Double) -> String {
+        let percentage = max(0, min(100, fraction * 100))
+        return percentage < 10
+            ? String(format: "%.1f%%", percentage)
+            : String(format: "%.0f%%", percentage)
     }
 }
 private struct ChatsColumn: View {
@@ -293,6 +405,7 @@ private struct ChatsColumn: View {
 
 private struct LiveRecordingNotesView: View {
     @ObservedObject var model: AppModel
+    let onCollapse: () -> Void
 
     private var notes: Binding<String> {
         Binding(
@@ -302,49 +415,66 @@ private struct LiveRecordingNotesView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(.red)
-                    .frame(width: 9, height: 9)
-                    .symbolEffect(.pulse, options: .repeating)
-                Text("Recording \(model.recordingElapsed)")
-                    .font(.headline.monospacedDigit())
-                Text("Live notes")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Label("Autosaved", systemImage: "icloud")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 9) {
+                    Circle()
+                        .fill(.red)
+                        .frame(width: 9, height: 9)
+                        .symbolEffect(.pulse, options: .repeating)
 
-            ZStack(alignment: .topLeading) {
-                if model.liveNotes.isEmpty {
-                    Text("Take notes while Dropsift records…")
-                        .foregroundStyle(.tertiary)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 9)
-                        .allowsHitTesting(false)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Live notes")
+                            .font(.headline)
+                        Text("Recording \(model.recordingElapsed)")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    Button(action: onCollapse) {
+                        Label("Hide", systemImage: "chevron.right")
+                    }
+                    .buttonStyle(.borderless)
+                    .controlSize(.small)
+                    .contentShape(Rectangle())
+                    .help("Collapse live notes")
                 }
-                TextEditor(text: notes)
-                    .font(.body)
-                    .scrollContentBackground(.hidden)
-                    .padding(4)
-                    .accessibilityIdentifier("live-recording-notes")
+
+                HStack(spacing: 8) {
+                    LiveAudioIndicator(
+                        label: "Mic",
+                        systemImage: "mic.fill",
+                        samples: model.microphoneAudioLevels,
+                        tint: .red
+                    )
+                    LiveAudioIndicator(
+                        label: "System",
+                        systemImage: "macbook",
+                        samples: model.systemAudioLevels,
+                        tint: .orange
+                    )
+                    Spacer()
+                    Label("Autosaved", systemImage: "icloud")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
-            .frame(minHeight: 74, maxHeight: 120)
-            .background(
-                Color(nsColor: .controlBackgroundColor),
-                in: RoundedRectangle(cornerRadius: 10)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+
+            Divider()
+
+            MarkdownNoteEditor(
+                text: notes,
+                placeholder: "Take notes while Dropsift records…",
+                accessibilityIdentifier: "live-recording-notes"
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(Color.primary.opacity(0.08))
-            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color(nsColor: .textBackgroundColor))
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 14)
-        .background(Color.red.opacity(0.035))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(nsColor: .controlBackgroundColor))
     }
 }

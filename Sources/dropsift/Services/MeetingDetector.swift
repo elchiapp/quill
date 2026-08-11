@@ -8,21 +8,83 @@ struct DetectedMeeting: Sendable, Equatable {
     let isBrowser: Bool
 }
 
-actor MeetingDetector {
-    private var monitorTask: Task<Void, Never>?
+enum MeetingDetectionEvent: Sendable, Equatable {
+    case detected(DetectedMeeting)
+    case ended(DetectedMeeting)
+}
+
+struct MeetingDetectionTracker: Sendable {
+    static let endDelay: TimeInterval = 10
+
     private var candidate: DetectedMeeting?
     private var candidateSince: Date?
+    private var missingSince: Date?
     private var alreadySuggested = false
 
+    mutating func update(
+        current: DetectedMeeting?,
+        now: Date = Date()
+    ) -> MeetingDetectionEvent? {
+        guard let current else {
+            guard let candidate else { return nil }
+
+            // A microphone blip that ended before it met the detection threshold
+            // was never considered a meeting, so it must not produce an end event.
+            guard alreadySuggested else {
+                reset()
+                return nil
+            }
+
+            if missingSince == nil {
+                missingSince = now
+                return nil
+            }
+            guard let missingSince,
+                now.timeIntervalSince(missingSince) >= Self.endDelay
+            else { return nil }
+
+            reset()
+            return .ended(candidate)
+        }
+
+        missingSince = nil
+        if candidate?.bundleID != current.bundleID {
+            candidate = current
+            candidateSince = now
+            alreadySuggested = false
+            return nil
+        }
+
+        candidate = current
+        guard !alreadySuggested, let candidateSince else { return nil }
+        let requiredSeconds: TimeInterval = current.isBrowser ? 12 : 4
+        guard now.timeIntervalSince(candidateSince) >= requiredSeconds else { return nil }
+        alreadySuggested = true
+        return .detected(current)
+    }
+
+    mutating func reset() {
+        candidate = nil
+        candidateSince = nil
+        missingSince = nil
+        alreadySuggested = false
+    }
+}
+
+actor MeetingDetector {
+    private var monitorTask: Task<Void, Never>?
+    private var tracker = MeetingDetectionTracker()
+
     func start(
-        onDetected: @escaping @MainActor @Sendable (DetectedMeeting) -> Void
+        onDetected: @escaping @MainActor @Sendable (DetectedMeeting) -> Void,
+        onEnded: @escaping @MainActor @Sendable (DetectedMeeting) -> Void
     ) {
         guard monitorTask == nil else { return }
         monitorTask = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self else { return }
-                await self.poll(onDetected: onDetected)
-                try? await Task.sleep(for: .seconds(4))
+                await self.poll(onDetected: onDetected, onEnded: onEnded)
+                try? await Task.sleep(for: .seconds(2))
             }
         }
     }
@@ -30,33 +92,21 @@ actor MeetingDetector {
     func stop() {
         monitorTask?.cancel()
         monitorTask = nil
-        candidate = nil
-        candidateSince = nil
-        alreadySuggested = false
+        tracker.reset()
     }
 
     private func poll(
-        onDetected: @escaping @MainActor @Sendable (DetectedMeeting) -> Void
+        onDetected: @escaping @MainActor @Sendable (DetectedMeeting) -> Void,
+        onEnded: @escaping @MainActor @Sendable (DetectedMeeting) -> Void
     ) async {
-        let current = Self.activeMeetingCandidate()
-        guard let current else {
-            candidate = nil
-            candidateSince = nil
-            alreadySuggested = false
-            return
+        switch tracker.update(current: Self.activeMeetingCandidate()) {
+        case .detected(let meeting):
+            await onDetected(meeting)
+        case .ended(let meeting):
+            await onEnded(meeting)
+        case nil:
+            break
         }
-
-        if candidate?.bundleID != current.bundleID {
-            candidate = current
-            candidateSince = Date()
-            alreadySuggested = false
-            return
-        }
-        guard !alreadySuggested, let candidateSince else { return }
-        let requiredSeconds: TimeInterval = current.isBrowser ? 12 : 4
-        guard Date().timeIntervalSince(candidateSince) >= requiredSeconds else { return }
-        alreadySuggested = true
-        await onDetected(current)
     }
 
     private nonisolated static func activeMeetingCandidate() -> DetectedMeeting? {

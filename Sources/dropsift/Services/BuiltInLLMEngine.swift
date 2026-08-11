@@ -5,6 +5,357 @@ import MLXHuggingFace
 import MLXLLM
 import MLXLMCommon
 import Tokenizers
+#if canImport(Darwin)
+import Darwin
+#endif
+
+private final class DownloadProgressCollection: @unchecked Sendable {
+    let files: [Progress]
+    let aggregate: Progress
+
+    init(fileSizes: [Int64]) {
+        files = fileSizes.map { Progress(totalUnitCount: max($0, 1)) }
+        aggregate = Progress(
+            totalUnitCount: max(fileSizes.reduce(0, +), 1)
+        )
+    }
+
+    func refresh() -> Progress {
+        aggregate.completedUnitCount = files.reduce(Int64.zero) {
+            $0 + min($1.completedUnitCount, $1.totalUnitCount)
+        }
+        return aggregate
+    }
+
+    func finish() -> Progress {
+        aggregate.completedUnitCount = aggregate.totalUnitCount
+        return aggregate
+    }
+}
+
+private final class RedirectRejectingDelegate: NSObject, URLSessionTaskDelegate,
+    @unchecked Sendable
+{
+    func urlSession(
+        _: URLSession,
+        task _: URLSessionTask,
+        willPerformHTTPRedirection _: HTTPURLResponse,
+        newRequest _: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        completionHandler(nil)
+    }
+}
+
+private final class ResumableModelDownload: NSObject, URLSessionDataDelegate,
+    @unchecked Sendable
+{
+    typealias ProgressHandler = @Sendable (_ completed: Int64, _ total: Int64) -> Void
+
+    private let destination: URL
+    private let initialOffset: Int64
+    private let progressHandler: ProgressHandler
+    private let completionLock = NSLock()
+    private var continuation: CheckedContinuation<Void, Error>?
+    private var session: URLSession?
+    private var task: URLSessionDataTask?
+    private var file: FileHandle?
+    private var completedBytes: Int64
+    private var expectedBytes: Int64
+    private var responseError: Error?
+
+    init(
+        destination: URL,
+        initialOffset: Int64,
+        progressHandler: @escaping ProgressHandler
+    ) {
+        self.destination = destination
+        self.initialOffset = initialOffset
+        self.progressHandler = progressHandler
+        completedBytes = initialOffset
+        expectedBytes = max(initialOffset, 1)
+    }
+
+    func run(request: URLRequest) async throws {
+        try FileManager.default.createDirectory(
+            at: destination.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        if !FileManager.default.fileExists(atPath: destination.path) {
+            FileManager.default.createFile(
+                atPath: destination.path,
+                contents: nil
+            )
+        }
+        file = try FileHandle(forWritingTo: destination)
+        try file?.seekToEnd()
+
+        let queue = OperationQueue()
+        queue.maxConcurrentOperationCount = 1
+        queue.qualityOfService = .utility
+        let session = URLSession(
+            configuration: .default,
+            delegate: self,
+            delegateQueue: queue
+        )
+        self.session = session
+
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                completionLock.lock()
+                self.continuation = continuation
+                let task = session.dataTask(with: request)
+                self.task = task
+                completionLock.unlock()
+                task.resume()
+            }
+        } onCancel: {
+            self.task?.cancel()
+        }
+    }
+
+    func urlSession(
+        _: URLSession,
+        dataTask _: URLSessionDataTask,
+        didReceive response: URLResponse,
+        completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
+    ) {
+        guard let http = response as? HTTPURLResponse,
+              (200 ..< 300).contains(http.statusCode)
+        else {
+            responseError = URLError(.badServerResponse)
+            completionHandler(.cancel)
+            return
+        }
+
+        let isResume = http.statusCode == 206 && initialOffset > 0
+        if !isResume, initialOffset > 0 {
+            do {
+                try file?.truncate(atOffset: 0)
+                try file?.seek(toOffset: 0)
+                completedBytes = 0
+            } catch {
+                responseError = error
+                completionHandler(.cancel)
+                return
+            }
+        }
+        let responseBytes = max(response.expectedContentLength, 0)
+        expectedBytes = max(completedBytes + responseBytes, 1)
+        progressHandler(completedBytes, expectedBytes)
+        completionHandler(.allow)
+    }
+
+    func urlSession(
+        _: URLSession,
+        dataTask _: URLSessionDataTask,
+        didReceive data: Data
+    ) {
+        do {
+            try file?.write(contentsOf: data)
+            completedBytes += Int64(data.count)
+            progressHandler(completedBytes, expectedBytes)
+        } catch {
+            responseError = error
+            task?.cancel()
+        }
+    }
+
+    func urlSession(
+        _: URLSession,
+        task _: URLSessionTask,
+        didCompleteWithError error: Error?
+    ) {
+        try? file?.close()
+        file = nil
+        session?.finishTasksAndInvalidate()
+        session = nil
+
+        let finalError = responseError ?? error
+        finish(
+            finalError.map(Result.failure) ?? .success(())
+        )
+    }
+
+    private func finish(_ result: Result<Void, Error>) {
+        completionLock.lock()
+        let continuation = continuation
+        self.continuation = nil
+        completionLock.unlock()
+
+        switch result {
+        case .success:
+            continuation?.resume()
+        case .failure(let error):
+            continuation?.resume(throwing: error)
+        }
+    }
+}
+
+private struct DropsiftHubDownloader: Downloader {
+    let client: HubClient
+    let cache: HubCache
+
+    func download(
+        id: String,
+        revision: String?,
+        matching patterns: [String],
+        useLatest _: Bool,
+        progressHandler: @Sendable @escaping (Progress) -> Void
+    ) async throws -> URL {
+        guard let repo = Repo.ID(rawValue: id) else {
+            throw BuiltInLLMEngine.EngineError.invalidRepositoryID(id)
+        }
+        let revision = revision ?? "main"
+        let entries = try await client.listFiles(
+            in: repo,
+            revision: revision,
+            recursive: true
+        )
+        .filter { entry in
+            guard entry.type == .file else { return false }
+            guard !patterns.isEmpty else { return true }
+            #if canImport(Darwin)
+            return patterns.contains { fnmatch($0, entry.path, 0) == 0 }
+            #else
+            return patterns.contains {
+                entry.path.hasSuffix($0.replacingOccurrences(of: "*", with: ""))
+            }
+            #endif
+        }
+
+        let progress = DownloadProgressCollection(
+            fileSizes: entries.map { Int64(max($0.size ?? 1, 1)) }
+        )
+        progressHandler(progress.refresh())
+        let bearerToken = await client.bearerToken
+
+        for (index, entry) in entries.enumerated() {
+            try Task.checkCancellation()
+            if cache.cachedFilePath(
+                repo: repo,
+                kind: .model,
+                revision: revision,
+                filename: entry.path
+            ) != nil {
+                progress.files[index].completedUnitCount =
+                    progress.files[index].totalUnitCount
+                progressHandler(progress.refresh())
+                continue
+            }
+
+            let fileURL = client.host
+                .appending(path: repo.namespace)
+                .appending(path: repo.name)
+                .appending(path: "resolve")
+                .appending(component: revision)
+                .appending(path: entry.path)
+            let metadata = try await metadata(
+                for: fileURL,
+                bearerToken: bearerToken
+            )
+            let incomplete = try cache.incompleteBlobPath(
+                repo: repo,
+                kind: .model,
+                etag: metadata.etag
+            )
+            let offset = Self.fileSize(at: incomplete)
+            var request = URLRequest(url: fileURL)
+            request.setValue(
+                "Dropsift/1.0 built-in-local-ai",
+                forHTTPHeaderField: "User-Agent"
+            )
+            if let bearerToken {
+                request.setValue(
+                    "Bearer \(bearerToken)",
+                    forHTTPHeaderField: "Authorization"
+                )
+            }
+            if offset > 0 {
+                request.setValue(
+                    "bytes=\(offset)-",
+                    forHTTPHeaderField: "Range"
+                )
+            }
+
+            let download = ResumableModelDownload(
+                destination: incomplete,
+                initialOffset: offset
+            ) { completed, total in
+                progress.files[index].totalUnitCount = max(total, 1)
+                progress.files[index].completedUnitCount = completed
+                progressHandler(progress.refresh())
+            }
+            try await download.run(request: request)
+            try await cache.storeFile(
+                at: incomplete,
+                repo: repo,
+                kind: .model,
+                revision: metadata.commit,
+                filename: entry.path,
+                etag: metadata.etag,
+                ref: revision
+            )
+            try? FileManager.default.removeItem(at: incomplete)
+            progress.files[index].completedUnitCount =
+                progress.files[index].totalUnitCount
+            progressHandler(progress.refresh())
+        }
+
+        progressHandler(progress.finish())
+        guard let commit = cache.resolveRevision(
+            repo: repo,
+            kind: .model,
+            ref: revision
+        ) else {
+            throw BuiltInLLMEngine.EngineError.snapshotResolutionFailed(id)
+        }
+        return cache.snapshotsDirectory(repo: repo, kind: .model)
+            .appendingPathComponent(commit, isDirectory: true)
+    }
+
+    private func metadata(
+        for url: URL,
+        bearerToken: String?
+    ) async throws -> (commit: String, etag: String) {
+        var request = URLRequest(url: url)
+        request.httpMethod = "HEAD"
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue(
+            "Dropsift/1.0 built-in-local-ai",
+            forHTTPHeaderField: "User-Agent"
+        )
+        if let bearerToken {
+            request.setValue(
+                "Bearer \(bearerToken)",
+                forHTTPHeaderField: "Authorization"
+            )
+        }
+
+        let delegate = RedirectRejectingDelegate()
+        let (_, response) = try await URLSession.shared.data(
+            for: request,
+            delegate: delegate
+        )
+        guard let http = response as? HTTPURLResponse,
+              (200 ..< 400).contains(http.statusCode),
+              let commit = http.value(forHTTPHeaderField: "X-Repo-Commit"),
+              let etag = http.value(forHTTPHeaderField: "X-Linked-ETag")
+                ?? http.value(forHTTPHeaderField: "ETag")
+        else {
+            throw BuiltInLLMEngine.EngineError.modelMetadataUnavailable(
+                url.lastPathComponent
+            )
+        }
+        return (commit, etag)
+    }
+
+    private static func fileSize(at url: URL) -> Int64 {
+        guard let values = try? url.resourceValues(forKeys: [.fileSizeKey])
+        else { return 0 }
+        return Int64(values.fileSize ?? 0)
+    }
+}
 
 enum BuiltInAIState: Sendable, Equatable {
     case notDownloaded
@@ -19,8 +370,11 @@ actor BuiltInLLMEngine {
     enum EngineError: LocalizedError {
         case emptyConversation
         case emptyResponse
+        case invalidRepositoryID(String)
         case modelChanged
+        case modelMetadataUnavailable(String)
         case requiresAppleSilicon
+        case snapshotResolutionFailed(String)
 
         var errorDescription: String? {
             switch self {
@@ -28,10 +382,16 @@ actor BuiltInLLMEngine {
                 "There is no question to answer."
             case .emptyResponse:
                 "The built-in model returned an empty response."
+            case .invalidRepositoryID(let id):
+                "The local model repository ID is invalid: \(id)"
             case .modelChanged:
                 "The selected local model changed while it was loading."
+            case .modelMetadataUnavailable(let file):
+                "Hugging Face did not return download metadata for \(file)."
             case .requiresAppleSilicon:
                 "Built-in MLX inference requires a Mac with Apple silicon."
+            case .snapshotResolutionFailed(let id):
+                "The downloaded model snapshot could not be resolved: \(id)"
             }
         }
     }
@@ -43,6 +403,7 @@ actor BuiltInLLMEngine {
     private var container: ModelContainer?
     private var loadedModelID: String?
     private var preparation: (
+        id: UUID,
         modelID: String,
         task: Task<ModelContainer, Error>
     )?
@@ -95,10 +456,57 @@ actor BuiltInLLMEngine {
         _ = try await modelContainer()
     }
 
+    func cancelPreparation() {
+        preparation?.task.cancel()
+        preparation = nil
+
+        if loadedModelID == plan.model.id, container != nil {
+            emit(.ready)
+        } else {
+            emit(
+                Self.hasCachedModel(plan.model, in: cacheRoot)
+                    ? .downloaded
+                    : .notDownloaded
+            )
+        }
+    }
+
+    func unloadModel(_ modelID: String) {
+        if preparation?.modelID == modelID {
+            preparation?.task.cancel()
+            preparation = nil
+        }
+        if loadedModelID == modelID {
+            container = nil
+            loadedModelID = nil
+            Memory.clearCache()
+        }
+        if plan.model.id == modelID {
+            emit(.notDownloaded)
+        }
+    }
+
     func complete(
         systemPrompt: String,
         messages: [ChatMessage]
     ) async throws -> String {
+        let stream = try await stream(
+            systemPrompt: systemPrompt,
+            messages: messages
+        )
+        var response = ""
+        for try await chunk in stream {
+            response += chunk
+        }
+        let cleaned = Self.clean(response)
+        guard !cleaned.isEmpty else { throw EngineError.emptyResponse }
+        return cleaned
+    }
+
+    func stream(
+        systemPrompt: String,
+        messages: [ChatMessage]
+    ) async throws -> AsyncThrowingStream<String, Error> {
         guard let prompt = messages.last, prompt.role == .user else {
             throw EngineError.emptyConversation
         }
@@ -130,11 +538,34 @@ actor BuiltInLLMEngine {
             history: history,
             generateParameters: parameters
         )
-        let response = try await session.respond(to: prompt.content)
-        let cleaned = Self.clean(response)
-        guard !cleaned.isEmpty else { throw EngineError.emptyResponse }
-        emit(.ready)
-        return cleaned
+        let upstream = session.streamResponse(to: prompt.content)
+        return AsyncThrowingStream { continuation in
+            let task = Task { [weak self] in
+                do {
+                    var cleaner = StreamingResponseCleaner()
+                    for try await chunk in upstream {
+                        let visible = cleaner.consume(chunk)
+                        if !visible.isEmpty {
+                            continuation.yield(visible)
+                        }
+                    }
+                    let tail = cleaner.finish()
+                    if !tail.isEmpty {
+                        continuation.yield(tail)
+                    }
+                    if let self {
+                        await self.generationFinished()
+                    }
+                    continuation.finish()
+                } catch {
+                    if let self {
+                        await self.generationFinished()
+                    }
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
     }
 
     private func modelContainer() async throws -> ModelContainer {
@@ -147,12 +578,14 @@ actor BuiltInLLMEngine {
         if let preparation, preparation.modelID == plan.model.id {
             return try await finish(
                 preparation.task,
-                modelID: preparation.modelID
+                modelID: preparation.modelID,
+                preparationID: preparation.id
             )
         }
 
         let requestedPlan = plan
         let modelID = requestedPlan.model.id
+        let preparationID = UUID()
         let cached = Self.hasCachedModel(requestedPlan.model, in: cacheRoot)
         emit(cached ? .loading : .downloading(0))
         let root = cacheRoot
@@ -171,7 +604,7 @@ actor BuiltInLLMEngine {
                 extraEOSTokens: ["<|im_end|>"]
             )
             return try await LLMModelFactory.shared.loadContainer(
-                from: #hubDownloader(client),
+                from: DropsiftHubDownloader(client: client, cache: cache),
                 using: #huggingFaceTokenizerLoader(),
                 configuration: configuration,
                 progressHandler: { progress in
@@ -185,18 +618,25 @@ actor BuiltInLLMEngine {
                 }
             )
         }
-        preparation = (modelID, task)
-        return try await finish(task, modelID: modelID)
+        preparation = (preparationID, modelID, task)
+        return try await finish(
+            task,
+            modelID: modelID,
+            preparationID: preparationID
+        )
         #endif
     }
 
     private func finish(
         _ task: Task<ModelContainer, Error>,
-        modelID: String
+        modelID: String,
+        preparationID: UUID
     ) async throws -> ModelContainer {
         do {
             let loaded = try await task.value
-            guard plan.model.id == modelID else {
+            guard plan.model.id == modelID,
+                  preparation?.id == preparationID
+            else {
                 throw EngineError.modelChanged
             }
             container = loaded
@@ -205,10 +645,11 @@ actor BuiltInLLMEngine {
             emit(.ready)
             return loaded
         } catch {
-            if preparation?.modelID == modelID {
+            let isCurrentPreparation = preparation?.id == preparationID
+            if isCurrentPreparation {
                 preparation = nil
             }
-            if plan.model.id == modelID {
+            if isCurrentPreparation, plan.model.id == modelID {
                 emit(.failed(error.localizedDescription))
             }
             throw error
@@ -239,11 +680,12 @@ actor BuiltInLLMEngine {
         stateHandler?(state)
     }
 
+    private func generationFinished() {
+        emit(.ready)
+    }
+
     static func hasCachedModel(_ model: BuiltInModel, in root: URL) -> Bool {
-        let repository = root.appendingPathComponent(
-            "models--" + model.id.replacingOccurrences(of: "/", with: "--"),
-            isDirectory: true
-        )
+        let repository = modelCacheDirectory(for: model, in: root)
         guard let enumerator = FileManager.default.enumerator(
             at: repository,
             includingPropertiesForKeys: nil,
@@ -262,6 +704,36 @@ actor BuiltInLLMEngine {
         return false
     }
 
+    static func hasPartialModel(_ model: BuiltInModel, in root: URL) -> Bool {
+        guard !hasCachedModel(model, in: root) else { return false }
+        let repository = modelCacheDirectory(for: model, in: root)
+        guard let enumerator = FileManager.default.enumerator(
+            at: repository,
+            includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else { return false }
+
+        for case let url as URL in enumerator {
+            guard let values = try? url.resourceValues(
+                forKeys: [.fileSizeKey, .isRegularFileKey]
+            ) else { continue }
+            if values.isRegularFile == true, (values.fileSize ?? 0) > 0 {
+                return true
+            }
+        }
+        return false
+    }
+
+    static func modelCacheDirectory(
+        for model: BuiltInModel,
+        in root: URL
+    ) -> URL {
+        root.appendingPathComponent(
+            "models--" + model.id.replacingOccurrences(of: "/", with: "--"),
+            isDirectory: true
+        )
+    }
+
     static func clean(_ response: String) -> String {
         var value = response.trimmingCharacters(in: .whitespacesAndNewlines)
         if let opening = value.range(of: "<think>"),
@@ -272,5 +744,68 @@ actor BuiltInLLMEngine {
             value.removeSubrange(opening.lowerBound..<closing.upperBound)
         }
         return value.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+struct StreamingResponseCleaner: Sendable {
+    private static let openingTag = "<think>"
+    private static let closingTag = "</think>"
+
+    private var buffer = ""
+    private var isInsideThought = false
+
+    mutating func consume(_ chunk: String) -> String {
+        buffer += chunk
+        var output = ""
+
+        while !buffer.isEmpty {
+            if isInsideThought {
+                if let closing = buffer.range(of: Self.closingTag) {
+                    buffer.removeSubrange(buffer.startIndex..<closing.upperBound)
+                    isInsideThought = false
+                    continue
+                }
+                buffer = trailingTagPrefix(in: buffer, tag: Self.closingTag)
+                return output
+            }
+
+            if let opening = buffer.range(of: Self.openingTag) {
+                output += buffer[..<opening.lowerBound]
+                buffer.removeSubrange(buffer.startIndex..<opening.upperBound)
+                isInsideThought = true
+                continue
+            }
+
+            let heldSuffix = trailingTagPrefix(in: buffer, tag: Self.openingTag)
+            let visibleCount = buffer.count - heldSuffix.count
+            if visibleCount > 0 {
+                let boundary = buffer.index(buffer.startIndex, offsetBy: visibleCount)
+                output += buffer[..<boundary]
+            }
+            buffer = heldSuffix
+            return output
+        }
+        return output
+    }
+
+    mutating func finish() -> String {
+        guard !isInsideThought else {
+            buffer = ""
+            return ""
+        }
+        defer { buffer = "" }
+        return buffer
+    }
+
+    private func trailingTagPrefix(in value: String, tag: String) -> String {
+        let maximumLength = min(value.count, tag.count - 1)
+        guard maximumLength > 0 else { return "" }
+        for length in stride(from: maximumLength, through: 1, by: -1) {
+            let suffix = value.suffix(length)
+            if tag.hasPrefix(suffix) {
+                return String(suffix)
+            }
+        }
+        return ""
     }
 }

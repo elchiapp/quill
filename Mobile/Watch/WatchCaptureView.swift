@@ -67,6 +67,10 @@ struct WatchCaptureView: View {
                     .font(.caption2)
                     .foregroundStyle(.orange)
                 }
+
+                Text(versionLabel)
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(.tertiary)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
@@ -82,5 +86,15 @@ struct WatchCaptureView: View {
         } message: {
             Text(recorder.errorMessage ?? "")
         }
+    }
+
+    private var versionLabel: String {
+        let version = Bundle.main.object(
+            forInfoDictionaryKey: "CFBundleShortVersionString"
+        ) as? String ?? "Development"
+        let build = Bundle.main.object(
+            forInfoDictionaryKey: "CFBundleVersion"
+        ) as? String
+        return build.map { "v\(version) (\($0))" } ?? "v\(version)"
     }
 }

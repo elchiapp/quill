@@ -12,7 +12,9 @@
 
 The minimum deployments are iOS 18 and watchOS 11. Foundation Models answers
 activate on iOS 26 when Apple Intelligence is available; source-grounded
-extractive answers remain available on other supported iPhones.
+extractive answers remain available on other supported iPhones. The Ask screen
+always shows the resolved engine and offers an explicit choice between
+Automatic, Apple Intelligence, and retrieval-only Local source search.
 
 ## Install on your devices
 
@@ -70,8 +72,8 @@ without overwriting existing entries.
 
 ## Watch delivery lifecycle
 
-1. The Watch records a mono 16 kHz AAC `.m4a` in its Application Support
-   directory.
+1. The Watch asynchronously activates a record-only audio session and records
+   a mono 16 kHz, 32 kbps AAC `.m4a` in its Application Support directory.
 2. Stopping creates metadata and queues the file with `WCSession.transferFile`.
 3. The iPhone moves the received temporary file into a durable inbox before
    the Watch Connectivity callback returns.

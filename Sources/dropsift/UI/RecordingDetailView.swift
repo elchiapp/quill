@@ -1,3 +1,4 @@
+import DropsiftShared
 import SwiftUI
 
 struct RecordingDetailView: View {
@@ -6,23 +7,106 @@ struct RecordingDetailView: View {
 
     @State private var title: String
     @State private var notes: String
+    @State private var speakerNames: [String: String]
+    @State private var showingNotesPanel = true
+    @State private var showingSpeakerEditor = false
+    @State private var splitSegment: TranscriptDocument.Segment?
 
     init(model: AppModel, recording: RecordingItem) {
         self.model = model
         self.recording = recording
         _title = State(initialValue: recording.title)
         _notes = State(initialValue: recording.notes)
+        _speakerNames = State(initialValue: recording.speakerNames)
     }
 
     var body: some View {
+        Group {
+            if showingNotesPanel, !isActiveRecording {
+                HSplitView {
+                    recordingContent
+                        .frame(
+                            minWidth: 460,
+                            maxWidth: .infinity,
+                            maxHeight: .infinity
+                        )
+
+                    savedNotes
+                        .frame(
+                            minWidth: 340,
+                            idealWidth: 400,
+                            maxWidth: 520,
+                            maxHeight: .infinity
+                        )
+                }
+            } else {
+                recordingContent
+            }
+        }
+        .background(Color(nsColor: .textBackgroundColor))
+        .onChange(of: recording.title) { oldTitle, newTitle in
+            if title == oldTitle {
+                title = newTitle
+            }
+        }
+        .onChange(of: recording.notes) { oldNotes, newNotes in
+            if notes == oldNotes || isActiveRecording {
+                notes = newNotes
+            }
+        }
+        .onChange(of: recording.speakerNames) { oldNames, newNames in
+            if speakerNames == oldNames {
+                speakerNames = newNames
+            }
+        }
+        .sheet(isPresented: $showingSpeakerEditor) {
+            SpeakerNamesEditor(
+                speakerIDs: speakerIDs,
+                names: speakerNames
+            ) { names in
+                speakerNames = names
+                model.updateSpeakerNames(names, recordingID: recording.id)
+            }
+        }
+        .confirmationDialog(
+            "Split this recording here?",
+            isPresented: Binding(
+                get: { splitSegment != nil },
+                set: { if !$0 { splitSegment = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: splitSegment
+        ) { segment in
+            Button("Split into a new item") {
+                model.splitRecording(recording, before: segment)
+                splitSegment = nil
+            }
+            Button("Cancel", role: .cancel) {
+                splitSegment = nil
+            }
+        } message: { segment in
+            Text(
+                "Everything from \(TranscriptDocument.clock(segment.startMs)) onward becomes a separate timeline item. Dropsift splits and rebases the transcript and audio tracks; the untouched source audio remains in this item’s folder for recovery."
+            )
+        }
+    }
+
+    private var isActiveRecording: Bool {
+        model.isRecording && model.recordingSessionID == recording.id
+    }
+
+    private var recordingContent: some View {
         VStack(spacing: 0) {
             header
-            Divider()
-            savedNotes
+            ItemSemanticInsightsView(
+                model: model,
+                sourceID: "recording:\(recording.id)"
+            )
+            .padding(.horizontal, 24)
+            .padding(.bottom, 16)
             Divider()
             transcript
         }
-        .background(Color(nsColor: .textBackgroundColor))
     }
 
     private var header: some View {
@@ -72,13 +156,86 @@ struct RecordingDetailView: View {
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
+
+                if !speakerIDs.isEmpty {
+                    Button {
+                        showingSpeakerEditor = true
+                    } label: {
+                        Label("Name speakers", systemImage: "person.2")
+                    }
+                    .buttonStyle(.bordered)
+                    .help("Assign names to transcript speakers")
+                }
+
+                if isActiveRecording {
+                    Button {
+                        model.stopRecording()
+                    } label: {
+                        Label(
+                            "Stop \(model.recordingElapsed)",
+                            systemImage: "stop.circle.fill"
+                        )
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .tint(.red)
+                    .help("Stop recording")
+                } else if model.isPreparingRecording {
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Preparing recorder…")
+                    }
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                } else if model.splittingRecordingID == recording.id {
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Splitting recording…")
+                    }
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                } else {
+                    Button {
+                        model.resumeRecording(recording)
+                    } label: {
+                        Label("Resume", systemImage: "record.circle")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(model.isRecording)
+                    .help("Continue recording into this item")
+                }
+
+                Spacer()
+
+                if !isActiveRecording {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            showingNotesPanel.toggle()
+                        }
+                    } label: {
+                        Label(
+                            showingNotesPanel ? "Hide notes" : "Show notes",
+                            systemImage: showingNotesPanel
+                                ? "rectangle.righthalf.inset.filled"
+                                : "note.text"
+                        )
+                    }
+                    .buttonStyle(.borderless)
+                    .help(
+                        showingNotesPanel
+                            ? "Collapse recording notes"
+                            : "Show recording notes"
+                    )
+                }
             }
         }
         .padding(24)
     }
 
     private var savedNotes: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Label("Notes about this recording", systemImage: "note.text")
                     .font(.headline)
@@ -86,23 +243,36 @@ struct RecordingDetailView: View {
                 Label("Autosaved", systemImage: "icloud")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        showingNotesPanel = false
+                    }
+                } label: {
+                    Label("Hide", systemImage: "chevron.right")
+                }
+                .buttonStyle(.borderless)
+                .controlSize(.small)
+                .contentShape(Rectangle())
+                .help("Collapse recording notes")
             }
-            TextEditor(text: $notes)
-                .font(.body)
-                .scrollContentBackground(.hidden)
-                .padding(6)
-                .background(
-                    Color(nsColor: .textBackgroundColor).opacity(0.8),
-                    in: RoundedRectangle(cornerRadius: 9)
-                )
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+
+            Divider()
+
+            MarkdownNoteEditor(
+                text: $notes,
+                placeholder: "Add notes about this recording…",
+                accessibilityIdentifier: "recording-notes-editor"
+            )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .onChange(of: notes) {
                     model.updateRecordingNotes(notes, recordingID: recording.id)
                 }
-            .frame(minHeight: 44, maxHeight: 130)
         }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 14)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.45))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(nsColor: .controlBackgroundColor))
     }
 
     @ViewBuilder
@@ -121,7 +291,16 @@ struct RecordingDetailView: View {
                             ForEach(document.segments) { segment in
                                 TranscriptSegmentRow(
                                     segment: segment,
-                                    isHighlighted: jumpSegment(in: document)?.id == segment.id
+                                    speakerName: SharedSpeakerNameStore.displayName(
+                                        for: segment.speaker,
+                                        names: speakerNames
+                                    ),
+                                    onRename: { showingSpeakerEditor = true },
+                                    isHighlighted: jumpSegment(in: document)?.id == segment.id,
+                                    canSplit: segment.id != document.segments.first?.id
+                                        && model.splittingRecordingID == nil
+                                        && !model.isRecording,
+                                    onSplit: { splitSegment = segment }
                                 )
                                 .id(segment.id)
                                 Divider()
@@ -192,11 +371,26 @@ struct RecordingDetailView: View {
         }
         return value
     }
+
+    private var speakerIDs: [String] {
+        let ids = Set(recording.transcript?.segments.map(\.speaker) ?? [])
+        return ids.sorted { lhs, rhs in
+            if lhs == "me" { return true }
+            if rhs == "me" { return false }
+            if lhs == "them" { return true }
+            if rhs == "them" { return false }
+            return lhs.localizedStandardCompare(rhs) == .orderedAscending
+        }
+    }
 }
 
 private struct TranscriptSegmentRow: View {
     let segment: TranscriptDocument.Segment
+    let speakerName: String
+    let onRename: () -> Void
     let isHighlighted: Bool
+    let canSplit: Bool
+    let onSplit: () -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 16) {
@@ -204,9 +398,14 @@ private struct TranscriptSegmentRow: View {
                 Text(TranscriptDocument.clock(segment.startMs))
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
-                Text(speakerLabel)
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(speakerColor)
+                Button(action: onRename) {
+                    Text(speakerName.uppercased())
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(speakerColor)
+                        .lineLimit(2)
+                }
+                .buttonStyle(.plain)
+                .help("Name this speaker")
             }
             .frame(width: 72, alignment: .leading)
 
@@ -215,6 +414,24 @@ private struct TranscriptSegmentRow: View {
                 .lineSpacing(4)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
+
+            Menu {
+                Button {
+                    onSplit()
+                } label: {
+                    Label(
+                        "Split into new item from here",
+                        systemImage: "scissors"
+                    )
+                }
+                .disabled(!canSplit)
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .foregroundStyle(.secondary)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("Transcript actions")
         }
         .padding(.vertical, 15)
         .padding(.horizontal, 8)
@@ -225,16 +442,6 @@ private struct TranscriptSegmentRow: View {
         .animation(.easeInOut(duration: 0.2), value: isHighlighted)
     }
 
-    private var speakerLabel: String {
-        if segment.speaker == "me" { return "YOU" }
-        if segment.speaker == "them" { return "THEM" }
-        if segment.speaker.hasPrefix("speaker_"),
-           let number = segment.speaker.split(separator: "_").last {
-            return "SPEAKER \(number)"
-        }
-        return segment.speaker.uppercased()
-    }
-
     private var speakerColor: Color {
         if segment.speaker == "me" { return .indigo }
         let palette: [Color] = [.orange, .teal, .pink, .purple, .green, .blue]
@@ -242,5 +449,74 @@ private struct TranscriptSegmentRow: View {
             $0 + Int($1.value)
         }
         return palette[value % palette.count]
+    }
+}
+
+private struct SpeakerNamesEditor: View {
+    let speakerIDs: [String]
+    let onSave: ([String: String]) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var names: [String: String]
+
+    init(
+        speakerIDs: [String],
+        names: [String: String],
+        onSave: @escaping ([String: String]) -> Void
+    ) {
+        self.speakerIDs = speakerIDs
+        self.onSave = onSave
+        _names = State(initialValue: names)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Name speakers")
+                    .font(.title2.weight(.semibold))
+                Text("Names replace speaker labels everywhere in this recording, including search and AI answers.")
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(spacing: 12) {
+                ForEach(speakerIDs, id: \.self) { speakerID in
+                    HStack(spacing: 14) {
+                        Text(defaultName(for: speakerID))
+                            .font(.callout.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 100, alignment: .leading)
+                        TextField(
+                            "Enter a name",
+                            text: Binding(
+                                get: { names[speakerID] ?? "" },
+                                set: { names[speakerID] = $0 }
+                            )
+                        )
+                        .textFieldStyle(.roundedBorder)
+                    }
+                }
+            }
+
+            HStack {
+                Button("Clear names") {
+                    names = [:]
+                }
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button("Save") {
+                    onSave(SharedSpeakerNameStore.sanitized(names))
+                    dismiss()
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(24)
+        .frame(width: 520)
+    }
+
+    private func defaultName(for speakerID: String) -> String {
+        SharedSpeakerNameStore.displayName(for: speakerID, names: [:])
     }
 }

@@ -7,6 +7,10 @@ struct MobileAskView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            modelPicker
+
+            Divider()
+
             if model.chatMessages.isEmpty {
                 ContentUnavailableView {
                     Label("Ask your knowledge", systemImage: "sparkles")
@@ -78,6 +82,54 @@ struct MobileAskView: View {
         .navigationTitle("Ask Dropsift")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { composerFocused = true }
+    }
+
+    private var modelPicker: some View {
+        Menu {
+            ForEach(MobileAnswerModel.allCases) { answerModel in
+                Button {
+                    model.selectAnswerModel(answerModel)
+                } label: {
+                    if model.selectedAnswerModel == answerModel {
+                        Label(answerModel.name, systemImage: "checkmark")
+                    } else {
+                        Text(answerModel.name)
+                    }
+                }
+                .disabled(!model.isAnswerModelAvailable(answerModel))
+            }
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "brain.head.profile")
+                    .foregroundStyle(.indigo)
+                    .frame(width: 28, height: 28)
+                    .background(
+                        Color.indigo.opacity(0.1),
+                        in: RoundedRectangle(cornerRadius: 8)
+                    )
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(model.answerModelLabel)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    Text(model.answerModelDetail)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal)
+        .padding(.vertical, 10)
+        .accessibilityLabel("Answer model, \(model.answerModelLabel)")
+        .accessibilityHint("Double tap to choose the answer model")
     }
 
     @ViewBuilder

@@ -1,3 +1,4 @@
+import DropsiftShared
 import Foundation
 import UniformTypeIdentifiers
 
@@ -8,6 +9,14 @@ enum KnowledgeLibrary {
             includingPropertiesForKeys: [.isDirectoryKey],
             options: [.skipsHiddenFiles]
         ) else { return [] }
+        for directory in entries {
+            guard var metadata = KnowledgeItem.load(from: directory)?.metadata
+            else { continue }
+            if (try? refreshGeneratedTitle(&metadata, in: directory)) == true {
+                metadata.updatedAt = Date()
+                try? write(metadata, to: directory)
+            }
+        }
         return entries
             .compactMap(KnowledgeItem.load(from:))
             .sorted { $0.createdAt > $1.createdAt }
@@ -32,6 +41,7 @@ enum KnowledgeLibrary {
         )
         try write(metadata, to: directory)
         try Data().write(to: directory.appendingPathComponent("content.md"))
+        try ContentTitleGenerator.markGenerated(in: directory)
         return try requireItem(in: directory)
     }
 
@@ -61,10 +71,14 @@ enum KnowledgeLibrary {
             extractionError = error.localizedDescription
         }
 
+        let fallbackTitle = source.deletingPathExtension().lastPathComponent
         let metadata = KnowledgeItemMetadata(
             id: id,
             kind: kind,
-            title: source.deletingPathExtension().lastPathComponent,
+            title: ContentTitleGenerator.title(
+                from: blocks.map(\.text),
+                fallback: fallbackTitle
+            ),
             createdAt: Date(),
             updatedAt: Date(),
             assetFilename: assetName,
@@ -72,6 +86,7 @@ enum KnowledgeLibrary {
             extractionError: extractionError
         )
         try write(metadata, to: directory)
+        try ContentTitleGenerator.markGenerated(in: directory)
         return try requireItem(in: directory)
     }
 
@@ -80,6 +95,7 @@ enum KnowledgeLibrary {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         metadata.title = trimmed.isEmpty ? "Untitled \(metadata.kind.displayName.lowercased())" : trimmed
         metadata.updatedAt = Date()
+        try ContentTitleGenerator.markManual(in: item.directory)
         try write(metadata, to: item.directory)
     }
 
@@ -89,6 +105,7 @@ enum KnowledgeLibrary {
             options: .atomic
         )
         var metadata = currentMetadata(for: item)
+        try refreshGeneratedTitle(&metadata, in: item.directory)
         metadata.updatedAt = Date()
         try write(metadata, to: item.directory)
     }
@@ -99,6 +116,7 @@ enum KnowledgeLibrary {
             options: .atomic
         )
         var metadata = currentMetadata(for: item)
+        try refreshGeneratedTitle(&metadata, in: item.directory)
         metadata.updatedAt = Date()
         try write(metadata, to: item.directory)
     }
@@ -116,6 +134,37 @@ enum KnowledgeLibrary {
 
     private static func currentMetadata(for item: KnowledgeItem) -> KnowledgeItemMetadata {
         KnowledgeItem.load(from: item.directory)?.metadata ?? item.metadata
+    }
+
+    @discardableResult
+    private static func refreshGeneratedTitle(
+        _ metadata: inout KnowledgeItemMetadata,
+        in directory: URL
+    ) throws -> Bool {
+        guard ContentTitleGenerator.mayReplaceTitle(
+            metadata.title,
+            in: directory
+        ) else { return false }
+
+        let content = (try? String(
+            contentsOf: directory.appendingPathComponent("content.md"),
+            encoding: .utf8
+        )) ?? ""
+        let notes = (try? String(
+            contentsOf: directory.appendingPathComponent("notes.md"),
+            encoding: .utf8
+        )) ?? ""
+        let sources = metadata.kind == .note
+            ? [content, notes]
+            : [notes] + metadata.blocks.map(\.text)
+        let generated = ContentTitleGenerator.title(
+            from: sources,
+            fallback: metadata.title
+        )
+        let changed = generated != metadata.title
+        metadata.title = generated
+        try ContentTitleGenerator.markGenerated(in: directory)
+        return changed
     }
 
     private static func write(

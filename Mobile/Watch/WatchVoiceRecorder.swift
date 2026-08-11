@@ -32,10 +32,21 @@ final class WatchVoiceRecorder: NSObject, ObservableObject {
             errorMessage = "Allow microphone access in Settings."
             return
         }
+        let session = AVAudioSession.sharedInstance()
+        var stage = "configuring the microphone"
         do {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.record, mode: .spokenAudio)
-            try session.setActive(true)
+            // `.spokenAudio` is a playback mode. On a physical Watch it can
+            // make the record-only session fail with paramErr (OSStatus -50).
+            // Configure a plain recording session and use watchOS's
+            // asynchronous activation path before creating the recorder.
+            try session.setCategory(.record, mode: .default)
+            stage = "activating the microphone"
+            let activated = try await session.activate()
+            guard activated else {
+                throw WatchVoiceRecorderError.sessionActivationFailed
+            }
+
+            stage = "creating the recording file"
             let directory = FileManager.default.urls(
                 for: .applicationSupportDirectory,
                 in: .userDomainMask
@@ -51,13 +62,23 @@ final class WatchVoiceRecorder: NSObject, ObservableObject {
                 url: url,
                 settings: [
                     AVFormatIDKey: kAudioFormatMPEG4AAC,
-                    AVSampleRateKey: 16_000,
+                    // Match WatchKit's wide-band speech preset. This is a
+                    // format Apple Watch hardware accepts consistently.
+                    AVSampleRateKey: 16_000.0,
                     AVNumberOfChannelsKey: 1,
-                    AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
+                    AVEncoderBitRateKey: 32_000,
+                    AVEncoderAudioQualityKey: AVAudioQuality.medium.rawValue,
                 ]
             )
-            guard recorder.prepareToRecord(), recorder.record() else {
-                throw CocoaError(.fileWriteUnknown)
+            stage = "preparing the recorder"
+            guard recorder.prepareToRecord() else {
+                recorder.deleteRecording()
+                throw WatchVoiceRecorderError.preparationFailed
+            }
+            stage = "starting the recorder"
+            guard recorder.record() else {
+                recorder.deleteRecording()
+                throw WatchVoiceRecorderError.recordingFailed
             }
             self.recorder = recorder
             startedAt = Date()
@@ -71,7 +92,11 @@ final class WatchVoiceRecorder: NSObject, ObservableObject {
                 }
             }
         } catch {
-            errorMessage = "Couldn’t record: \(error.localizedDescription)"
+            try? session.setActive(
+                false,
+                options: .notifyOthersOnDeactivation
+            )
+            errorMessage = "Couldn’t start recording while \(stage): \(error.localizedDescription)"
         }
     }
 
@@ -95,5 +120,22 @@ final class WatchVoiceRecorder: NSObject, ObservableObject {
             startedAt: startedAt,
             durationSeconds: duration
         )
+    }
+}
+
+private enum WatchVoiceRecorderError: LocalizedError {
+    case sessionActivationFailed
+    case preparationFailed
+    case recordingFailed
+
+    var errorDescription: String? {
+        switch self {
+        case .sessionActivationFailed:
+            "The Watch couldn’t activate its microphone."
+        case .preparationFailed:
+            "The Watch couldn’t prepare the audio file."
+        case .recordingFailed:
+            "The Watch microphone didn’t start."
+        }
     }
 }

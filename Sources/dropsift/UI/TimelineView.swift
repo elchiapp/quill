@@ -6,11 +6,18 @@ struct TimelineView: View {
     var body: some View {
         HSplitView {
             timelineList
-                .frame(minWidth: 290, idealWidth: 330, maxWidth: 350)
+                .frame(minWidth: 280, idealWidth: 300, maxWidth: 320)
+                .frame(maxHeight: .infinity)
             detail
                 .frame(minWidth: 500, maxWidth: .infinity, maxHeight: .infinity)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: .textBackgroundColor))
+        .toolbar {
+            ToolbarItem {
+                timelineSearchField
+            }
+        }
     }
 
     private var timelineList: some View {
@@ -44,11 +51,15 @@ struct TimelineView: View {
                     Text(
                         model.timelineItems.isEmpty
                             ? "Add your first note, document, image, or recording."
-                            : "No timeline items match these filters."
+                            : emptyTimelineDescription
                     )
                 } actions: {
                     if model.timelineItems.isEmpty {
                         Button("Add something") { model.section = .capture }
+                    } else if hasTimelineSearch {
+                        Button("Clear search") {
+                            model.timelineSearch = ""
+                        }
                     } else {
                         Button("Show all types") {
                             model.timelineFilters = Set(TimelineItemKind.allCases)
@@ -56,15 +67,36 @@ struct TimelineView: View {
                     }
                 }
             } else {
-                List(
-                    model.filteredTimelineItems,
-                    selection: timelineSelection
-                ) { item in
-                    TimelineRow(item: item)
-                        .tag(item.id)
+                List(model.filteredTimelineItems) { item in
+                    Button {
+                        model.selectTimelineItem(item.id)
+                    } label: {
+                        TimelineRow(
+                            item: item,
+                            isSelected: model.selectedTimelineItemID == item.id
+                        )
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(
+                        model.selectedTimelineItemID == item.id ? .isSelected : []
+                    )
+                    .listRowInsets(
+                        EdgeInsets(top: 2, leading: 5, bottom: 2, trailing: 5)
+                    )
+                    .listRowBackground(Color.clear)
                         .contextMenu {
                             switch item {
                             case .recording(let recording):
+                                Button {
+                                    model.resumeRecording(recording)
+                                } label: {
+                                    Label("Resume Recording", systemImage: "record.circle")
+                                }
+                                .disabled(
+                                    model.isRecording || model.isPreparingRecording
+                                )
+                                Divider()
                                 Button(role: .destructive) {
                                     model.requestDeleteRecording(recording)
                                 } label: {
@@ -82,14 +114,54 @@ struct TimelineView: View {
                 .listStyle(.inset)
             }
         }
-        .searchable(text: $model.timelineSearch, prompt: "Search timeline")
     }
 
-    private var timelineSelection: Binding<String?> {
-        Binding(
-            get: { model.selectedTimelineItemID },
-            set: { model.selectTimelineItem($0) }
+    private var timelineSearchField: some View {
+        HStack(spacing: 7) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+
+            TextField("Search timeline", text: $model.timelineSearch)
+                .textFieldStyle(.plain)
+                .frame(width: 220)
+                .onExitCommand {
+                    model.timelineSearch = ""
+                }
+
+            if hasTimelineSearch {
+                Button {
+                    model.timelineSearch = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Clear search")
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(
+            Color(nsColor: .controlBackgroundColor),
+            in: RoundedRectangle(cornerRadius: 9)
         )
+        .overlay {
+            RoundedRectangle(cornerRadius: 9)
+                .stroke(Color.primary.opacity(0.09))
+        }
+    }
+
+    private var hasTimelineSearch: Bool {
+        !model.timelineSearch
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .isEmpty
+    }
+
+    private var emptyTimelineDescription: String {
+        if hasTimelineSearch {
+            return "No items match “\(model.timelineSearch)”."
+        }
+        return "No timeline items match the selected types."
     }
 
     private var filterMenu: some View {
@@ -135,6 +207,7 @@ struct TimelineView: View {
 
 private struct TimelineRow: View {
     let item: TimelineItem
+    let isSelected: Bool
 
     var body: some View {
         HStack(alignment: .top, spacing: 11) {
@@ -163,7 +236,13 @@ private struct TimelineRow: View {
                     .lineLimit(2)
             }
         }
+        .padding(.horizontal, 9)
         .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            isSelected ? Color.accentColor.opacity(0.18) : Color.clear,
+            in: RoundedRectangle(cornerRadius: 8)
+        )
     }
 
     private var color: Color {

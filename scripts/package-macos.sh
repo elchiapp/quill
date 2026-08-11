@@ -13,6 +13,8 @@ MLX_DERIVED_DATA="$PROJECT_ROOT/.build/mlx-xcode"
 MLX_PROJECT="$PROJECT_ROOT/.build/checkouts/mlx-swift/xcode/MLX.xcodeproj"
 MLX_METALLIB="$MLX_DERIVED_DATA/Build/Products/Release/Cmlx.framework/Versions/A/Resources/default.metallib"
 MLX_BUILD_LOG="$DIST_DIR/mlx-metal-build.log"
+VERSION_FILE="$PROJECT_ROOT/VERSION"
+BUILD_NUMBER_FILE="$PROJECT_ROOT/BUILD_NUMBER"
 
 cd "$PROJECT_ROOT"
 
@@ -73,8 +75,18 @@ APP_BUNDLE="$PACKAGE_WORK/Dropsift.app"
 /bin/chmod 755 "$APP_BUNDLE/Contents/MacOS/dropsift"
 /usr/bin/ditto "$PROJECT_ROOT/Packaging/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
 
-COMMIT_COUNT=$(/usr/bin/git rev-list --count HEAD 2>/dev/null || print 1)
-/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $COMMIT_COUNT" "$APP_BUNDLE/Contents/Info.plist"
+if [[ ! -s "$VERSION_FILE" || ! -s "$BUILD_NUMBER_FILE" ]]; then
+    print -u2 "Missing VERSION or BUILD_NUMBER release metadata."
+    exit 1
+fi
+RELEASE_VERSION=$(</dev/null /usr/bin/tr -d '[:space:]' < "$VERSION_FILE")
+RELEASE_BUILD=$(</dev/null /usr/bin/tr -d '[:space:]' < "$BUILD_NUMBER_FILE")
+/usr/libexec/PlistBuddy \
+    -c "Set :CFBundleShortVersionString $RELEASE_VERSION" \
+    "$APP_BUNDLE/Contents/Info.plist"
+/usr/libexec/PlistBuddy \
+    -c "Set :CFBundleVersion $RELEASE_BUILD" \
+    "$APP_BUNDLE/Contents/Info.plist"
 
 ICON_WORK=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/dropsift-icon.XXXXXX")
 DMG_WORK=""

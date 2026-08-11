@@ -7,7 +7,7 @@ import Foundation
 /// process's output to stereo and hands us buffers through a private aggregate
 /// device. First use triggers the one-time "System Audio Recording" TCC prompt
 /// and lights the purple recording indicator while active.
-final class SystemAudioRecorder {
+final class SystemAudioRecorder: @unchecked Sendable {
     enum RecorderError: Error, CustomStringConvertible {
         case tapCreationFailed(OSStatus)
         case tapFormatUnreadable(OSStatus)
@@ -34,10 +34,16 @@ final class SystemAudioRecorder {
     private var procID: AudioDeviceIOProcID?
     private var file: AVAudioFile?
     private let queue = DispatchQueue(label: "com.elchiapp.dropsift.system-tap")
+    private let onLevel: @Sendable (Float) -> Void
+    private var lastLevelEmissionNanos: UInt64 = 0
     private(set) var isRecording = false
     /// Wall-clock time of the first captured buffer — the track's true start,
     /// used to offset-align the two tracks' transcript timestamps.
     private(set) var firstBufferAt: Date?
+
+    init(onLevel: @escaping @Sendable (Float) -> Void = { _ in }) {
+        self.onLevel = onLevel
+    }
 
     /// Start capturing system audio, encoding AAC into `url` (use a .caf
     /// extension — CAF needs no finalization pass, so a crash mid-meeting
@@ -144,6 +150,7 @@ final class SystemAudioRecorder {
                 bufferListNoCopy: inInputData,
                 deallocator: nil
             ) else { return }
+            self.publishLevelIfNeeded(from: buffer)
             do {
                 try file.write(from: buffer)
             } catch {
@@ -170,5 +177,12 @@ final class SystemAudioRecorder {
             tapID = AudioObjectID(kAudioObjectUnknown)
         }
         file = nil
+    }
+
+    private func publishLevelIfNeeded(from buffer: AVAudioPCMBuffer) {
+        let now = DispatchTime.now().uptimeNanoseconds
+        guard now &- lastLevelEmissionNanos >= 70_000_000 else { return }
+        lastLevelEmissionNanos = now
+        onLevel(AudioLevelMeter.normalizedLevel(in: buffer))
     }
 }

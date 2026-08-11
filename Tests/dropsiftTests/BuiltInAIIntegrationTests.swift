@@ -18,7 +18,7 @@ func builtInMLXIntegration() async throws {
         cacheRoot: Config.modelCacheRoot,
         plan: plan
     )
-    let answer = try await engine.complete(
+    let stream = try await engine.stream(
         systemPrompt: """
         You are a transcript assistant. Use only the supplied excerpt and cite it as [1].
 
@@ -29,7 +29,13 @@ func builtInMLXIntegration() async throws {
             ChatMessage(role: .user, content: "When did the team decide to ship?")
         ]
     )
+    var chunks: [String] = []
+    for try await chunk in stream {
+        chunks.append(chunk)
+    }
+    let answer = BuiltInLLMEngine.clean(chunks.joined())
 
+    #expect(chunks.count > 1)
     #expect(answer.lowercased().contains("friday"))
     #expect(answer.contains("[1]"))
 }

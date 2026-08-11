@@ -34,6 +34,7 @@ let package = Package(
         .executableTarget(
             name: "dropsift",
             dependencies: [
+                "DropsiftShared",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
                 .product(name: "FluidAudio", package: "FluidAudio"),
                 .product(name: "MLXLLM", package: "mlx-swift-lm"),
