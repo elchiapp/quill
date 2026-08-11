@@ -112,6 +112,7 @@ enum DiarizationReprocessor {
             )
         )
         try ContentPresentationStore.invalidate(in: recordingDirectory)
+        try RecordingSummaryStore.invalidate(in: recordingDirectory)
         let title = try RecordingLibrary.refreshGeneratedTitle(
             in: recordingDirectory,
             transcript: updated

@@ -42,6 +42,65 @@ func localModelPresentationParsesAndCleansStructuredMetadata() throws {
 }
 
 @Test
+func localModelPresentationRecoversFromProseAndAnInvalidBraceBlock() throws {
+    let presentation = try #require(
+        ContentPresentationGenerator.parse(
+            """
+            Here's my analysis: {not valid JSON}.
+            Title: Fineco Integration Architecture
+            Description: The teams reviewed the BKN301 integration architecture and agreed on the validation sequence.
+            """,
+            sourceRevision: "recovered",
+            model: "Qwen3.5 4B"
+        )
+    )
+
+    #expect(presentation.title == "Fineco Integration Architecture")
+    #expect(presentation.description.contains("BKN301 integration architecture"))
+}
+
+@Test
+func recordingSummaryParsesAndPersistsMeetingStructure() throws {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(
+        at: root,
+        withIntermediateDirectories: true
+    )
+    let summary = try #require(
+        RecordingSummaryGenerator.parse(
+            """
+            {
+              "overview": "Fineco and BKN301 reviewed the integration data model and agreed on a validation workshop.",
+              "participants": ["Davide", "Dario"],
+              "topics": ["Integration data model", "Validation plan"],
+              "decisions": ["Use the shared asset schema"],
+              "action_items": ["Davide will schedule the validation workshop"]
+            }
+            """,
+            detectedSpeakers: ["Davide", "Dario"],
+            sourceRevision: "summary-revision",
+            model: "Qwen3.5 4B"
+        )
+    )
+    try RecordingSummaryStore.save(summary, to: root)
+
+    let loaded = try #require(RecordingSummaryStore.load(from: root))
+    #expect(loaded.participantCount == 2)
+    #expect(loaded.topics == ["Integration data model", "Validation plan"])
+    #expect(loaded.actionItems == [
+        "Davide will schedule the validation workshop",
+    ])
+    #expect(
+        RecordingSummaryStore.isCurrent(
+            in: root,
+            revision: "summary-revision"
+        )
+    )
+}
+
+@Test
 func sharedTimelinePrefersSyncedDescriptionAndPreservesAITitle() throws {
     let root = FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString, isDirectory: true)

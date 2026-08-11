@@ -360,6 +360,7 @@ public struct SharedLibraryStore: Sendable {
             isDirectory: true
         )
         try ContentPresentationStore.invalidate(in: directory)
+        try RecordingSummaryStore.invalidate(in: directory)
         try encode(transcript).write(
             to: directory.appendingPathComponent("transcript.json"),
             options: .atomic
@@ -410,6 +411,7 @@ public struct SharedLibraryStore: Sendable {
             isDirectory: true
         )
         try ContentPresentationStore.invalidate(in: directory)
+        try RecordingSummaryStore.invalidate(in: directory)
         try Data(notes.utf8).write(
             to: directory.appendingPathComponent("notes.md"),
             options: .atomic
@@ -439,6 +441,7 @@ public struct SharedLibraryStore: Sendable {
         guard FileManager.default.fileExists(atPath: directory.path) else {
             throw CocoaError(.fileNoSuchFile)
         }
+        try RecordingSummaryStore.invalidate(in: directory)
         try SharedSpeakerNameStore.save(names, to: directory)
         if let recording = loadRecording(directory),
            let transcript = recording.transcript {

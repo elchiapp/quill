@@ -1,5 +1,16 @@
 import Foundation
 
+public enum LocalModelOutputError: LocalizedError {
+    case unreadableStructuredResponse
+
+    public var errorDescription: String? {
+        switch self {
+        case .unreadableStructuredResponse:
+            "The local model returned a response Dropsift couldn’t read. Try again."
+        }
+    }
+}
+
 public struct ContentPresentation: Codable, Sendable, Equatable {
     public var title: String
     public var description: String
@@ -120,13 +131,26 @@ public enum ContentPresentationGenerator {
         sourceRevision: String,
         model: String
     ) -> ContentPresentation? {
-        guard let opening = response.firstIndex(of: "{"),
-              let closing = response.lastIndex(of: "}"),
-              opening <= closing,
-              let data = String(response[opening ... closing]).data(using: .utf8),
-              let decoded = try? JSONDecoder().decode(Response.self, from: data),
-              let title = cleanTitle(decoded.title),
-              let description = cleanDescription(decoded.description)
+        let decoded = LocalModelStructuredOutput.jsonObjects(in: response)
+            .compactMap { object -> Response? in
+                guard let data = object.data(using: .utf8) else { return nil }
+                return try? JSONDecoder().decode(Response.self, from: data)
+            }
+            .first
+        let rawTitle = decoded?.title
+            ?? LocalModelStructuredOutput.stringValue(
+                for: "title",
+                in: response
+            )
+        let rawDescription = decoded?.description
+            ?? LocalModelStructuredOutput.stringValue(
+                for: "description",
+                in: response
+            )
+        guard let rawTitle,
+              let rawDescription,
+              let title = cleanTitle(rawTitle),
+              let description = cleanDescription(rawDescription)
         else { return nil }
 
         return ContentPresentation(
@@ -234,5 +258,332 @@ public enum ContentPresentationGenerator {
             if terms.count == 12 { break }
         }
         return terms
+    }
+}
+
+/// Small local models occasionally wrap a valid object in prose, emit more
+/// than one brace-delimited block, or return labeled fields instead of strict
+/// JSON. Keeping that tolerance here prevents every feature from inventing a
+/// different parser for the same model behavior.
+public enum LocalModelStructuredOutput {
+    public static func jsonObjects(in response: String) -> [String] {
+        var objects: [String] = []
+        var start: String.Index?
+        var depth = 0
+        var isInString = false
+        var quote: Character?
+        var isEscaped = false
+
+        for index in response.indices {
+            let character = response[index]
+            if isInString {
+                if isEscaped {
+                    isEscaped = false
+                } else if character == "\\" {
+                    isEscaped = true
+                } else if character == quote {
+                    isInString = false
+                    quote = nil
+                }
+                continue
+            }
+            if depth > 0 && (character == "\"" || character == "'") {
+                isInString = true
+                quote = character
+                continue
+            }
+            if character == "{" {
+                if depth == 0 { start = index }
+                depth += 1
+            } else if character == "}", depth > 0 {
+                depth -= 1
+                if depth == 0, let start {
+                    objects.append(String(response[start ... index]))
+                    isInString = false
+                    quote = nil
+                    isEscaped = false
+                }
+            }
+        }
+        return objects
+    }
+
+    public static func stringValue(
+        for key: String,
+        in response: String
+    ) -> String? {
+        let escapedKey = NSRegularExpression.escapedPattern(for: key)
+        let quotedPattern = #"(?is)[\"']?\b"# + escapedKey
+            + #"\b[\"']?\s*:\s*([\"'])(.*?)\1\s*(?:,|\}|$)"#
+        if let value = firstCapture(
+            pattern: quotedPattern,
+            capture: 2,
+            in: response
+        ) {
+            return value
+                .replacingOccurrences(of: #"\n"#, with: "\n")
+                .replacingOccurrences(of: #"\""#, with: "\"")
+        }
+        let linePattern = #"(?im)^\s*"# + escapedKey
+            + #"\s*:\s*(.+?)\s*$"#
+        return firstCapture(
+            pattern: linePattern,
+            capture: 1,
+            in: response
+        )
+    }
+
+    public static func stringArray(
+        for key: String,
+        in response: String
+    ) -> [String] {
+        let escapedKey = NSRegularExpression.escapedPattern(for: key)
+        let arrayPattern = #"(?is)[\"']?\b"# + escapedKey
+            + #"\b[\"']?\s*:\s*\[(.*?)\]"#
+        guard let body = firstCapture(
+            pattern: arrayPattern,
+            capture: 1,
+            in: response
+        ) else { return [] }
+        guard let regex = try? NSRegularExpression(
+            pattern: #"(?s)([\"'])(.*?)\1"#
+        ) else { return [] }
+        let range = NSRange(body.startIndex..., in: body)
+        return regex.matches(in: body, range: range).compactMap { match in
+            guard let valueRange = Range(match.range(at: 2), in: body) else {
+                return nil
+            }
+            return String(body[valueRange])
+                .replacingOccurrences(of: #"\n"#, with: "\n")
+                .replacingOccurrences(of: #"\""#, with: "\"")
+        }
+    }
+
+    private static func firstCapture(
+        pattern: String,
+        capture: Int,
+        in value: String
+    ) -> String? {
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(
+                in: value,
+                range: NSRange(value.startIndex..., in: value)
+              ),
+              let range = Range(match.range(at: capture), in: value)
+        else { return nil }
+        return String(value[range])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+}
+
+
+public struct RecordingSummary: Codable, Sendable, Equatable {
+    public let overview: String
+    public let participantCount: Int
+    public let participants: [String]
+    public let topics: [String]
+    public let decisions: [String]
+    public let actionItems: [String]
+    public let sourceRevision: String
+    public let generatedAt: Date
+    public let model: String
+
+    public init(
+        overview: String,
+        participantCount: Int,
+        participants: [String],
+        topics: [String],
+        decisions: [String],
+        actionItems: [String],
+        sourceRevision: String,
+        generatedAt: Date = Date(),
+        model: String
+    ) {
+        self.overview = overview
+        self.participantCount = participantCount
+        self.participants = participants
+        self.topics = topics
+        self.decisions = decisions
+        self.actionItems = actionItems
+        self.sourceRevision = sourceRevision
+        self.generatedAt = generatedAt
+        self.model = model
+    }
+}
+
+public enum RecordingSummaryStore {
+    public static let filename = "summary.json"
+
+    public static func load(from directory: URL) -> RecordingSummary? {
+        guard let data = try? Data(
+            contentsOf: directory.appendingPathComponent(filename)
+        ) else { return nil }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try? decoder.decode(RecordingSummary.self, from: data)
+    }
+
+    public static func save(
+        _ summary: RecordingSummary,
+        to directory: URL
+    ) throws {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try encoder.encode(summary).write(
+            to: directory.appendingPathComponent(filename),
+            options: .atomic
+        )
+    }
+
+    public static func invalidate(in directory: URL) throws {
+        let url = directory.appendingPathComponent(filename)
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        try FileManager.default.removeItem(at: url)
+    }
+
+    public static func isCurrent(in directory: URL, revision: String) -> Bool {
+        load(from: directory)?.sourceRevision == revision
+    }
+}
+
+public enum RecordingSummaryGenerator {
+    private struct Response: Decodable {
+        let overview: String
+        let participants: [String]
+        let topics: [String]
+        let decisions: [String]
+        let actionItems: [String]
+
+        enum CodingKeys: String, CodingKey {
+            case overview, participants, topics, decisions
+            case actionItems = "action_items"
+        }
+    }
+
+    public static let systemPrompt = """
+    Summarize a private meeting transcript faithfully and concisely.
+    Return exactly one JSON object with this schema:
+    {"overview":"two to four sentences","participants":["name or speaker label"],"topics":["topic"],"decisions":["decision"],"action_items":["action with owner and due date when stated"]}
+
+    Requirements:
+    - Cover what the meeting was about and the main outcome.
+    - Include only people supported by speaker labels or explicitly named.
+    - Keep topics, decisions, and action items short and specific.
+    - An action item must be a genuine commitment or request, not a general discussion point.
+    - If no decisions or action items were stated, return an empty array.
+    - Do not invent names, owners, dates, facts, or outcomes.
+    - Do not include Markdown or any text outside the JSON object.
+    """
+
+    public static func userPrompt(
+        text: String,
+        detectedSpeakers: [String],
+        characterLimit: Int
+    ) -> String {
+        let limit = max(8_000, characterLimit)
+        let transcript: String
+        if text.count <= limit {
+            transcript = text
+        } else {
+            let headCount = limit * 3 / 4
+            transcript = String(text.prefix(headCount))
+                + "\n\n[…middle omitted because the transcript exceeded the model budget…]\n\n"
+                + String(text.suffix(limit - headCount))
+        }
+        return """
+        DETECTED SPEAKER TRACKS (\(detectedSpeakers.count)):
+        \(detectedSpeakers.isEmpty ? "(none)" : detectedSpeakers.joined(separator: ", "))
+
+        MEETING TRANSCRIPT AND NOTES:
+        \(transcript)
+        """
+    }
+
+    public static func parse(
+        _ response: String,
+        detectedSpeakers: [String],
+        sourceRevision: String,
+        model: String
+    ) -> RecordingSummary? {
+        let decoded = LocalModelStructuredOutput.jsonObjects(in: response)
+            .compactMap { object -> Response? in
+                guard let data = object.data(using: .utf8) else { return nil }
+                return try? JSONDecoder().decode(Response.self, from: data)
+            }
+            .first
+        guard let overview = cleanOverview(
+            decoded?.overview
+                ?? LocalModelStructuredOutput.stringValue(
+                    for: "overview",
+                    in: response
+                )
+                ?? ""
+        ) else { return nil }
+
+        let participants = cleanList(
+            decoded?.participants
+                ?? LocalModelStructuredOutput.stringArray(
+                    for: "participants",
+                    in: response
+                )
+        )
+        let resolvedParticipants = participants.isEmpty
+            ? cleanList(detectedSpeakers)
+            : participants
+        return RecordingSummary(
+            overview: overview,
+            participantCount: Set(detectedSpeakers).count,
+            participants: resolvedParticipants,
+            topics: cleanList(
+                decoded?.topics
+                    ?? LocalModelStructuredOutput.stringArray(
+                        for: "topics",
+                        in: response
+                    )
+            ),
+            decisions: cleanList(
+                decoded?.decisions
+                    ?? LocalModelStructuredOutput.stringArray(
+                        for: "decisions",
+                        in: response
+                    )
+            ),
+            actionItems: cleanList(
+                decoded?.actionItems
+                    ?? LocalModelStructuredOutput.stringArray(
+                        for: "action_items",
+                        in: response
+                    )
+            ),
+            sourceRevision: sourceRevision,
+            model: model
+        )
+    }
+
+    private static func cleanOverview(_ raw: String) -> String? {
+        let value = raw.replacingOccurrences(
+            of: #"\s+"#,
+            with: " ",
+            options: .regularExpression
+        ).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard value.count >= 12 else { return nil }
+        return String(value.prefix(1_200))
+    }
+
+    private static func cleanList(_ values: [String]) -> [String] {
+        var seen = Set<String>()
+        return values.compactMap { raw in
+            let value = raw.replacingOccurrences(
+                of: #"\s+"#,
+                with: " ",
+                options: .regularExpression
+            ).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !value.isEmpty,
+                  seen.insert(value.lowercased()).inserted
+            else { return nil }
+            return String(value.prefix(300))
+        }
     }
 }

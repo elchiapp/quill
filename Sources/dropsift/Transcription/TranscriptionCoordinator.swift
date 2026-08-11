@@ -218,6 +218,7 @@ actor TranscriptionCoordinator {
                 : nil
         )
         try ContentPresentationStore.invalidate(in: dir)
+        try RecordingSummaryStore.invalidate(in: dir)
         let title = try RecordingLibrary.refreshGeneratedTitle(
             in: dir,
             transcript: transcript

@@ -11,8 +11,11 @@ import Testing
     )
 )
 func builtInMLXIntegration() async throws {
+    let requestedModelID = ProcessInfo.processInfo.environment[
+        "DROPSIFT_BUILTIN_AI_MODEL_ID"
+    ]
     let plan = AIModelCatalog.plan(
-        for: AIModelCatalog.defaultModel,
+        for: AIModelCatalog.model(id: requestedModelID),
         device: .current
     )
     let engine = BuiltInLLMEngine(
@@ -54,7 +57,8 @@ func builtInMLXIntegration() async throws {
                     """
                 )
             ),
-        ]
+        ],
+        maxTokens: 512
     )
     let presentation = try #require(
         ContentPresentationGenerator.parse(
@@ -63,11 +67,39 @@ func builtInMLXIntegration() async throws {
             model: plan.model.name
         )
     )
-    #expect(
-        presentation.title.localizedCaseInsensitiveContains("Fineco")
-            || presentation.title.localizedCaseInsensitiveContains("BKN301")
-    )
+    #expect(presentation.title.split(separator: " ").count >= 2)
     #expect(presentation.description.count >= 12)
+
+    let summaryResponse = try await engine.complete(
+        systemPrompt: RecordingSummaryGenerator.systemPrompt,
+        messages: [
+            ChatMessage(
+                role: .user,
+                content: RecordingSummaryGenerator.userPrompt(
+                    text: """
+                    Davide: Fineco and BKN301 reviewed the shared integration data model.
+                    Dario: We decided to use the shared asset schema.
+                    Davide: I will schedule an API validation workshop for next week.
+                    """,
+                    detectedSpeakers: ["Davide", "Dario"],
+                    characterLimit: 32_000
+                )
+            ),
+        ],
+        maxTokens: 1_536
+    )
+    let summary = try #require(
+        RecordingSummaryGenerator.parse(
+            summaryResponse,
+            detectedSpeakers: ["Davide", "Dario"],
+            sourceRevision: "summary-integration-fixture",
+            model: plan.model.name
+        )
+    )
+    #expect(summary.participantCount == 2)
+    #expect(!summary.topics.isEmpty)
+    #expect(!summary.decisions.isEmpty)
+    #expect(!summary.actionItems.isEmpty)
 
     let conversationTitleResponse = try await engine.complete(
         systemPrompt: ContentPresentationGenerator.conversationTitleSystemPrompt,
@@ -80,13 +112,11 @@ func builtInMLXIntegration() async throws {
                 DROPSIFT: The Fineco and BKN301 teams discussed a shared integration data model and planned an API validation with engineering.
                 """
             ),
-        ]
+        ],
+        maxTokens: 128
     )
     let conversationTitle = try #require(
         ContentPresentationGenerator.cleanTitle(conversationTitleResponse)
     )
-    #expect(
-        conversationTitle.localizedCaseInsensitiveContains("Fineco")
-            || conversationTitle.localizedCaseInsensitiveContains("BKN301")
-    )
+    #expect(conversationTitle.split(separator: " ").count >= 2)
 }

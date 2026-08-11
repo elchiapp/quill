@@ -10,6 +10,7 @@ struct RecordingDetailView: View {
     @State private var speakerNames: [String: String]
     @State private var showingNotesPanel = true
     @State private var showingSpeakerEditor = false
+    @State private var showingSummary = true
     @State private var splitSegment: TranscriptDocument.Segment?
 
     init(model: AppModel, recording: RecordingItem) {
@@ -98,6 +99,7 @@ struct RecordingDetailView: View {
     private var recordingContent: some View {
         VStack(spacing: 0) {
             header
+            summaryPanel
             ItemSemanticInsightsView(
                 model: model,
                 sourceID: "recording:\(recording.id)"
@@ -189,6 +191,24 @@ struct RecordingDetailView: View {
                 }
 
                 HStack(spacing: 8) {
+                    Button {
+                        model.regenerateSummary(for: recording)
+                    } label: {
+                        Label(
+                            recording.summary == nil
+                                ? "Generate summary"
+                                : "Regenerate summary",
+                            systemImage: "text.page.badge.magnifyingglass"
+                        )
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(
+                        recording.transcript == nil
+                            || model.summaryGenerationItemID
+                                == "recording:\(recording.id)"
+                    )
+                    .help("Summarize participants, topics, decisions, and action items locally")
+
                     if !speakerIDs.isEmpty {
                         Button {
                             showingSpeakerEditor = true
@@ -265,6 +285,77 @@ struct RecordingDetailView: View {
             }
         }
         .padding(24)
+    }
+
+    @ViewBuilder
+    private var summaryPanel: some View {
+        let sourceID = "recording:\(recording.id)"
+        if model.summaryGenerationItemID == sourceID {
+            HStack(spacing: 9) {
+                ProgressView()
+                    .controlSize(.small)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Building meeting summary…")
+                        .font(.headline)
+                    Text("Analyzing participants, topics, decisions, and action items locally.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            .padding(16)
+            .background(Color.accentColor.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
+            .padding(.horizontal, 24)
+            .padding(.bottom, 16)
+        } else if let summary = recording.summary {
+            DisclosureGroup(isExpanded: $showingSummary) {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text(summary.overview)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    HStack(alignment: .top, spacing: 24) {
+                        SummaryListSection(
+                            title: "Participants (\(summary.participantCount))",
+                            values: summary.participants,
+                            emptyText: "No names identified"
+                        )
+                        SummaryListSection(
+                            title: "Topics",
+                            values: summary.topics,
+                            emptyText: "No topics identified"
+                        )
+                    }
+
+                    HStack(alignment: .top, spacing: 24) {
+                        SummaryListSection(
+                            title: "Decisions",
+                            values: summary.decisions,
+                            emptyText: "No explicit decisions"
+                        )
+                        SummaryListSection(
+                            title: "Action items",
+                            values: summary.actionItems,
+                            emptyText: "No explicit action items"
+                        )
+                    }
+                }
+                .padding(.top, 12)
+            } label: {
+                HStack {
+                    Label("Meeting summary", systemImage: "text.page")
+                        .font(.headline)
+                    Spacer()
+                    Text("Local AI · \(summary.model)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(16)
+            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
+            .padding(.horizontal, 24)
+            .padding(.bottom, 16)
+        }
     }
 
     private var savedNotes: some View {
@@ -414,6 +505,35 @@ struct RecordingDetailView: View {
             if rhs == "them" { return false }
             return lhs.localizedStandardCompare(rhs) == .orderedAscending
         }
+    }
+}
+
+private struct SummaryListSection: View {
+    let title: String
+    let values: [String]
+    let emptyText: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+            if values.isEmpty {
+                Text(emptyText)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(Array(values.enumerated()), id: \.offset) { _, value in
+                    HStack(alignment: .firstTextBaseline, spacing: 7) {
+                        Text("•")
+                            .foregroundStyle(.secondary)
+                        Text(value)
+                            .textSelection(.enabled)
+                    }
+                    .font(.callout)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

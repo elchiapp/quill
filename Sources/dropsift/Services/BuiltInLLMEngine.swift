@@ -512,11 +512,13 @@ actor BuiltInLLMEngine {
 
     func complete(
         systemPrompt: String,
-        messages: [ChatMessage]
+        messages: [ChatMessage],
+        maxTokens: Int? = nil
     ) async throws -> String {
         let stream = try await stream(
             systemPrompt: systemPrompt,
-            messages: messages
+            messages: messages,
+            maxTokens: maxTokens
         )
         var response = ""
         for try await chunk in stream {
@@ -529,7 +531,8 @@ actor BuiltInLLMEngine {
 
     func stream(
         systemPrompt: String,
-        messages: [ChatMessage]
+        messages: [ChatMessage],
+        maxTokens: Int? = nil
     ) async throws -> AsyncThrowingStream<String, Error> {
         guard let prompt = messages.last, prompt.role == .user else {
             throw EngineError.emptyConversation
@@ -555,7 +558,8 @@ actor BuiltInLLMEngine {
                 }
             }
         let parameters = GenerateParameters(
-            maxTokens: min(2_048, max(900, plan.contextTokens / 64)),
+            maxTokens: maxTokens
+                ?? min(2_048, max(900, plan.contextTokens / 64)),
             maxKVSize: plan.contextTokens,
             kvBits: 8,
             temperature: 0.4,

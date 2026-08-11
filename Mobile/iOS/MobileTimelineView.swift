@@ -339,47 +339,15 @@ private struct MobileRecordingDetail: View {
                         .foregroundStyle(.secondary)
                     }
 
-                    HStack {
-                        Button {
-                            playback.toggle(recording)
-                        } label: {
-                            Label(
-                                playback.isPlaying ? "Pause" : "Play recording",
-                                systemImage: playback.isPlaying
-                                    ? "pause.fill"
-                                    : "play.fill"
-                            )
-                        }
-                        .buttonStyle(.borderedProminent)
-
-                        Button {
-                            playback.stop()
-                            model.toggleResume(recording)
-                        } label: {
-                            Label(
-                                model.isResuming(recording.id)
-                                    ? "Stop \(model.recorder.elapsedLabel)"
-                                    : "Resume",
-                                systemImage: model.isResuming(recording.id)
-                                    ? "stop.fill"
-                                    : "record.circle"
-                            )
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(model.isResuming(recording.id) ? .red : .accentColor)
-                        .disabled(!model.canResume(recording.id))
-
-                        if playback.isPreparing {
-                            ProgressView()
-                                .controlSize(.small)
-                        }
-                    }
+                    playbackControls
 
                     if let playbackError = playback.errorMessage {
                         Text(playbackError)
                             .font(.caption)
                             .foregroundStyle(.red)
                     }
+
+                    summaryCard
 
                     MobileSemanticInsightsView(
                         model: model,
@@ -475,6 +443,77 @@ private struct MobileRecordingDetail: View {
         }
     }
 
+    private var playbackControls: some View {
+        HStack {
+            Button {
+                playback.toggle(recording)
+            } label: {
+                Label(
+                    playback.isPlaying ? "Pause" : "Play recording",
+                    systemImage: playback.isPlaying
+                        ? "pause.fill"
+                        : "play.fill"
+                )
+            }
+            .buttonStyle(.borderedProminent)
+
+            Button {
+                playback.stop()
+                model.toggleResume(recording)
+            } label: {
+                Label(
+                    model.isResuming(recording.id)
+                        ? "Stop \(model.recorder.elapsedLabel)"
+                        : "Resume",
+                    systemImage: model.isResuming(recording.id)
+                        ? "stop.fill"
+                        : "record.circle"
+                )
+            }
+            .buttonStyle(.bordered)
+            .tint(model.isResuming(recording.id) ? .red : .accentColor)
+            .disabled(!model.canResume(recording.id))
+
+            if playback.isPreparing {
+                ProgressView()
+                    .controlSize(.small)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var summaryCard: some View {
+        if let summary = recording.summary {
+            VStack(alignment: .leading, spacing: 12) {
+                Label("Meeting summary", systemImage: "text.page")
+                    .font(.headline)
+                Text(summary.overview)
+                MobileSummarySection(
+                    title: "Participants (\(summary.participantCount))",
+                    values: summary.participants
+                )
+                MobileSummarySection(title: "Topics", values: summary.topics)
+                MobileSummarySection(
+                    title: "Decisions",
+                    values: summary.decisions
+                )
+                MobileSummarySection(
+                    title: "Action items",
+                    values: summary.actionItems
+                )
+                Text("Generated locally on Mac with \(summary.model)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding()
+            .background(
+                .secondary.opacity(0.07),
+                in: RoundedRectangle(cornerRadius: 14)
+            )
+        }
+    }
+
     private var speakerIDs: [String] {
         let ids = Set(recording.transcript?.segments.map(\.speaker) ?? [])
         return ids.sorted { lhs, rhs in
@@ -501,6 +540,24 @@ private struct MobileRecordingDetail: View {
         else { return }
         withAnimation {
             proxy.scrollTo(startMs, anchor: .center)
+        }
+    }
+}
+
+private struct MobileSummarySection: View {
+    let title: String
+    let values: [String]
+
+    var body: some View {
+        if !values.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                ForEach(Array(values.enumerated()), id: \.offset) { _, value in
+                    Text("• \(value)")
+                        .font(.subheadline)
+                }
+            }
         }
     }
 }

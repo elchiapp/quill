@@ -673,6 +673,17 @@ func deviceRecommendationsStayWithinHalfOfUnifiedMemory() {
 }
 
 @Test
+func qwenFourBillionModelSupportsFullContextOnThisMac() throws {
+    let model = try #require(
+        AIModelCatalog.models.first { $0.name == "Qwen3.5 4B" }
+    )
+    #expect(model.nativeContextTokens == 262_144)
+    let plan = AIModelCatalog.plan(for: model, device: .current)
+    #expect(plan.contextTokens == 262_144)
+    #expect(plan.estimatedModelMemoryBytes <= plan.memoryBudgetBytes)
+}
+
+@Test
 func recordingLoaderReadsCanonicalTranscriptSchema() throws {
     let root = FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString, isDirectory: true)

@@ -258,6 +258,10 @@ public struct SharedRecordingItem: Identifiable, Sendable, Equatable {
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 
+    public var summary: RecordingSummary? {
+        RecordingSummaryStore.load(from: directory)
+    }
+
     public var preview: String {
         if let first = transcript?.segments.first?.text, !first.isEmpty {
             return first

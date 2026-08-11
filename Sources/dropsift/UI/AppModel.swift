@@ -58,6 +58,7 @@ final class AppModel: ObservableObject {
         let presentationRevision: String
         let presentationKind: String
         let directory: URL
+        let speakerLabels: [String]
         let reference: SharedSemanticSourceReference
     }
 
@@ -129,6 +130,7 @@ final class AppModel: ObservableObject {
     @Published var chatError: String?
     @Published private(set) var regeneratingThreadID: UUID?
     @Published private(set) var metadataGenerationItemID: String?
+    @Published private(set) var summaryGenerationItemID: String?
     @Published var transcriptJump: TranscriptJump?
     @Published var knowledgeJump: KnowledgeJump?
     @Published var modelDeletionRequest: BuiltInModel?
@@ -186,7 +188,9 @@ final class AppModel: ObservableObject {
     private var semanticAnalysisTask: Task<Void, Never>?
     private var requestedSemanticSourceIDs: [String] = []
     private var requestedPresentationSourceIDs: [String] = []
+    private var requestedSummarySourceIDs: [String] = []
     private var automaticPresentationSourceIDs: [String] = []
+    private var automaticSummarySourceIDs: [String] = []
     private var automaticSemanticSourceIDs: [String] = []
     private var knownPresentationSourceIDs = Set<String>()
     private var requestedThreadTitles: [ThreadTitleRequest] = []
@@ -205,6 +209,8 @@ final class AppModel: ObservableObject {
         "dropsift.presentation.knownSourceIDs"
     private static let automaticPresentationSourceIDsKey =
         "dropsift.presentation.pendingSourceIDs"
+    private static let automaticSummarySourceIDsKey =
+        "dropsift.summary.pendingSourceIDs"
     private static let automaticSemanticSourceIDsKey =
         "dropsift.semantics.pendingSourceIDs"
     private static let legacyDefaults = UserDefaults(suiteName: "com.digimata.quill")
@@ -1025,6 +1031,15 @@ final class AppModel: ObservableObject {
         scanForSemanticCandidates()
     }
 
+    func regenerateSummary(for recording: RecordingItem) {
+        let sourceID = "recording:\(recording.id)"
+        automaticSummarySourceIDs.removeAll { $0 == sourceID }
+        persistAutomaticProcessingQueues()
+        requestedSummarySourceIDs.removeAll { $0 == sourceID }
+        requestedSummarySourceIDs.insert(sourceID, at: 0)
+        scanForSemanticCandidates()
+    }
+
     func requestDeleteThread(_ thread: ChatThread) {
         deletionRequest = .thread(id: thread.id, title: thread.title)
     }
@@ -1638,7 +1653,8 @@ final class AppModel: ObservableObject {
                             .conversationTitleSystemPrompt,
                         messages: [
                             ChatMessage(role: .user, content: conversation),
-                        ]
+                        ],
+                        maxTokens: 128
                     )
                     try Task.checkCancellation()
                     guard let title = ContentPresentationGenerator.cleanTitle(
@@ -1698,6 +1714,19 @@ final class AppModel: ObservableObject {
                 $0 == manuallyRequestedPresentation.sourceID
             }
         }
+        let manuallyRequestedSummary = requestedSummarySourceIDs
+            .compactMap { requestedID in
+                sources.first {
+                    $0.sourceID == requestedID
+                        && $0.sourceID.hasPrefix("recording:")
+                }
+            }
+            .first
+        if let manuallyRequestedSummary {
+            requestedSummarySourceIDs.removeAll {
+                $0 == manuallyRequestedSummary.sourceID
+            }
+        }
         let pendingKeys = Set(
             semanticStore.loadPendingReviews().map {
                 $0.sourceID + "|" + $0.sourceRevision
@@ -1730,6 +1759,7 @@ final class AppModel: ObservableObject {
             in: Config.modelCacheRoot
         )
         removeCompletedAutomaticPresentationRequests(from: sources)
+        removeCompletedAutomaticSummaryRequests(from: sources)
         let automaticPresentationSource = modelIsCached
             ? automaticPresentationSourceIDs.compactMap { requestedID in
                 sources.first { source in
@@ -1747,9 +1777,26 @@ final class AppModel: ObservableObject {
                 }
             }.first
             : nil
+        let automaticSummarySource = modelIsCached
+            ? automaticSummarySourceIDs.compactMap { requestedID in
+                sources.first { source in
+                    source.sourceID == requestedID
+                        && source.sourceID.hasPrefix("recording:")
+                        && !source.text.trimmingCharacters(
+                            in: .whitespacesAndNewlines
+                        ).isEmpty
+                        && !RecordingSummaryStore.isCurrent(
+                            in: source.directory,
+                            revision: source.presentationRevision
+                        )
+                }
+            }.first
+            : nil
         let source = manuallyRequestedPresentation
+            ?? manuallyRequestedSummary
             ?? manuallyRequestedSource
             ?? automaticPresentationSource
+            ?? automaticSummarySource
             ?? semanticSource
         guard let source else {
             refreshSemantics()
@@ -1760,16 +1807,26 @@ final class AppModel: ObservableObject {
             == source.sourceID
         let presentationWasQueued = automaticPresentationSource?.sourceID
             == source.sourceID
+        let summaryWasRequested = manuallyRequestedSummary?.sourceID
+            == source.sourceID
+        let summaryWasQueued = automaticSummarySource?.sourceID
+            == source.sourceID
         let semanticsWereQueued = automaticSemanticSource?.sourceID
             == source.sourceID
         let needsPresentation = presentationWasRequested
             || presentationWasQueued
+        let needsSummary = summaryWasRequested || summaryWasQueued
         let needsSemantics = semanticSource?.sourceID == source.sourceID
-        semanticProcessingLabel = needsPresentation
-            ? "Writing title and description for \(source.title)…"
-            : "Organizing \(source.title)…"
+        semanticProcessingLabel = if needsPresentation {
+            "Writing title and description for \(source.title)…"
+        } else if needsSummary {
+            "Summarizing \(source.title)…"
+        } else {
+            "Organizing \(source.title)…"
+        }
         semanticProcessingSourceID = source.sourceID
         metadataGenerationItemID = needsPresentation ? source.sourceID : nil
+        summaryGenerationItemID = needsSummary ? source.sourceID : nil
         let store = semanticStore
         let engine = llm
         let modelName = selectedModelPlan.model.name
@@ -1789,14 +1846,17 @@ final class AppModel: ObservableObject {
                                     text: source.text,
                                 )
                             ),
-                        ]
+                        ],
+                        maxTokens: 512
                     )
                     try Task.checkCancellation()
                     guard let presentation = ContentPresentationGenerator.parse(
                         response,
                         sourceRevision: source.presentationRevision,
                         model: modelName
-                    ) else { throw CocoaError(.formatting) }
+                    ) else {
+                        throw LocalModelOutputError.unreadableStructuredResponse
+                    }
                     if source.sourceID.hasPrefix("recording:") {
                         try RecordingLibrary.saveGeneratedPresentation(
                             presentation,
@@ -1817,6 +1877,51 @@ final class AppModel: ObservableObject {
                     )
                     if presentationWasRequested, !(error is CancellationError) {
                         appError = "Couldn’t generate this item’s title and description: "
+                            + error.localizedDescription
+                    }
+                }
+            }
+
+            var summarySaved = false
+            if needsSummary, !Task.isCancelled {
+                do {
+                    let response = try await engine.complete(
+                        systemPrompt: RecordingSummaryGenerator.systemPrompt,
+                        messages: [
+                            ChatMessage(
+                                role: .user,
+                                content: RecordingSummaryGenerator.userPrompt(
+                                    text: source.text,
+                                    detectedSpeakers: source.speakerLabels,
+                                    characterLimit: min(
+                                        240_000,
+                                        max(
+                                            32_000,
+                                            selectedModelPlan.contextTokens - 8_192
+                                        )
+                                    )
+                                )
+                            ),
+                        ],
+                        maxTokens: 1_536
+                    )
+                    try Task.checkCancellation()
+                    guard let summary = RecordingSummaryGenerator.parse(
+                        response,
+                        detectedSpeakers: source.speakerLabels,
+                        sourceRevision: source.presentationRevision,
+                        model: modelName
+                    ) else {
+                        throw LocalModelOutputError.unreadableStructuredResponse
+                    }
+                    try RecordingSummaryStore.save(
+                        summary,
+                        to: source.directory
+                    )
+                    summarySaved = true
+                } catch {
+                    if summaryWasRequested, !(error is CancellationError) {
+                        appError = "Couldn’t generate this recording’s summary: "
                             + error.localizedDescription
                     }
                 }
@@ -1869,6 +1974,7 @@ final class AppModel: ObservableObject {
             self.semanticProcessingLabel = nil
             self.semanticProcessingSourceID = nil
             self.metadataGenerationItemID = nil
+            self.summaryGenerationItemID = nil
             self.semanticAnalysisTask = nil
             if presentationWasQueued {
                 self.automaticPresentationSourceIDs.removeAll {
@@ -1880,10 +1986,15 @@ final class AppModel: ObservableObject {
                     $0 == source.sourceID
                 }
             }
-            if presentationWasQueued || semanticsWereQueued {
+            if summaryWasQueued {
+                self.automaticSummarySourceIDs.removeAll {
+                    $0 == source.sourceID
+                }
+            }
+            if presentationWasQueued || summaryWasQueued || semanticsWereQueued {
                 self.persistAutomaticProcessingQueues()
             }
-            if presentationSaved {
+            if presentationSaved || summarySaved {
                 self.refreshLibrary()
             }
             self.refreshSemantics()
@@ -1918,6 +2029,11 @@ final class AppModel: ObservableObject {
                 in: .whitespacesAndNewlines
             ).isEmpty else { return nil }
             let first = transcript?.segments.first
+            let speakerLabels = Array(
+                Set((transcript?.segments ?? []).map {
+                    recording.speakerName(for: $0.speaker)
+                })
+            ).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
             let itemID = "recording:\(recording.id)"
             return SemanticSourceContent(
                 sourceID: itemID,
@@ -1927,6 +2043,7 @@ final class AppModel: ObservableObject {
                 presentationRevision: presentationRevision,
                 presentationKind: "recording or meeting transcript",
                 directory: recording.directory,
+                speakerLabels: speakerLabels,
                 reference: SharedSemanticSourceReference(
                     itemID: itemID,
                     title: recording.title,
@@ -1963,6 +2080,7 @@ final class AppModel: ObservableObject {
                 presentationRevision: presentationRevision,
                 presentationKind: item.kind.displayName.lowercased(),
                 directory: item.directory,
+                speakerLabels: [],
                 reference: SharedSemanticSourceReference(
                     itemID: itemID,
                     title: item.title,
@@ -1988,6 +2106,9 @@ final class AppModel: ObservableObject {
         let storedSemanticIDs = defaults.stringArray(
             forKey: Self.automaticSemanticSourceIDsKey
         ) ?? []
+        let storedSummaryIDs = defaults.stringArray(
+            forKey: Self.automaticSummarySourceIDsKey
+        ) ?? []
         let previouslyKnown = storedKnownIDs.map(Set.init)
         let newIDs = Self.newPresentationSourceIDs(
             current: currentIDs,
@@ -2009,6 +2130,10 @@ final class AppModel: ObservableObject {
             storedSemanticIDs,
             Array(newIDs)
         )
+        automaticSummarySourceIDs = Self.mergedSourceIDs(
+            storedSummaryIDs,
+            Array(newIDs.filter { $0.hasPrefix("recording:") })
+        )
         knownPresentationSourceIDs.formUnion(currentIDs)
         persistAutomaticProcessingQueues()
     }
@@ -2028,6 +2153,12 @@ final class AppModel: ObservableObject {
             automaticSemanticSourceIDs,
             timelineItems.map(\.id).filter { newIDs.contains($0) }
         )
+        automaticSummarySourceIDs = Self.mergedSourceIDs(
+            automaticSummarySourceIDs,
+            timelineItems.map(\.id).filter {
+                newIDs.contains($0) && $0.hasPrefix("recording:")
+            }
+        )
         knownPresentationSourceIDs.formUnion(currentIDs)
         persistAutomaticProcessingQueues()
     }
@@ -2035,7 +2166,7 @@ final class AppModel: ObservableObject {
     private func removeCompletedAutomaticPresentationRequests(
         from sources: [SemanticSourceContent]
     ) {
-        let completedIDs = Set(sources.compactMap { source in
+        let completedIDs = Set<String>(sources.compactMap { source -> String? in
             ContentPresentationStore.isCurrent(
                 in: source.directory,
                 revision: source.presentationRevision
@@ -2045,6 +2176,24 @@ final class AppModel: ObservableObject {
             completedIDs.contains($0)
         }) else { return }
         automaticPresentationSourceIDs.removeAll { completedIDs.contains($0) }
+        persistAutomaticProcessingQueues()
+    }
+
+    private func removeCompletedAutomaticSummaryRequests(
+        from sources: [SemanticSourceContent]
+    ) {
+        let completedIDs = Set<String>(sources.compactMap {
+            source -> String? in
+            guard source.sourceID.hasPrefix("recording:") else { return nil }
+            return RecordingSummaryStore.isCurrent(
+                in: source.directory,
+                revision: source.presentationRevision
+            ) ? source.sourceID : nil
+        })
+        guard automaticSummarySourceIDs.contains(where: {
+            completedIDs.contains($0)
+        }) else { return }
+        automaticSummarySourceIDs.removeAll { completedIDs.contains($0) }
         persistAutomaticProcessingQueues()
     }
 
@@ -2079,6 +2228,10 @@ final class AppModel: ObservableObject {
         defaults.set(
             automaticSemanticSourceIDs,
             forKey: Self.automaticSemanticSourceIDsKey
+        )
+        defaults.set(
+            automaticSummarySourceIDs,
+            forKey: Self.automaticSummarySourceIDsKey
         )
     }
 

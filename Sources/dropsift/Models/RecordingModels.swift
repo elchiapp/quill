@@ -176,6 +176,10 @@ struct RecordingItem: Identifiable, Sendable {
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 
+    var summary: RecordingSummary? {
+        RecordingSummaryStore.load(from: directory)
+    }
+
     var preview: String {
         guard let segments = transcript?.segments, !segments.isEmpty else {
             return "Waiting for transcription"

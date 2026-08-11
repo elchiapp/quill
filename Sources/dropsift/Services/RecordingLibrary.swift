@@ -87,6 +87,7 @@ enum RecordingLibrary {
 
     static func saveNotes(_ notes: String, to directory: URL) throws {
         try ContentPresentationStore.invalidate(in: directory)
+        try RecordingSummaryStore.invalidate(in: directory)
         try Data(notes.utf8).write(
             to: directory.appendingPathComponent("notes.md"),
             options: .atomic
@@ -100,6 +101,7 @@ enum RecordingLibrary {
         _ names: [String: String],
         for recording: RecordingItem
     ) throws {
+        try RecordingSummaryStore.invalidate(in: recording.directory)
         try SharedSpeakerNameStore.save(names, to: recording.directory)
         try recording.transcript?.write(
             to: recording.directory,
@@ -394,6 +396,7 @@ enum RecordingLibrary {
 
         try headManifest.write(to: recording.directory)
         try ContentPresentationStore.invalidate(in: recording.directory)
+        try RecordingSummaryStore.invalidate(in: recording.directory)
         let headTitle = try refreshGeneratedTitle(
             in: recording.directory,
             transcript: headTranscript
