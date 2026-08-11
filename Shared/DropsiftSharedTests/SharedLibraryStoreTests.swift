@@ -60,6 +60,46 @@ func localModelPresentationRecoversFromProseAndAnInvalidBraceBlock() throws {
 }
 
 @Test
+func localModelPresentationRejectsCopiedPromptPlaceholders() throws {
+    let response = """
+    {"title":"specific title","description":"one or two concise sentences"}
+    """
+
+    #expect(
+        ContentPresentationGenerator.parse(
+            response,
+            sourceRevision: "placeholder",
+            model: "Qwen3.5 4B"
+        ) == nil
+    )
+
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(
+        at: root,
+        withIntermediateDirectories: true
+    )
+    try ContentPresentationStore.save(
+        ContentPresentation(
+            title: "specific title",
+            description: "one or two concise sentences",
+            sourceRevision: "placeholder",
+            model: "Qwen3.5 4B"
+        ),
+        to: root
+    )
+
+    #expect(ContentPresentationStore.load(from: root) == nil)
+    #expect(
+        !ContentPresentationStore.isCurrent(
+            in: root,
+            revision: "placeholder"
+        )
+    )
+}
+
+@Test
 func recordingSummaryParsesAndPersistsMeetingStructure() throws {
     let root = FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString, isDirectory: true)

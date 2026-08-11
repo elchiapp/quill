@@ -41,7 +41,14 @@ public enum ContentPresentationStore {
         guard let data = try? Data(contentsOf: url) else { return nil }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        return try? decoder.decode(ContentPresentation.self, from: data)
+        guard let presentation = try? decoder.decode(
+            ContentPresentation.self,
+            from: data
+        ), !ContentPresentationGenerator.containsPromptPlaceholder(
+            title: presentation.title,
+            description: presentation.description
+        ) else { return nil }
+        return presentation
     }
 
     public static func save(
@@ -85,8 +92,9 @@ public enum ContentPresentationGenerator {
 
     public static let systemPrompt = """
     You name and describe items in a private personal knowledge base.
-    Return exactly one JSON object with this schema:
-    {"title":"specific title","description":"one or two concise sentences"}
+    Return exactly one JSON object containing exactly two string fields named
+    "title" and "description". Every value must be derived from the supplied
+    item content. Never copy wording from these instructions into either value.
 
     Requirements:
     - Infer the central subject and purpose from the supplied content.
@@ -150,7 +158,11 @@ public enum ContentPresentationGenerator {
         guard let rawTitle,
               let rawDescription,
               let title = cleanTitle(rawTitle),
-              let description = cleanDescription(rawDescription)
+              let description = cleanDescription(rawDescription),
+              !containsPromptPlaceholder(
+                  title: title,
+                  description: description
+              )
         else { return nil }
 
         return ContentPresentation(
@@ -190,7 +202,8 @@ public enum ContentPresentationGenerator {
         ]
         guard value.count >= 3,
               value.count <= 100,
-              !generic.contains(value.lowercased())
+              !generic.contains(value.lowercased()),
+              !titlePlaceholders.contains(normalizedPlaceholder(value))
         else { return nil }
         return value
     }
@@ -211,13 +224,54 @@ public enum ContentPresentationGenerator {
         value = value.trimmingCharacters(
             in: CharacterSet(charactersIn: "\"'`“”‘’")
         )
-        guard value.count >= 12 else { return nil }
+        guard value.count >= 12,
+              !descriptionPlaceholders.contains(normalizedPlaceholder(value))
+        else { return nil }
         if value.count > 280 {
             let prefix = String(value.prefix(277))
             let boundary = prefix.lastIndex(of: " ") ?? prefix.endIndex
             value = String(prefix[..<boundary]) + "…"
         }
         return value
+    }
+
+    fileprivate static func containsPromptPlaceholder(
+        title: String,
+        description: String
+    ) -> Bool {
+        titlePlaceholders.contains(normalizedPlaceholder(title))
+            || descriptionPlaceholders.contains(
+                normalizedPlaceholder(description)
+            )
+    }
+
+    private static let titlePlaceholders: Set<String> = [
+        "title",
+        "specific title",
+        "concise title",
+        "concise specific title",
+        "generated title",
+        "item title",
+    ]
+
+    private static let descriptionPlaceholders: Set<String> = [
+        "description",
+        "brief description",
+        "concise description",
+        "item description",
+        "one or two concise sentences",
+        "one or two short sentences",
+    ]
+
+    private static func normalizedPlaceholder(_ value: String) -> String {
+        value
+            .lowercased()
+            .replacingOccurrences(
+                of: #"[^a-z0-9]+"#,
+                with: " ",
+                options: .regularExpression
+            )
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private static func sampled(_ text: String, limit: Int) -> String {
