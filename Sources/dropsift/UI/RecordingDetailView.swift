@@ -35,7 +35,7 @@ struct RecordingDetailView: View {
                         .frame(
                             minWidth: 340,
                             idealWidth: 400,
-                            maxWidth: 520,
+                            maxWidth: 460,
                             maxHeight: .infinity
                         )
                 }
@@ -143,121 +143,124 @@ struct RecordingDetailView: View {
             .font(.caption)
             .foregroundStyle(.secondary)
 
-            HStack(spacing: 8) {
-                Button {
-                    model.createThread(scope: .recording(recording.id))
-                } label: {
-                    Label("Ask about this recording", systemImage: "sparkles")
-                }
-                .buttonStyle(.borderedProminent)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Button {
+                        model.createThread(scope: .recording(recording.id))
+                    } label: {
+                        Label("Ask about this recording", systemImage: "sparkles")
+                    }
+                    .buttonStyle(.borderedProminent)
 
-                Menu {
                     Button {
                         model.regeneratePresentation(
                             for: .recording(recording)
                         )
                     } label: {
-                        Label(
-                            "Regenerate title & description",
-                            systemImage: "sparkles"
-                        )
+                        Label("Regenerate title", systemImage: "sparkles")
                     }
+                    .buttonStyle(.bordered)
                     .disabled(
                         model.metadataGenerationItemID
                             == "recording:\(recording.id)"
                     )
-                    Divider()
-                    Button("Open microphone track") { model.openAudio(recording.micURL) }
-                        .disabled(recording.micURL == nil)
-                    Button("Open system-audio track") { model.openAudio(recording.systemURL) }
-                        .disabled(recording.systemURL == nil)
-                    Divider()
-                    Button("Show in Finder") {
-                        NSWorkspace.shared.activateFileViewerSelecting([recording.directory])
-                    }
-                    Divider()
-                    Button(role: .destructive) {
-                        model.requestDeleteRecording(recording)
-                    } label: {
-                        Label("Move Recording to Trash", systemImage: "trash")
-                    }
-                } label: {
-                    Label("Audio & files", systemImage: "waveform")
-                }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
+                    .help("Generate a new title and brief description using the local model")
 
-                if !speakerIDs.isEmpty {
-                    Button {
-                        showingSpeakerEditor = true
-                    } label: {
-                        Label("Name speakers", systemImage: "person.2")
-                    }
-                    .buttonStyle(.bordered)
-                    .help("Assign names to transcript speakers")
-                }
-
-                if isActiveRecording {
-                    Button {
-                        model.stopRecording()
-                    } label: {
-                        Label(
-                            "Stop \(model.recordingElapsed)",
-                            systemImage: "stop.circle.fill"
-                        )
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                    .tint(.red)
-                    .help("Stop recording")
-                } else if model.isPreparingRecording {
-                    HStack(spacing: 6) {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text("Preparing recorder…")
-                    }
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                } else if model.splittingRecordingID == recording.id {
-                    HStack(spacing: 6) {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text("Splitting recording…")
-                    }
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                } else {
-                    Button {
-                        model.resumeRecording(recording)
-                    } label: {
-                        Label("Resume", systemImage: "record.circle")
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(model.isRecording)
-                    .help("Continue recording into this item")
-                }
-
-                Spacer()
-
-                if !isActiveRecording {
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            showingNotesPanel.toggle()
+                    Menu {
+                        Button("Open microphone track") { model.openAudio(recording.micURL) }
+                            .disabled(recording.micURL == nil)
+                        Button("Open system-audio track") { model.openAudio(recording.systemURL) }
+                            .disabled(recording.systemURL == nil)
+                        Divider()
+                        Button("Show in Finder") {
+                            NSWorkspace.shared.activateFileViewerSelecting([recording.directory])
+                        }
+                        Divider()
+                        Button(role: .destructive) {
+                            model.requestDeleteRecording(recording)
+                        } label: {
+                            Label("Move Recording to Trash", systemImage: "trash")
                         }
                     } label: {
-                        Label(
-                            showingNotesPanel ? "Hide notes" : "Show notes",
-                            systemImage: showingNotesPanel
-                                ? "rectangle.righthalf.inset.filled"
-                                : "note.text"
+                        Label("Audio & files", systemImage: "waveform")
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                }
+
+                HStack(spacing: 8) {
+                    if !speakerIDs.isEmpty {
+                        Button {
+                            showingSpeakerEditor = true
+                        } label: {
+                            Label("Name speakers", systemImage: "person.2")
+                        }
+                        .buttonStyle(.bordered)
+                        .help("Assign names to transcript speakers")
+                    }
+
+                    if isActiveRecording {
+                        Button {
+                            model.stopRecording()
+                        } label: {
+                            Label(
+                                "Stop \(model.recordingElapsed)",
+                                systemImage: "stop.circle.fill"
+                            )
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .tint(.red)
+                        .help("Stop recording")
+                    } else if model.isPreparingRecording {
+                        HStack(spacing: 6) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Preparing recorder…")
+                        }
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    } else if model.splittingRecordingID == recording.id {
+                        HStack(spacing: 6) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Splitting recording…")
+                        }
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    } else {
+                        Button {
+                            model.resumeRecording(recording)
+                        } label: {
+                            Label("Resume", systemImage: "record.circle")
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(model.isRecording)
+                        .help("Continue recording into this item")
+                    }
+
+                    Spacer()
+
+                    if !isActiveRecording {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                showingNotesPanel.toggle()
+                            }
+                        } label: {
+                            Label(
+                                showingNotesPanel ? "Hide notes" : "Show notes",
+                                systemImage: showingNotesPanel
+                                    ? "rectangle.righthalf.inset.filled"
+                                    : "note.text"
+                            )
+                        }
+                        .buttonStyle(.borderless)
+                        .help(
+                            showingNotesPanel
+                                ? "Collapse recording notes"
+                                : "Show recording notes"
                         )
                     }
-                    .buttonStyle(.borderless)
-                    .help(
-                        showingNotesPanel
-                            ? "Collapse recording notes"
-                            : "Show recording notes"
-                    )
                 }
             }
         }

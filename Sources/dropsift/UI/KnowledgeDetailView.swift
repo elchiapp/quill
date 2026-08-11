@@ -91,6 +91,18 @@ struct KnowledgeDetailView: View {
                 }
                 .buttonStyle(.borderedProminent)
 
+                Button {
+                    model.regeneratePresentation(for: .knowledge(item))
+                } label: {
+                    Label("Regenerate title", systemImage: "sparkles")
+                }
+                .buttonStyle(.bordered)
+                .disabled(
+                    model.metadataGenerationItemID
+                        == "knowledge:\(item.id.uuidString)"
+                )
+                .help("Generate a new title and brief description using the local model")
+
                 if let assetURL = item.assetURL {
                     Button {
                         NSWorkspace.shared.open(assetURL)
@@ -100,19 +112,6 @@ struct KnowledgeDetailView: View {
                 }
 
                 Menu {
-                    Button {
-                        model.regeneratePresentation(for: .knowledge(item))
-                    } label: {
-                        Label(
-                            "Regenerate title & description",
-                            systemImage: "sparkles"
-                        )
-                    }
-                    .disabled(
-                        model.metadataGenerationItemID
-                            == "knowledge:\(item.id.uuidString)"
-                    )
-                    Divider()
                     Button("Show in Finder") {
                         NSWorkspace.shared.activateFileViewerSelecting([item.directory])
                     }

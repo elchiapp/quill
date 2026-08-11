@@ -217,16 +217,7 @@ struct DropsiftRootView: View {
     }
 
     private var minimumWindowWidth: CGFloat {
-        if isShowingRecordingUI, showingLiveNotesPanel {
-            return 1_400
-        }
-
-        if model.section == .timeline,
-           case .recording? = model.selectedTimelineItem {
-            return 1_400
-        }
-
-        return 1_050
+        1_400
     }
 
     @ViewBuilder

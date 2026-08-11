@@ -1,3 +1,4 @@
+import AppKit
 import AVFoundation
 import DropsiftShared
 import Foundation
@@ -207,6 +208,30 @@ func timelineRefreshPreservesSelectionWhileARecordingIsTemporarilyUnavailable() 
             current: nil,
             availableIDs: ["recording:another-item"]
         ) == nil
+    )
+}
+
+@Test
+func mainWindowExpandsAnUndersizedRestoredFrame() {
+    let visibleFrame = NSRect(x: 20, y: 40, width: 1_720, height: 1_080)
+    let preferred = DropsiftWindowController.preferredFrame(
+        in: visibleFrame
+    )
+
+    #expect(preferred.size == NSSize(width: 1_720, height: 1_050))
+    #expect(preferred.midX == visibleFrame.midX)
+    #expect(preferred.midY == visibleFrame.midY)
+    #expect(
+        DropsiftWindowController.shouldExpand(
+            NSRect(x: 100, y: 100, width: 1_050, height: 700),
+            to: preferred
+        )
+    )
+    #expect(
+        !DropsiftWindowController.shouldExpand(
+            NSRect(x: 0, y: 0, width: 1_750, height: 1_100),
+            to: preferred
+        )
     )
 }
 
