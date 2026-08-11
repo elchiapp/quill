@@ -71,17 +71,19 @@ struct ChatDetailView: View {
                 }
             }
 
+            Button {
+                model.regenerateThreadTitle(thread.id)
+            } label: {
+                Label("Regenerate title", systemImage: "sparkles")
+            }
+            .buttonStyle(.bordered)
+            .disabled(
+                model.regeneratingThreadID == thread.id
+                    || thread.messages.isEmpty
+            )
+            .help("Generate a concise title from this conversation using the local model")
+
             Menu {
-                Button {
-                    model.regenerateThreadTitle(thread.id)
-                } label: {
-                    Label("Regenerate title", systemImage: "sparkles")
-                }
-                .disabled(
-                    model.regeneratingThreadID == thread.id
-                        || thread.messages.isEmpty
-                )
-                Divider()
                 Button(role: .destructive) {
                     model.requestDeleteThread(thread)
                 } label: {
