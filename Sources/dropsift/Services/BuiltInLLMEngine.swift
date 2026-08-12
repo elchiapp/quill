@@ -571,7 +571,8 @@ actor BuiltInLLMEngine {
             model,
             instructions: systemPrompt + "\n/no_think",
             history: history,
-            generateParameters: parameters
+            generateParameters: parameters,
+            additionalContext: ["enable_thinking": false]
         )
         let upstream = session.streamResponse(to: prompt.content)
         let gate = generationGate

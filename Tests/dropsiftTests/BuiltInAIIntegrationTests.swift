@@ -120,3 +120,59 @@ func builtInMLXIntegration() async throws {
     )
     #expect(conversationTitle.split(separator: " ").count >= 2)
 }
+
+@Test(
+    "Built-in MLX generates metadata for a supplied recording",
+    .enabled(
+        if: ProcessInfo.processInfo.environment[
+            "DROPSIFT_PRESENTATION_FIXTURE"
+        ] != nil,
+        "Set DROPSIFT_PRESENTATION_FIXTURE to a recording directory."
+    )
+)
+func builtInMLXPresentationFixture() async throws {
+    let path = try #require(
+        ProcessInfo.processInfo.environment["DROPSIFT_PRESENTATION_FIXTURE"]
+    )
+    let recording = try #require(
+        RecordingItem.load(from: URL(fileURLWithPath: path, isDirectory: true))
+    )
+    let text = (recording.transcript?.segments ?? [])
+        .map(\.text)
+        .joined(separator: "\n")
+    let requestedModelID = ProcessInfo.processInfo.environment[
+        "DROPSIFT_BUILTIN_AI_MODEL_ID"
+    ]
+    let plan = AIModelCatalog.plan(
+        for: AIModelCatalog.model(id: requestedModelID),
+        device: .current
+    )
+    let engine = BuiltInLLMEngine(
+        cacheRoot: Config.modelCacheRoot,
+        plan: plan
+    )
+    let response = try await engine.complete(
+        systemPrompt: ContentPresentationGenerator.systemPrompt,
+        messages: [
+            ChatMessage(
+                role: .user,
+                content: ContentPresentationGenerator.userPrompt(
+                    kind: "recording or meeting transcript",
+                    currentTitle: recording.title,
+                    text: text
+                )
+            ),
+        ],
+        maxTokens: 512
+    )
+    print("RAW PRESENTATION RESPONSE:\n\(response)")
+    let presentation = try #require(
+        ContentPresentationGenerator.parse(
+            response,
+            sourceRevision: "fixture",
+            model: plan.model.name
+        )
+    )
+    print("PARSED TITLE: \(presentation.title)")
+    print("PARSED DESCRIPTION: \(presentation.description)")
+}
