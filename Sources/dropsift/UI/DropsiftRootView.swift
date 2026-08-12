@@ -560,6 +560,11 @@ private struct LiveRecordingNotesView: View {
 
                     Spacer()
 
+                    Label("Autosaved", systemImage: "icloud")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+
                     Button(action: onCollapse) {
                         Label("Hide", systemImage: "chevron.right")
                     }
@@ -583,9 +588,6 @@ private struct LiveRecordingNotesView: View {
                         tint: .orange
                     )
                     Spacer()
-                    Label("Autosaved", systemImage: "icloud")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
             }
             .padding(.horizontal, 16)

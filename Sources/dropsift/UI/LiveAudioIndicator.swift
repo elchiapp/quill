@@ -34,6 +34,8 @@ struct LiveAudioIndicator: View {
 
             Text(label)
                 .font(.caption2.weight(.medium))
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
         }
         .foregroundStyle(isDetected ? tint : .secondary)
         .padding(.horizontal, 7)
@@ -48,6 +50,7 @@ struct LiveAudioIndicator: View {
                     isDetected ? tint.opacity(0.2) : Color.primary.opacity(0.06)
                 )
         }
+        .fixedSize(horizontal: true, vertical: true)
         .animation(.linear(duration: 0.09), value: samples)
         .help("\(label): \(isDetected ? "audio detected" : "quiet")")
         .accessibilityElement(children: .ignore)
