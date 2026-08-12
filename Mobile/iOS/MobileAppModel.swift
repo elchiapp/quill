@@ -381,6 +381,31 @@ final class MobileAppModel: ObservableObject {
         }
     }
 
+    func deleteTimelineItems(_ ids: Set<String>) {
+        if case .append(let recordingID, _) = recordingDestination,
+           ids.contains("recording:\(recordingID)") {
+            errorMessage = "Stop the active recording before deleting it."
+            return
+        }
+        do {
+            let items = timeline.filter { ids.contains($0.id) }
+            for item in items {
+                switch item {
+                case .knowledge(let knowledge):
+                    try FileManager.default.removeItem(at: knowledge.directory)
+                case .recording(let recording):
+                    try FileManager.default.removeItem(at: recording.directory)
+                }
+            }
+            if selectedTimelineItemID.map(ids.contains) == true {
+                navigateToTimelineItem(nil)
+            }
+            reload()
+        } catch {
+            errorMessage = "Couldn’t delete the selected items: \(error.localizedDescription)"
+        }
+    }
+
     func createTask() {
         let store = SharedSemanticStore(root: locator.rootURL)
         do {
@@ -416,6 +441,31 @@ final class MobileAppModel: ObservableObject {
         }
     }
 
+    func setTaskCompletion(_ taskIDs: Set<UUID>, completed: Bool) {
+        let store = SharedSemanticStore(root: locator.rootURL)
+        do {
+            for var task in tasks where taskIDs.contains(task.id) {
+                task.isCompleted = completed
+                try store.saveTask(task)
+            }
+            reload()
+        } catch {
+            errorMessage = "Couldn’t update the selected tasks: \(error.localizedDescription)"
+        }
+    }
+
+    func deleteTasks(_ taskIDs: Set<UUID>) {
+        let store = SharedSemanticStore(root: locator.rootURL)
+        do {
+            for id in taskIDs {
+                try store.deleteTask(id)
+            }
+            reload()
+        } catch {
+            errorMessage = "Couldn’t delete the selected tasks: \(error.localizedDescription)"
+        }
+    }
+
     func createEntity(kind: SharedSemanticEntityKind) {
         let entity = SharedSemanticEntity(
             kind: kind,
@@ -444,6 +494,18 @@ final class MobileAppModel: ObservableObject {
             reload()
         } catch {
             errorMessage = "Couldn’t delete this item: \(error.localizedDescription)"
+        }
+    }
+
+    func deleteEntities(_ entityIDs: Set<UUID>) {
+        let store = SharedSemanticStore(root: locator.rootURL)
+        do {
+            for id in entityIDs {
+                try store.deleteEntity(id)
+            }
+            reload()
+        } catch {
+            errorMessage = "Couldn’t delete the selected items: \(error.localizedDescription)"
         }
     }
 

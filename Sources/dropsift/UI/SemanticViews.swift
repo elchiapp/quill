@@ -23,6 +23,9 @@ struct TasksView: View {
     @ObservedObject var model: AppModel
     @State private var sort: Sort = .priority
     @State private var showCompleted = true
+    @State private var isSelecting = false
+    @State private var selection = Set<UUID>()
+    @State private var confirmingBatchDelete = false
 
     private var visibleTasks: [SharedTask] {
         model.tasks
@@ -62,25 +65,42 @@ struct TasksView: View {
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Menu {
-                        Picker("Sort", selection: $sort) {
-                            ForEach(Sort.allCases) {
-                                Text($0.label).tag($0)
-                            }
+                    if isSelecting {
+                        Button(selectionContainsAllVisible ? "Clear" : "All") {
+                            toggleSelectAll()
                         }
-                        Toggle("Show completed", isOn: $showCompleted)
-                    } label: {
-                        Label("Sort", systemImage: "arrow.up.arrow.down")
-                    }
-                    .menuStyle(.borderlessButton)
+                        .buttonStyle(.plain)
+                        Button("Done") { endSelecting() }
+                            .buttonStyle(.borderedProminent)
+                    } else {
+                        Menu {
+                            Picker("Sort", selection: $sort) {
+                                ForEach(Sort.allCases) {
+                                    Text($0.label).tag($0)
+                                }
+                            }
+                            Toggle("Show completed", isOn: $showCompleted)
+                        } label: {
+                            Label("Sort", systemImage: "arrow.up.arrow.down")
+                        }
+                        .menuStyle(.borderlessButton)
 
-                    Button {
-                        model.createTask()
-                    } label: {
-                        Image(systemName: "plus")
+                        Button {
+                            isSelecting = true
+                        } label: {
+                            Image(systemName: "checkmark.circle")
+                        }
+                        .buttonStyle(.bordered)
+                        .help("Select multiple tasks")
+
+                        Button {
+                            model.createTask()
+                        } label: {
+                            Image(systemName: "plus")
+                        }
+                        .buttonStyle(.bordered)
+                        .help("New task")
                     }
-                    .buttonStyle(.bordered)
-                    .help("New task")
                 }
                 .padding(16)
 
@@ -99,20 +119,53 @@ struct TasksView: View {
                         Button("New task") { model.createTask() }
                     }
                 } else {
-                    List(selection: $model.selectedTaskID) {
-                        ForEach(visibleTasks) { task in
-                            TaskRow(model: model, task: task)
-                                .tag(task.id)
-                                .contextMenu {
-                                    Button(role: .destructive) {
-                                        model.deleteTask(task)
-                                    } label: {
-                                        Label("Delete Task", systemImage: "trash")
+                    if isSelecting {
+                        List {
+                            ForEach(visibleTasks) { task in
+                                Button {
+                                    toggleSelection(task.id)
+                                } label: {
+                                    HStack(spacing: 10) {
+                                        Image(
+                                            systemName: selection.contains(task.id)
+                                                ? "checkmark.circle.fill"
+                                                : "circle"
+                                        )
+                                        .font(.title3)
+                                        .foregroundStyle(
+                                            selection.contains(task.id)
+                                                ? Color.accentColor
+                                                : Color.secondary
+                                        )
+                                        TaskRow(model: model, task: task)
+                                            .allowsHitTesting(false)
                                     }
+                                    .contentShape(Rectangle())
                                 }
+                                .buttonStyle(.plain)
+                            }
                         }
+                        .listStyle(.inset)
+                    } else {
+                        List(selection: $model.selectedTaskID) {
+                            ForEach(visibleTasks) { task in
+                                TaskRow(model: model, task: task)
+                                    .tag(task.id)
+                                    .contextMenu {
+                                        Button(role: .destructive) {
+                                            model.deleteTask(task)
+                                        } label: {
+                                            Label("Delete Task", systemImage: "trash")
+                                        }
+                                    }
+                            }
+                        }
+                        .listStyle(.inset)
                     }
-                    .listStyle(.inset)
+                    if isSelecting {
+                        Divider()
+                        taskBatchActionBar
+                    }
                 }
             }
             .frame(minWidth: 330, idealWidth: 380, maxWidth: 460)
@@ -131,6 +184,85 @@ struct TasksView: View {
             }
             .frame(minWidth: 520, maxWidth: .infinity, maxHeight: .infinity)
         }
+        .onChange(of: visibleTasks.map(\.id)) { _, visibleIDs in
+            selection.formIntersection(Set(visibleIDs))
+        }
+        .confirmationDialog(
+            "Delete \(selection.count) tasks?",
+            isPresented: $confirmingBatchDelete,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Tasks", role: .destructive) {
+                model.deleteTasks(selection)
+                endSelecting()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The selected tasks will be permanently deleted.")
+        }
+    }
+
+    private var taskBatchActionBar: some View {
+        HStack(spacing: 10) {
+            Text("\(selection.count) selected")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Spacer()
+            Menu {
+                Button {
+                    model.setTaskCompletion(selection, completed: true)
+                    endSelecting()
+                } label: {
+                    Label("Mark Complete", systemImage: "checkmark.circle")
+                }
+                Button {
+                    model.setTaskCompletion(selection, completed: false)
+                    endSelecting()
+                } label: {
+                    Label("Reopen", systemImage: "arrow.uturn.backward.circle")
+                }
+            } label: {
+                Label("Actions", systemImage: "ellipsis.circle")
+            }
+            .disabled(selection.isEmpty)
+            Button(role: .destructive) {
+                confirmingBatchDelete = true
+            } label: {
+                Image(systemName: "trash")
+            }
+            .disabled(selection.isEmpty)
+            .help("Delete selected tasks")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(.bar)
+    }
+
+    private var selectionContainsAllVisible: Bool {
+        let visible = Set(visibleTasks.map(\.id))
+        return !visible.isEmpty && visible.isSubset(of: selection)
+    }
+
+    private func toggleSelection(_ id: UUID) {
+        if selection.contains(id) {
+            selection.remove(id)
+        } else {
+            selection.insert(id)
+        }
+    }
+
+    private func toggleSelectAll() {
+        let visible = Set(visibleTasks.map(\.id))
+        if visible.isSubset(of: selection) {
+            selection.subtract(visible)
+        } else {
+            selection.formUnion(visible)
+        }
+    }
+
+    private func endSelecting() {
+        isSelecting = false
+        selection.removeAll()
     }
 }
 
@@ -314,6 +446,9 @@ private struct TaskEditor: View {
 struct SemanticEntitiesView: View {
     @ObservedObject var model: AppModel
     let kind: SharedSemanticEntityKind
+    @State private var isSelecting = false
+    @State private var selection = Set<UUID>()
+    @State private var confirmingBatchDelete = false
 
     private var entities: [SharedSemanticEntity] {
         model.entities(of: kind)
@@ -331,12 +466,28 @@ struct SemanticEntitiesView: View {
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Button {
-                        model.createEntity(kind: kind)
-                    } label: {
-                        Image(systemName: "plus")
+                    if isSelecting {
+                        Button(selectionContainsAll ? "Clear" : "All") {
+                            toggleSelectAll()
+                        }
+                        .buttonStyle(.plain)
+                        Button("Done") { endSelecting() }
+                            .buttonStyle(.borderedProminent)
+                    } else {
+                        Button {
+                            isSelecting = true
+                        } label: {
+                            Image(systemName: "checkmark.circle")
+                        }
+                        .buttonStyle(.bordered)
+                        .help("Select multiple \(kind.displayName.lowercased())")
+                        Button {
+                            model.createEntity(kind: kind)
+                        } label: {
+                            Image(systemName: "plus")
+                        }
+                        .buttonStyle(.bordered)
                     }
-                    .buttonStyle(.bordered)
                 }
                 .padding(16)
 
@@ -358,40 +509,66 @@ struct SemanticEntitiesView: View {
                         }
                     }
                 } else {
-                    List(selection: $model.selectedEntityID) {
-                        ForEach(entities) { entity in
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text(entity.name)
-                                    .font(.body.weight(.medium))
-                                    .lineLimit(2)
-                                if let start = entity.startDate {
-                                    Text(
-                                        start.formatted(
-                                            date: .abbreviated,
-                                            time: .shortened
-                                        )
-                                    )
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                } else if !entity.summary.isEmpty {
-                                    Text(entity.summary)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(2)
-                                }
-                            }
-                            .padding(.vertical, 5)
-                            .tag(entity.id)
-                            .contextMenu {
-                                Button(role: .destructive) {
-                                    model.deleteEntity(entity)
+                    if isSelecting {
+                        List {
+                            ForEach(entities) { entity in
+                                Button {
+                                    toggleSelection(entity.id)
                                 } label: {
-                                    Label("Delete", systemImage: "trash")
+                                    HStack(spacing: 10) {
+                                        Image(
+                                            systemName: selection.contains(entity.id)
+                                                ? "checkmark.circle.fill"
+                                                : "circle"
+                                        )
+                                        .font(.title3)
+                                        .foregroundStyle(
+                                            selection.contains(entity.id)
+                                                ? Color.accentColor
+                                                : Color.secondary
+                                        )
+                                        entityRow(entity)
+                                    }
+                                    .contentShape(Rectangle())
                                 }
+                                .buttonStyle(.plain)
                             }
                         }
+                        .listStyle(.inset)
+                    } else {
+                        List(selection: $model.selectedEntityID) {
+                            ForEach(entities) { entity in
+                                entityRow(entity)
+                                    .tag(entity.id)
+                                    .contextMenu {
+                                        Button(role: .destructive) {
+                                            model.deleteEntity(entity)
+                                        } label: {
+                                            Label("Delete", systemImage: "trash")
+                                        }
+                                    }
+                            }
+                        }
+                        .listStyle(.inset)
                     }
-                    .listStyle(.inset)
+                    if isSelecting {
+                        Divider()
+                        HStack {
+                            Text("\(selection.count) selected")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Button(role: .destructive) {
+                                confirmingBatchDelete = true
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                            .disabled(selection.isEmpty)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(.bar)
+                    }
                 }
             }
             .frame(minWidth: 310, idealWidth: 360, maxWidth: 430)
@@ -418,6 +595,74 @@ struct SemanticEntitiesView: View {
                 model.selectedEntityID = entities.first?.id
             }
         }
+        .onChange(of: entities.map(\.id)) { _, visibleIDs in
+            selection.formIntersection(Set(visibleIDs))
+        }
+        .confirmationDialog(
+            "Delete \(selection.count) \(kind.displayName.lowercased())?",
+            isPresented: $confirmingBatchDelete,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Selected", role: .destructive) {
+                model.deleteEntities(selection)
+                endSelecting()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The selected items will be permanently deleted.")
+        }
+    }
+
+    private func entityRow(_ entity: SharedSemanticEntity) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(entity.name)
+                .font(.body.weight(.medium))
+                .lineLimit(2)
+            if let start = entity.startDate {
+                Text(
+                    start.formatted(
+                        date: .abbreviated,
+                        time: .shortened
+                    )
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            } else if !entity.summary.isEmpty {
+                Text(entity.summary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+        }
+        .padding(.vertical, 5)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var selectionContainsAll: Bool {
+        let visible = Set(entities.map(\.id))
+        return !visible.isEmpty && visible.isSubset(of: selection)
+    }
+
+    private func toggleSelection(_ id: UUID) {
+        if selection.contains(id) {
+            selection.remove(id)
+        } else {
+            selection.insert(id)
+        }
+    }
+
+    private func toggleSelectAll() {
+        let visible = Set(entities.map(\.id))
+        if visible.isSubset(of: selection) {
+            selection.subtract(visible)
+        } else {
+            selection.formUnion(visible)
+        }
+    }
+
+    private func endSelecting() {
+        isSelecting = false
+        selection.removeAll()
     }
 }
 

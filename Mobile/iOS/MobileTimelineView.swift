@@ -6,7 +6,10 @@ import UIKit
 
 struct MobileTimelineView: View {
     @ObservedObject var model: MobileAppModel
+    @Environment(\.editMode) private var editMode
     @State private var path: [String] = []
+    @State private var selection = Set<String>()
+    @State private var confirmingBatchDelete = false
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -18,9 +21,12 @@ struct MobileTimelineView: View {
                         Text("Capture something or adjust the active filters.")
                     }
                 } else {
-                    List(model.filteredTimeline) { item in
-                        NavigationLink(value: item.id) {
-                            MobileTimelineRow(item: item)
+                    List(selection: $selection) {
+                        ForEach(model.filteredTimeline) { item in
+                            NavigationLink(value: item.id) {
+                                MobileTimelineRow(item: item)
+                            }
+                            .tag(item.id)
                         }
                     }
                     .listStyle(.plain)
@@ -29,8 +35,44 @@ struct MobileTimelineView: View {
             .navigationTitle("Timeline")
             .searchable(text: $model.timelineSearch, prompt: "Search timeline")
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    filterMenu
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    if !isEditing {
+                        filterMenu
+                    }
+                    EditButton()
+                }
+                if isEditing {
+                    ToolbarItemGroup(placement: .bottomBar) {
+                        Button(selectionContainsAllVisible ? "Clear" : "Select All") {
+                            toggleSelectAll()
+                        }
+                        Spacer()
+                        Menu {
+                            Button {
+                                selection.forEach {
+                                    model.requestSemanticExtraction(for: $0)
+                                }
+                                finishEditing()
+                            } label: {
+                                Label(
+                                    "Extract Tasks & Details",
+                                    systemImage: "list.bullet.clipboard"
+                                )
+                            }
+                        } label: {
+                            Label("Actions", systemImage: "ellipsis.circle")
+                        }
+                        .disabled(selection.isEmpty)
+                        Button(role: .destructive) {
+                            confirmingBatchDelete = true
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+                        .disabled(
+                            selection.isEmpty || selectionContainsActiveRecording
+                        )
+                        .accessibilityLabel("Delete selected items")
+                    }
                 }
             }
             .navigationDestination(for: String.self) { id in
@@ -54,6 +96,56 @@ struct MobileTimelineView: View {
         .onAppear {
             synchronizePath(with: model.selectedTimelineItemID)
         }
+        .onChange(of: model.filteredTimeline.map(\.id)) { _, visibleIDs in
+            selection.formIntersection(Set(visibleIDs))
+        }
+        .onChange(of: editMode?.wrappedValue) { _, mode in
+            if mode != .active {
+                selection.removeAll()
+            }
+        }
+        .confirmationDialog(
+            "Delete \(selection.count) items?",
+            isPresented: $confirmingBatchDelete,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Items", role: .destructive) {
+                model.deleteTimelineItems(selection)
+                finishEditing()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The selected items and their files will be permanently deleted.")
+        }
+    }
+
+    private var isEditing: Bool {
+        editMode?.wrappedValue == .active
+    }
+
+    private var selectionContainsAllVisible: Bool {
+        let visible = Set(model.filteredTimeline.map(\.id))
+        return !visible.isEmpty && visible.isSubset(of: selection)
+    }
+
+    private var selectionContainsActiveRecording: Bool {
+        guard case .append(let recordingID, _) = model.recordingDestination
+        else { return false }
+        return selection.contains("recording:\(recordingID)")
+    }
+
+    private func toggleSelectAll() {
+        let visible = Set(model.filteredTimeline.map(\.id))
+        if visible.isSubset(of: selection) {
+            selection.subtract(visible)
+        } else {
+            selection.formUnion(visible)
+        }
+    }
+
+    private func finishEditing() {
+        selection.removeAll()
+        editMode?.wrappedValue = .inactive
     }
 
     private func synchronizePath(with id: String?) {

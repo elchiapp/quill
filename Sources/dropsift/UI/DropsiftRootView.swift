@@ -315,6 +315,8 @@ struct DropsiftRootView: View {
 }
 private struct ChatsColumn: View {
     @ObservedObject var model: AppModel
+    @State private var isSelecting = false
+    @State private var selection = Set<UUID>()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -322,13 +324,29 @@ private struct ChatsColumn: View {
                 Text("Conversations")
                     .font(.title3.weight(.semibold))
                 Spacer()
-                Button {
-                    model.createThread()
-                } label: {
-                    Image(systemName: "square.and.pencil")
+                if isSelecting {
+                    Button(selectionContainsAll ? "Clear" : "All") {
+                        toggleSelectAll()
+                    }
+                    .buttonStyle(.plain)
+                    Button("Done") { endSelecting() }
+                        .buttonStyle(.borderedProminent)
+                } else {
+                    Button {
+                        isSelecting = true
+                    } label: {
+                        Image(systemName: "checkmark.circle")
+                    }
+                    .buttonStyle(.plain)
+                    .help("Select multiple conversations")
+                    Button {
+                        model.createThread()
+                    } label: {
+                        Image(systemName: "square.and.pencil")
+                    }
+                    .buttonStyle(.plain)
+                    .help("New conversation")
                 }
-                .buttonStyle(.plain)
-                .help("New conversation")
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
@@ -344,26 +362,45 @@ private struct ChatsColumn: View {
             } else {
                 List(model.threads) { thread in
                     Button {
-                        model.selectedThreadID = thread.id
+                        if isSelecting {
+                            toggleSelection(thread.id)
+                        } else {
+                            model.selectedThreadID = thread.id
+                        }
                     } label: {
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text(thread.title)
-                                .font(.body.weight(.medium))
-                                .lineLimit(2)
-                            HStack {
-                                Image(systemName: thread.scope.kind == .allRecordings
-                                    ? "rectangle.stack"
-                                    : "waveform")
-                                Text(
-                                    thread.scope.kind == .allRecordings
-                                        ? "All knowledge"
-                                        : "One recording"
+                        HStack(spacing: 9) {
+                            if isSelecting {
+                                Image(
+                                    systemName: selection.contains(thread.id)
+                                        ? "checkmark.circle.fill"
+                                        : "circle"
                                 )
-                                Spacer()
-                                Text(thread.updatedAt, style: .relative)
+                                .font(.title3)
+                                .foregroundStyle(
+                                    selection.contains(thread.id)
+                                        ? Color.accentColor
+                                        : Color.secondary
+                                )
                             }
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(thread.title)
+                                    .font(.body.weight(.medium))
+                                    .lineLimit(2)
+                                HStack {
+                                    Image(systemName: thread.scope.kind == .allRecordings
+                                        ? "rectangle.stack"
+                                        : "waveform")
+                                    Text(
+                                        thread.scope.kind == .allRecordings
+                                            ? "All knowledge"
+                                            : "One recording"
+                                    )
+                                    Spacer()
+                                    Text(thread.updatedAt, style: .relative)
+                                }
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            }
                         }
                         .padding(.horizontal, 9)
                         .padding(.vertical, 8)
@@ -391,8 +428,66 @@ private struct ChatsColumn: View {
                     }
                 }
                 .listStyle(.inset)
+                if isSelecting {
+                    Divider()
+                    HStack {
+                        Text("\(selection.count) selected")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button {
+                            selection.forEach(model.regenerateThreadTitle)
+                            endSelecting()
+                        } label: {
+                            Image(systemName: "sparkles")
+                        }
+                        .disabled(selection.isEmpty)
+                        .help("Regenerate selected conversation titles")
+                        Button(role: .destructive) {
+                            model.requestDeleteThreads(selection)
+                            endSelecting()
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+                        .disabled(selection.isEmpty)
+                        .help("Delete selected conversations")
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(.bar)
+                }
             }
         }
+        .onChange(of: model.threads.map(\.id)) { _, visibleIDs in
+            selection.formIntersection(Set(visibleIDs))
+        }
+    }
+
+    private var selectionContainsAll: Bool {
+        let visible = Set(model.threads.map(\.id))
+        return !visible.isEmpty && visible.isSubset(of: selection)
+    }
+
+    private func toggleSelection(_ id: UUID) {
+        if selection.contains(id) {
+            selection.remove(id)
+        } else {
+            selection.insert(id)
+        }
+    }
+
+    private func toggleSelectAll() {
+        let visible = Set(model.threads.map(\.id))
+        if visible.isSubset(of: selection) {
+            selection.subtract(visible)
+        } else {
+            selection.formUnion(visible)
+        }
+    }
+
+    private func endSelecting() {
+        isSelecting = false
+        selection.removeAll()
     }
 }
 

@@ -2,6 +2,8 @@ import SwiftUI
 
 struct TimelineView: View {
     @ObservedObject var model: AppModel
+    @State private var isSelecting = false
+    @State private var selection = Set<String>()
 
     var body: some View {
         HSplitView {
@@ -19,6 +21,9 @@ struct TimelineView: View {
                 timelineSearchField
             }
         }
+        .onChange(of: model.filteredTimelineItems.map(\.id)) { _, visibleIDs in
+            selection.formIntersection(Set(visibleIDs))
+        }
     }
 
     private var timelineList: some View {
@@ -32,14 +37,32 @@ struct TimelineView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                filterMenu
-                Button {
-                    model.section = .capture
-                } label: {
-                    Image(systemName: "plus")
+                if isSelecting {
+                    Button(selectionContainsAllVisible ? "Clear" : "All") {
+                        toggleSelectAll()
+                    }
+                    .buttonStyle(.plain)
+                    Button("Done") {
+                        endSelecting()
+                    }
+                    .buttonStyle(.borderedProminent)
+                } else {
+                    filterMenu
+                    Button {
+                        isSelecting = true
+                    } label: {
+                        Image(systemName: "checkmark.circle")
+                    }
+                    .buttonStyle(.bordered)
+                    .help("Select multiple items")
+                    Button {
+                        model.section = .capture
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .buttonStyle(.bordered)
+                    .help("Add something")
                 }
-                .buttonStyle(.bordered)
-                .help("Add something")
             }
             .padding(14)
 
@@ -70,12 +93,33 @@ struct TimelineView: View {
             } else {
                 List(model.filteredTimelineItems) { item in
                     Button {
-                        model.selectTimelineItem(item.id)
+                        if isSelecting {
+                            toggleSelection(item.id)
+                        } else {
+                            model.selectTimelineItem(item.id)
+                        }
                     } label: {
-                        TimelineRow(
-                            item: item,
-                            isSelected: model.selectedTimelineItemID == item.id
-                        )
+                        HStack(spacing: 8) {
+                            if isSelecting {
+                                Image(
+                                    systemName: selection.contains(item.id)
+                                        ? "checkmark.circle.fill"
+                                        : "circle"
+                                )
+                                .font(.title3)
+                                .foregroundStyle(
+                                    selection.contains(item.id)
+                                        ? Color.accentColor
+                                        : Color.secondary
+                                )
+                            }
+                            TimelineRow(
+                                item: item,
+                                isSelected: isSelecting
+                                    ? selection.contains(item.id)
+                                    : model.selectedTimelineItemID == item.id
+                            )
+                        }
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -113,8 +157,93 @@ struct TimelineView: View {
                         }
                 }
                 .listStyle(.inset)
+
+                if isSelecting {
+                    Divider()
+                    batchActionBar
+                }
             }
         }
+    }
+
+    private var batchActionBar: some View {
+        HStack(spacing: 10) {
+            Text("\(selection.count) selected")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Spacer()
+            Menu {
+                Button {
+                    selectedItems.forEach(model.regeneratePresentation)
+                    endSelecting()
+                } label: {
+                    Label("Generate Titles & Descriptions", systemImage: "sparkles")
+                }
+                Button {
+                    selectedItems.forEach {
+                        model.requestSemanticExtraction(for: $0.id)
+                    }
+                    endSelecting()
+                } label: {
+                    Label("Extract Tasks & Details", systemImage: "list.bullet.clipboard")
+                }
+            } label: {
+                Label("Actions", systemImage: "ellipsis.circle")
+            }
+            .disabled(selection.isEmpty)
+
+            Button(role: .destructive) {
+                model.requestDeleteTimelineItems(selection)
+                endSelecting()
+            } label: {
+                Image(systemName: "trash")
+            }
+            .disabled(selection.isEmpty || selectionContainsActiveRecording)
+            .help(
+                selectionContainsActiveRecording
+                    ? "Stop the active recording before moving it to Trash"
+                    : "Move selected items to Trash"
+            )
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(.bar)
+    }
+
+    private var selectedItems: [TimelineItem] {
+        model.filteredTimelineItems.filter { selection.contains($0.id) }
+    }
+
+    private var selectionContainsAllVisible: Bool {
+        let visible = Set(model.filteredTimelineItems.map(\.id))
+        return !visible.isEmpty && visible.isSubset(of: selection)
+    }
+
+    private var selectionContainsActiveRecording: Bool {
+        guard let activeID = model.recordingSessionID else { return false }
+        return selection.contains("recording:\(activeID)")
+    }
+
+    private func toggleSelection(_ id: String) {
+        if selection.contains(id) {
+            selection.remove(id)
+        } else {
+            selection.insert(id)
+        }
+    }
+
+    private func toggleSelectAll() {
+        let visible = Set(model.filteredTimelineItems.map(\.id))
+        if visible.isSubset(of: selection) {
+            selection.subtract(visible)
+        } else {
+            selection.formUnion(visible)
+        }
+    }
+
+    private func endSelecting() {
+        isSelecting = false
+        selection.removeAll()
     }
 
     private var timelineSearchField: some View {

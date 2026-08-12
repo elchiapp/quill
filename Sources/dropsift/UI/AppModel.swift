@@ -71,12 +71,24 @@ final class AppModel: ObservableObject {
         case thread(id: UUID, title: String)
         case recording(id: String, title: String)
         case knowledge(id: UUID, title: String)
+        case threads(ids: Set<UUID>, count: Int)
+        case timelineItems(
+            recordingIDs: Set<String>,
+            knowledgeIDs: Set<UUID>,
+            count: Int
+        )
 
         var id: String {
             switch self {
             case .thread(let id, _): "thread-\(id)"
             case .recording(let id, _): "recording-\(id)"
             case .knowledge(let id, _): "knowledge-\(id)"
+            case .threads(let ids, _):
+                "threads-" + ids.map(\.uuidString).sorted().joined(separator: "-")
+            case .timelineItems(let recordingIDs, let knowledgeIDs, _):
+                "timeline-"
+                    + recordingIDs.sorted().joined(separator: "-")
+                    + knowledgeIDs.map(\.uuidString).sorted().joined(separator: "-")
             }
         }
 
@@ -85,6 +97,9 @@ final class AppModel: ObservableObject {
             case .thread: "Delete this conversation?"
             case .recording: "Move this recording to Trash?"
             case .knowledge: "Move this item to Trash?"
+            case .threads(_, let count): "Delete \(count) conversations?"
+            case .timelineItems(_, _, let count):
+                "Move \(count) items to Trash?"
             }
         }
 
@@ -92,6 +107,8 @@ final class AppModel: ObservableObject {
             switch self {
             case .thread: "Delete Conversation"
             case .recording, .knowledge: "Move to Trash"
+            case .threads: "Delete Conversations"
+            case .timelineItems: "Move Items to Trash"
             }
         }
 
@@ -103,6 +120,10 @@ final class AppModel: ObservableObject {
                 "“\(title)” and its audio, transcript, and notes will move to the macOS Trash."
             case .knowledge(_, let title):
                 "“\(title)” and its imported file, extracted text, and notes will move to the macOS Trash."
+            case .threads(_, let count):
+                "\(count) conversations and their messages will be permanently deleted. This cannot be undone."
+            case .timelineItems(_, _, let count):
+                "\(count) selected items and their files will move to the macOS Trash."
             }
         }
     }
@@ -853,6 +874,29 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func setTaskCompletion(_ taskIDs: Set<UUID>, completed: Bool) {
+        do {
+            for var task in tasks where taskIDs.contains(task.id) {
+                task.isCompleted = completed
+                try semanticStore.saveTask(task)
+            }
+            refreshSemantics()
+        } catch {
+            appError = "Couldn’t update the selected tasks: \(error.localizedDescription)"
+        }
+    }
+
+    func deleteTasks(_ taskIDs: Set<UUID>) {
+        do {
+            for id in taskIDs {
+                try semanticStore.deleteTask(id)
+            }
+            refreshSemantics()
+        } catch {
+            appError = "Couldn’t delete the selected tasks: \(error.localizedDescription)"
+        }
+    }
+
     func createEntity(kind: SharedSemanticEntityKind) {
         let entity = SharedSemanticEntity(
             kind: kind,
@@ -890,6 +934,17 @@ final class AppModel: ObservableObject {
             }
         } catch {
             appError = "Couldn’t delete this item: \(error.localizedDescription)"
+        }
+    }
+
+    func deleteEntities(_ entityIDs: Set<UUID>) {
+        do {
+            for id in entityIDs {
+                try semanticStore.deleteEntity(id)
+            }
+            refreshSemantics()
+        } catch {
+            appError = "Couldn’t delete the selected items: \(error.localizedDescription)"
         }
     }
 
@@ -1052,6 +1107,36 @@ final class AppModel: ObservableObject {
         deletionRequest = .knowledge(id: item.id, title: item.title)
     }
 
+    func requestDeleteThreads(_ ids: Set<UUID>) {
+        let existing = ids.intersection(Set(threads.map(\.id)))
+        guard !existing.isEmpty else { return }
+        deletionRequest = .threads(ids: existing, count: existing.count)
+    }
+
+    func requestDeleteTimelineItems(_ ids: Set<String>) {
+        let recordings = Set(
+            self.recordings
+                .filter { ids.contains("recording:\($0.id)") }
+                .map(\.id)
+        )
+        let knowledge = Set(
+            knowledgeItems
+                .filter { ids.contains("knowledge:\($0.id.uuidString)") }
+                .map(\.id)
+        )
+        let count = recordings.count + knowledge.count
+        guard count > 0 else { return }
+        if let activeID = recordingSessionID, recordings.contains(activeID) {
+            appError = "Stop the active recording before moving it to Trash."
+            return
+        }
+        deletionRequest = .timelineItems(
+            recordingIDs: recordings,
+            knowledgeIDs: knowledge,
+            count: count
+        )
+    }
+
     func cancelDeletion() {
         deletionRequest = nil
     }
@@ -1065,6 +1150,13 @@ final class AppModel: ObservableObject {
             moveRecordingToTrash(id)
         case .knowledge(let id, _):
             moveKnowledgeToTrash(id)
+        case .threads(let ids, _):
+            deleteThreads(ids)
+        case .timelineItems(let recordingIDs, let knowledgeIDs, _):
+            moveTimelineItemsToTrash(
+                recordingIDs: recordingIDs,
+                knowledgeIDs: knowledgeIDs
+            )
         }
     }
 
@@ -2314,6 +2406,66 @@ final class AppModel: ObservableObject {
             chatError = nil
         }
         persistThreads()
+    }
+
+    private func deleteThreads(_ ids: Set<UUID>) {
+        guard !ids.isEmpty else { return }
+        let selectedWasDeleted = selectedThreadID.map(ids.contains) ?? false
+        threads.removeAll { ids.contains($0.id) }
+        if selectedWasDeleted {
+            selectedThreadID = threads.first?.id
+            chatDraft = ""
+            chatError = nil
+        }
+        persistThreads()
+    }
+
+    private func moveTimelineItemsToTrash(
+        recordingIDs: Set<String>,
+        knowledgeIDs: Set<UUID>
+    ) {
+        let recordingURLs = recordings
+            .filter { recordingIDs.contains($0.id) }
+            .map(\.directory)
+        let knowledgeURLs = knowledgeItems
+            .filter { knowledgeIDs.contains($0.id) }
+            .map(\.directory)
+        let urls = recordingURLs + knowledgeURLs
+        guard !urls.isEmpty else { return }
+
+        NSWorkspace.shared.recycle(urls) { [weak self] _, error in
+            Task { @MainActor in
+                guard let self else { return }
+                if let error {
+                    self.appError = "Couldn’t move the selected items to Trash: \(error.localizedDescription)"
+                    return
+                }
+
+                for index in self.threads.indices
+                where self.threads[index].scope.recordingID.map(
+                    recordingIDs.contains
+                ) == true {
+                    self.threads[index].scope = .all
+                    self.threads[index].updatedAt = Date()
+                }
+                self.persistThreads()
+                self.refreshLibrary()
+                let selectedWasDeleted = self.selectedTimelineItemID.map { selected in
+                    if selected.hasPrefix("recording:") {
+                        return recordingIDs.contains(String(selected.dropFirst(10)))
+                    }
+                    if selected.hasPrefix("knowledge:") {
+                        return UUID(uuidString: String(selected.dropFirst(10)))
+                            .map(knowledgeIDs.contains) ?? false
+                    }
+                    return false
+                } ?? false
+                if selectedWasDeleted {
+                    self.selectedTimelineItemID = self.timelineItems.first?.id
+                    self.selectTimelineItem(self.selectedTimelineItemID)
+                }
+            }
+        }
     }
 
     private func moveRecordingToTrash(_ id: String) {

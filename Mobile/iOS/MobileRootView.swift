@@ -193,8 +193,11 @@ private struct MobileTasksView: View {
     }
 
     @ObservedObject var model: MobileAppModel
+    @Environment(\.editMode) private var editMode
     @State private var sort: Sort = .priority
     @State private var showCompleted = true
+    @State private var selection = Set<UUID>()
+    @State private var confirmingBatchDelete = false
 
     private var tasks: [SharedTask] {
         model.tasks
@@ -221,7 +224,7 @@ private struct MobileTasksView: View {
     }
 
     var body: some View {
-        List {
+        List(selection: $selection) {
             if tasks.isEmpty {
                 ContentUnavailableView(
                     "No tasks",
@@ -250,6 +253,7 @@ private struct MobileTasksView: View {
                                 )
                             }
                             .buttonStyle(.plain)
+                            .disabled(isEditing)
 
                             VStack(alignment: .leading, spacing: 5) {
                                 Text(task.title)
@@ -284,6 +288,7 @@ private struct MobileTasksView: View {
                             }
                         }
                     }
+                    .tag(task.id)
                     .swipeActions {
                         Button(role: .destructive) {
                             model.deleteTask(task)
@@ -297,23 +302,101 @@ private struct MobileTasksView: View {
         .navigationTitle("Tasks")
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
-                Menu {
-                    Picker("Sort", selection: $sort) {
-                        ForEach(Sort.allCases) {
-                            Text($0.label).tag($0)
+                if !isEditing {
+                    Menu {
+                        Picker("Sort", selection: $sort) {
+                            ForEach(Sort.allCases) {
+                                Text($0.label).tag($0)
+                            }
                         }
+                        Toggle("Show completed", isOn: $showCompleted)
+                    } label: {
+                        Image(systemName: "arrow.up.arrow.down")
                     }
-                    Toggle("Show completed", isOn: $showCompleted)
-                } label: {
-                    Image(systemName: "arrow.up.arrow.down")
+                    Button {
+                        model.createTask()
+                    } label: {
+                        Image(systemName: "plus")
+                    }
                 }
-                Button {
-                    model.createTask()
-                } label: {
-                    Image(systemName: "plus")
+                EditButton()
+            }
+            if isEditing {
+                ToolbarItemGroup(placement: .bottomBar) {
+                    Button(selectionContainsAll ? "Clear" : "Select All") {
+                        toggleSelectAll()
+                    }
+                    Spacer()
+                    Button {
+                        model.setTaskCompletion(selection, completed: true)
+                        finishEditing()
+                    } label: {
+                        Label("Complete", systemImage: "checkmark.circle")
+                    }
+                    .disabled(selection.isEmpty)
+                    Menu {
+                        Button {
+                            model.setTaskCompletion(selection, completed: false)
+                            finishEditing()
+                        } label: {
+                            Label("Reopen", systemImage: "arrow.uturn.backward.circle")
+                        }
+                        Button(role: .destructive) {
+                            confirmingBatchDelete = true
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                    .disabled(selection.isEmpty)
                 }
             }
         }
+        .onChange(of: tasks.map(\.id)) { _, visibleIDs in
+            selection.formIntersection(Set(visibleIDs))
+        }
+        .onChange(of: editMode?.wrappedValue) { _, mode in
+            if mode != .active {
+                selection.removeAll()
+            }
+        }
+        .confirmationDialog(
+            "Delete \(selection.count) tasks?",
+            isPresented: $confirmingBatchDelete,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Tasks", role: .destructive) {
+                model.deleteTasks(selection)
+                finishEditing()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The selected tasks will be permanently deleted.")
+        }
+    }
+
+    private var isEditing: Bool {
+        editMode?.wrappedValue == .active
+    }
+
+    private var selectionContainsAll: Bool {
+        let visible = Set(tasks.map(\.id))
+        return !visible.isEmpty && visible.isSubset(of: selection)
+    }
+
+    private func toggleSelectAll() {
+        let visible = Set(tasks.map(\.id))
+        if visible.isSubset(of: selection) {
+            selection.subtract(visible)
+        } else {
+            selection.formUnion(visible)
+        }
+    }
+
+    private func finishEditing() {
+        selection.removeAll()
+        editMode?.wrappedValue = .inactive
     }
 }
 
@@ -423,6 +506,9 @@ private struct MobileTaskEditor: View {
 private struct MobileEntitiesView: View {
     @ObservedObject var model: MobileAppModel
     let kind: SharedSemanticEntityKind
+    @Environment(\.editMode) private var editMode
+    @State private var selection = Set<UUID>()
+    @State private var confirmingBatchDelete = false
 
     private var entities: [SharedSemanticEntity] {
         model.entities
@@ -434,7 +520,7 @@ private struct MobileEntitiesView: View {
     }
 
     var body: some View {
-        List {
+        List(selection: $selection) {
             if entities.isEmpty {
                 ContentUnavailableView(
                     "No \(kind.displayName.lowercased()) yet",
@@ -468,6 +554,7 @@ private struct MobileEntitiesView: View {
                             }
                         }
                     }
+                    .tag(entity.id)
                     .swipeActions {
                         Button(role: .destructive) {
                             model.deleteEntity(entity)
@@ -480,12 +567,80 @@ private struct MobileEntitiesView: View {
         }
         .navigationTitle(kind.displayName)
         .toolbar {
-            Button {
-                model.createEntity(kind: kind)
-            } label: {
-                Image(systemName: "plus")
+            ToolbarItemGroup(placement: .primaryAction) {
+                if !isEditing {
+                    Button {
+                        model.createEntity(kind: kind)
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                }
+                EditButton()
+            }
+            if isEditing {
+                ToolbarItemGroup(placement: .bottomBar) {
+                    Button(selectionContainsAll ? "Clear" : "Select All") {
+                        toggleSelectAll()
+                    }
+                    Spacer()
+                    Text("\(selection.count) selected")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button(role: .destructive) {
+                        confirmingBatchDelete = true
+                    } label: {
+                        Image(systemName: "trash")
+                    }
+                    .disabled(selection.isEmpty)
+                    .accessibilityLabel("Delete selected items")
+                }
             }
         }
+        .onChange(of: entities.map(\.id)) { _, visibleIDs in
+            selection.formIntersection(Set(visibleIDs))
+        }
+        .onChange(of: editMode?.wrappedValue) { _, mode in
+            if mode != .active {
+                selection.removeAll()
+            }
+        }
+        .confirmationDialog(
+            "Delete \(selection.count) \(kind.displayName.lowercased())?",
+            isPresented: $confirmingBatchDelete,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Selected", role: .destructive) {
+                model.deleteEntities(selection)
+                finishEditing()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The selected items will be permanently deleted.")
+        }
+    }
+
+    private var isEditing: Bool {
+        editMode?.wrappedValue == .active
+    }
+
+    private var selectionContainsAll: Bool {
+        let visible = Set(entities.map(\.id))
+        return !visible.isEmpty && visible.isSubset(of: selection)
+    }
+
+    private func toggleSelectAll() {
+        let visible = Set(entities.map(\.id))
+        if visible.isSubset(of: selection) {
+            selection.subtract(visible)
+        } else {
+            selection.formUnion(visible)
+        }
+    }
+
+    private func finishEditing() {
+        selection.removeAll()
+        editMode?.wrappedValue = .inactive
     }
 }
 

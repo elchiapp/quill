@@ -1066,3 +1066,36 @@ func chatSourceStillDecodesLegacyTranscriptSources() throws {
     #expect(source.knowledgeItemID == nil)
     #expect(source.locationLabel == "0:05")
 }
+
+@Test
+@MainActor
+func desktopBatchActionsUpdateAllSelectedTasksAndEntities() throws {
+    let base = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let recordings = base.appendingPathComponent("Recordings", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: base) }
+    try FileManager.default.createDirectory(
+        at: recordings,
+        withIntermediateDirectories: true
+    )
+
+    let model = AppModel(root: recordings)
+    model.createTask()
+    model.createTask()
+    let taskIDs = Set(model.tasks.map(\.id))
+    #expect(taskIDs.count == 2)
+
+    model.setTaskCompletion(taskIDs, completed: true)
+    #expect(!model.tasks.contains { !$0.isCompleted })
+
+    model.deleteTasks(taskIDs)
+    #expect(model.tasks.isEmpty)
+
+    model.createEntity(kind: .person)
+    model.createEntity(kind: .person)
+    let entityIDs = Set(model.entities(of: .person).map(\.id))
+    #expect(entityIDs.count == 2)
+
+    model.deleteEntities(entityIDs)
+    #expect(model.entities(of: .person).isEmpty)
+}
