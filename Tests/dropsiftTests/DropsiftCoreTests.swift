@@ -1099,3 +1099,30 @@ func desktopBatchActionsUpdateAllSelectedTasksAndEntities() throws {
     model.deleteEntities(entityIDs)
     #expect(model.entities(of: .person).isEmpty)
 }
+
+@Test
+func desktopShiftSelectionIncludesTheEntireContiguousRange() {
+    let ordered = ["a", "b", "c", "d", "e"]
+
+    #expect(
+        DesktopMultiSelection.range(
+            from: "b",
+            through: "e",
+            in: ordered
+        ) == ["b", "c", "d", "e"]
+    )
+    #expect(
+        DesktopMultiSelection.range(
+            from: "d",
+            through: "b",
+            in: ordered
+        ) == ["b", "c", "d"]
+    )
+    #expect(
+        DesktopMultiSelection.range(
+            from: nil,
+            through: "c",
+            in: ordered
+        ) == ["c"]
+    )
+}

@@ -1,3 +1,4 @@
+import AppKit
 import DropsiftShared
 import SwiftUI
 
@@ -26,6 +27,7 @@ struct TasksView: View {
     @State private var isSelecting = false
     @State private var selection = Set<UUID>()
     @State private var confirmingBatchDelete = false
+    @State private var selectionAnchor: UUID?
 
     private var visibleTasks: [SharedTask] {
         model.tasks
@@ -123,7 +125,7 @@ struct TasksView: View {
                         List {
                             ForEach(visibleTasks) { task in
                                 Button {
-                                    toggleSelection(task.id)
+                                    handleTaskClick(task.id)
                                 } label: {
                                     HStack(spacing: 10) {
                                         Image(
@@ -147,10 +149,20 @@ struct TasksView: View {
                         }
                         .listStyle(.inset)
                     } else {
-                        List(selection: $model.selectedTaskID) {
+                        List {
                             ForEach(visibleTasks) { task in
-                                TaskRow(model: model, task: task)
-                                    .tag(task.id)
+                                TaskRow(
+                                    model: model,
+                                    task: task,
+                                    onSelect: { handleTaskClick(task.id) }
+                                )
+                                    .padding(.horizontal, 6)
+                                    .background(
+                                        model.selectedTaskID == task.id
+                                            ? Color.accentColor.opacity(0.18)
+                                            : Color.clear,
+                                        in: RoundedRectangle(cornerRadius: 8)
+                                    )
                                     .contextMenu {
                                         Button(role: .destructive) {
                                             model.deleteTask(task)
@@ -249,6 +261,7 @@ struct TasksView: View {
         } else {
             selection.insert(id)
         }
+        selectionAnchor = id
     }
 
     private func toggleSelectAll() {
@@ -263,12 +276,63 @@ struct TasksView: View {
     private func endSelecting() {
         isSelecting = false
         selection.removeAll()
+        selectionAnchor = model.selectedTaskID
+    }
+
+    private func handleTaskClick(_ id: UUID) {
+        let modifiers = NSEvent.modifierFlags
+            .intersection(.deviceIndependentFlagsMask)
+        if modifiers.contains(.shift) {
+            if !isSelecting {
+                isSelecting = true
+                if let focused = model.selectedTaskID {
+                    selection.insert(focused)
+                }
+            }
+            let anchor = selectionAnchor ?? model.selectedTaskID
+            selection.formUnion(
+                DesktopMultiSelection.range(
+                    from: anchor,
+                    through: id,
+                    in: visibleTasks.map(\.id)
+                )
+            )
+            selectionAnchor = anchor ?? id
+            return
+        }
+        if modifiers.contains(.command) {
+            if !isSelecting {
+                isSelecting = true
+                if let focused = model.selectedTaskID {
+                    selection.insert(focused)
+                }
+            }
+            toggleSelection(id)
+            return
+        }
+        if isSelecting {
+            toggleSelection(id)
+        } else {
+            model.selectedTaskID = id
+            selectionAnchor = id
+        }
     }
 }
 
 private struct TaskRow: View {
     @ObservedObject var model: AppModel
     let task: SharedTask
+    let onSelect: (() -> Void)?
+
+    init(
+        model: AppModel,
+        task: SharedTask,
+        onSelect: (() -> Void)? = nil
+    ) {
+        self.model = model
+        self.task = task
+        self.onSelect = onSelect
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 11) {
@@ -286,7 +350,24 @@ private struct TaskRow: View {
             .buttonStyle(.plain)
             .help(task.isCompleted ? "Mark open" : "Mark complete")
 
-            VStack(alignment: .leading, spacing: 5) {
+            if let onSelect {
+                Button(action: onSelect) {
+                    details
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            } else {
+                details
+            }
+            Spacer()
+        }
+        .padding(.vertical, 5)
+        .contentShape(Rectangle())
+    }
+
+    private var details: some View {
+        VStack(alignment: .leading, spacing: 5) {
                 Text(task.title)
                     .font(.body.weight(.medium))
                     .strikethrough(task.isCompleted)
@@ -308,11 +389,7 @@ private struct TaskRow: View {
                     }
                 }
                 .font(.caption)
-            }
-            Spacer()
         }
-        .padding(.vertical, 5)
-        .contentShape(Rectangle())
     }
 }
 
@@ -449,6 +526,7 @@ struct SemanticEntitiesView: View {
     @State private var isSelecting = false
     @State private var selection = Set<UUID>()
     @State private var confirmingBatchDelete = false
+    @State private var selectionAnchor: UUID?
 
     private var entities: [SharedSemanticEntity] {
         model.entities(of: kind)
@@ -513,7 +591,7 @@ struct SemanticEntitiesView: View {
                         List {
                             ForEach(entities) { entity in
                                 Button {
-                                    toggleSelection(entity.id)
+                                    handleEntityClick(entity.id)
                                 } label: {
                                     HStack(spacing: 10) {
                                         Image(
@@ -536,10 +614,22 @@ struct SemanticEntitiesView: View {
                         }
                         .listStyle(.inset)
                     } else {
-                        List(selection: $model.selectedEntityID) {
+                        List {
                             ForEach(entities) { entity in
-                                entityRow(entity)
-                                    .tag(entity.id)
+                                Button {
+                                    handleEntityClick(entity.id)
+                                } label: {
+                                    entityRow(entity)
+                                        .contentShape(Rectangle())
+                                }
+                                    .buttonStyle(.plain)
+                                    .padding(.horizontal, 6)
+                                    .background(
+                                        model.selectedEntityID == entity.id
+                                            ? Color.accentColor.opacity(0.18)
+                                            : Color.clear,
+                                        in: RoundedRectangle(cornerRadius: 8)
+                                    )
                                     .contextMenu {
                                         Button(role: .destructive) {
                                             model.deleteEntity(entity)
@@ -649,6 +739,7 @@ struct SemanticEntitiesView: View {
         } else {
             selection.insert(id)
         }
+        selectionAnchor = id
     }
 
     private func toggleSelectAll() {
@@ -663,6 +754,46 @@ struct SemanticEntitiesView: View {
     private func endSelecting() {
         isSelecting = false
         selection.removeAll()
+        selectionAnchor = model.selectedEntityID
+    }
+
+    private func handleEntityClick(_ id: UUID) {
+        let modifiers = NSEvent.modifierFlags
+            .intersection(.deviceIndependentFlagsMask)
+        if modifiers.contains(.shift) {
+            if !isSelecting {
+                isSelecting = true
+                if let focused = model.selectedEntityID {
+                    selection.insert(focused)
+                }
+            }
+            let anchor = selectionAnchor ?? model.selectedEntityID
+            selection.formUnion(
+                DesktopMultiSelection.range(
+                    from: anchor,
+                    through: id,
+                    in: entities.map(\.id)
+                )
+            )
+            selectionAnchor = anchor ?? id
+            return
+        }
+        if modifiers.contains(.command) {
+            if !isSelecting {
+                isSelecting = true
+                if let focused = model.selectedEntityID {
+                    selection.insert(focused)
+                }
+            }
+            toggleSelection(id)
+            return
+        }
+        if isSelecting {
+            toggleSelection(id)
+        } else {
+            model.selectedEntityID = id
+            selectionAnchor = id
+        }
     }
 }
 

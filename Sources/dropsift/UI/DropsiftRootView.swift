@@ -1,3 +1,4 @@
+import AppKit
 import DropsiftShared
 import Foundation
 import SwiftUI
@@ -317,6 +318,7 @@ private struct ChatsColumn: View {
     @ObservedObject var model: AppModel
     @State private var isSelecting = false
     @State private var selection = Set<UUID>()
+    @State private var selectionAnchor: UUID?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -362,11 +364,7 @@ private struct ChatsColumn: View {
             } else {
                 List(model.threads) { thread in
                     Button {
-                        if isSelecting {
-                            toggleSelection(thread.id)
-                        } else {
-                            model.selectedThreadID = thread.id
-                        }
+                        handleClick(thread.id)
                     } label: {
                         HStack(spacing: 9) {
                             if isSelecting {
@@ -474,6 +472,7 @@ private struct ChatsColumn: View {
         } else {
             selection.insert(id)
         }
+        selectionAnchor = id
     }
 
     private func toggleSelectAll() {
@@ -488,6 +487,46 @@ private struct ChatsColumn: View {
     private func endSelecting() {
         isSelecting = false
         selection.removeAll()
+        selectionAnchor = model.selectedThreadID
+    }
+
+    private func handleClick(_ id: UUID) {
+        let modifiers = NSEvent.modifierFlags
+            .intersection(.deviceIndependentFlagsMask)
+        if modifiers.contains(.shift) {
+            if !isSelecting {
+                isSelecting = true
+                if let focused = model.selectedThreadID {
+                    selection.insert(focused)
+                }
+            }
+            let anchor = selectionAnchor ?? model.selectedThreadID
+            selection.formUnion(
+                DesktopMultiSelection.range(
+                    from: anchor,
+                    through: id,
+                    in: model.threads.map(\.id)
+                )
+            )
+            selectionAnchor = anchor ?? id
+            return
+        }
+        if modifiers.contains(.command) {
+            if !isSelecting {
+                isSelecting = true
+                if let focused = model.selectedThreadID {
+                    selection.insert(focused)
+                }
+            }
+            toggleSelection(id)
+            return
+        }
+        if isSelecting {
+            toggleSelection(id)
+        } else {
+            model.selectedThreadID = id
+            selectionAnchor = id
+        }
     }
 }
 

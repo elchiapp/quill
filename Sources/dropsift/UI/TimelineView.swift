@@ -1,9 +1,11 @@
+import AppKit
 import SwiftUI
 
 struct TimelineView: View {
     @ObservedObject var model: AppModel
     @State private var isSelecting = false
     @State private var selection = Set<String>()
+    @State private var selectionAnchor: String?
 
     var body: some View {
         HSplitView {
@@ -93,11 +95,7 @@ struct TimelineView: View {
             } else {
                 List(model.filteredTimelineItems) { item in
                     Button {
-                        if isSelecting {
-                            toggleSelection(item.id)
-                        } else {
-                            model.selectTimelineItem(item.id)
-                        }
+                        handleClick(item.id)
                     } label: {
                         HStack(spacing: 8) {
                             if isSelecting {
@@ -230,6 +228,7 @@ struct TimelineView: View {
         } else {
             selection.insert(id)
         }
+        selectionAnchor = id
     }
 
     private func toggleSelectAll() {
@@ -244,6 +243,47 @@ struct TimelineView: View {
     private func endSelecting() {
         isSelecting = false
         selection.removeAll()
+        selectionAnchor = model.selectedTimelineItemID
+    }
+
+    private func handleClick(_ id: String) {
+        let modifiers = NSEvent.modifierFlags
+            .intersection(.deviceIndependentFlagsMask)
+        if modifiers.contains(.shift) {
+            if !isSelecting {
+                isSelecting = true
+                if let focused = model.selectedTimelineItemID {
+                    selection.insert(focused)
+                }
+            }
+            let orderedIDs = model.filteredTimelineItems.map(\.id)
+            let anchor = selectionAnchor ?? model.selectedTimelineItemID
+            selection.formUnion(
+                DesktopMultiSelection.range(
+                    from: anchor,
+                    through: id,
+                    in: orderedIDs
+                )
+            )
+            selectionAnchor = anchor ?? id
+            return
+        }
+        if modifiers.contains(.command) {
+            if !isSelecting {
+                isSelecting = true
+                if let focused = model.selectedTimelineItemID {
+                    selection.insert(focused)
+                }
+            }
+            toggleSelection(id)
+            return
+        }
+        if isSelecting {
+            toggleSelection(id)
+        } else {
+            model.selectTimelineItem(id)
+            selectionAnchor = id
+        }
     }
 
     private var timelineSearchField: some View {
