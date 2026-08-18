@@ -541,6 +541,13 @@ private struct LiveRecordingNotesView: View {
         )
     }
 
+    private var title: Binding<String> {
+        Binding(
+            get: { model.liveRecordingTitle },
+            set: { model.updateLiveRecordingTitle($0) }
+        )
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 12) {
@@ -573,6 +580,11 @@ private struct LiveRecordingNotesView: View {
                     .contentShape(Rectangle())
                     .help("Collapse live notes")
                 }
+
+                TextField("Name this recording", text: title)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.title3.weight(.semibold))
+                    .accessibilityLabel("Recording title")
 
                 HStack(spacing: 8) {
                     LiveAudioIndicator(

@@ -74,15 +74,24 @@ enum RecordingLibrary {
     }
 
     static func saveTitle(_ title: String, for recording: RecordingItem) throws {
-        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let resolved = trimmed.isEmpty ? "Untitled recording" : trimmed
-        try ContentTitleGenerator.markManual(in: recording.directory)
+        try saveTitle(title, to: recording.directory)
+        let resolved = resolvedTitle(title)
+        try recording.transcript?.write(to: recording.directory, title: resolved)
+    }
+
+    static func saveTitle(_ title: String, to directory: URL) throws {
+        let resolved = resolvedTitle(title)
+        try ContentTitleGenerator.markManual(in: directory)
         try Data(resolved.utf8)
             .write(
-                to: recording.directory.appendingPathComponent("title.txt"),
+                to: directory.appendingPathComponent("title.txt"),
                 options: .atomic
             )
-        try recording.transcript?.write(to: recording.directory, title: resolved)
+    }
+
+    private static func resolvedTitle(_ title: String) -> String {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Untitled recording" : trimmed
     }
 
     static func saveNotes(_ notes: String, to directory: URL) throws {

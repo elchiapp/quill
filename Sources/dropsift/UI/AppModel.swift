@@ -160,6 +160,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var isPreparingRecording = false
     @Published private(set) var recordingSessionID: String?
     @Published var recordingElapsed = "0:00"
+    @Published var liveRecordingTitle = ""
     @Published var liveNotes = ""
     @Published private(set) var microphoneAudioLevels = Array(
         repeating: Float.zero,
@@ -201,6 +202,7 @@ final class AppModel: ObservableObject {
     private var recordingStartedAt: Date?
     private var recordingElapsedBaseSeconds = 0
     private var recordingPreparationTask: Task<Void, Never>?
+    private var titleSaveTask: Task<Void, Never>?
     private var notesSaveTask: Task<Void, Never>?
     private var knowledgeSaveTasks: [UUID: Task<Void, Never>] = [:]
     private var libraryRefreshTask: Task<Void, Never>?
@@ -509,10 +511,12 @@ final class AppModel: ObservableObject {
 
     func stopRecording() {
         guard let session else { return }
+        flushLiveRecordingTitle(to: session.dir)
         flushLiveNotes(to: session.dir)
         session.stop()
         let directory = session.dir
         self.session = nil
+        liveRecordingTitle = ""
         liveNotes = ""
         recordingStartedAt = nil
         recordingElapsedBaseSeconds = 0
@@ -551,6 +555,7 @@ final class AppModel: ObservableObject {
         recordingStartedAt = newSession.startedAt
         recordingElapsedBaseSeconds = newSession.elapsedBaseSeconds
         recordingSessionID = newSession.dir.lastPathComponent
+        liveRecordingTitle = recording?.title ?? ""
         liveNotes = recording?.notes ?? ""
         isRecording = true
         recordingElapsed = Self.clock(recordingElapsedBaseSeconds)
@@ -624,6 +629,11 @@ final class AppModel: ObservableObject {
         guard let recording = selectedRecording else { return }
         do {
             try RecordingLibrary.saveTitle(title, for: recording)
+            if isRecording, recordingSessionID == recording.id {
+                liveRecordingTitle = title.trimmingCharacters(
+                    in: .whitespacesAndNewlines
+                )
+            }
             reloadRecordings(selecting: recording.id)
         } catch {
             appError = "Couldn’t rename recording: \(error.localizedDescription)"
@@ -660,6 +670,25 @@ final class AppModel: ObservableObject {
                 try RecordingLibrary.saveNotes(notes, to: directory)
             } catch {
                 self?.appError = "Couldn’t save recording notes: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func updateLiveRecordingTitle(_ title: String) {
+        liveRecordingTitle = title
+        guard let directory = session?.dir else { return }
+
+        titleSaveTask?.cancel()
+        titleSaveTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return }
+            guard !title.trimmingCharacters(
+                in: .whitespacesAndNewlines
+            ).isEmpty else { return }
+            do {
+                try RecordingLibrary.saveTitle(title, to: directory)
+            } catch {
+                self?.appError = "Couldn’t save recording title: \(error.localizedDescription)"
             }
         }
     }
@@ -2517,6 +2546,19 @@ final class AppModel: ObservableObject {
             try RecordingLibrary.saveNotes(liveNotes, to: directory)
         } catch {
             appError = "Couldn’t save recording notes: \(error.localizedDescription)"
+        }
+    }
+
+    private func flushLiveRecordingTitle(to directory: URL) {
+        titleSaveTask?.cancel()
+        titleSaveTask = nil
+        guard !liveRecordingTitle.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        ).isEmpty else { return }
+        do {
+            try RecordingLibrary.saveTitle(liveRecordingTitle, to: directory)
+        } catch {
+            appError = "Couldn’t save recording title: \(error.localizedDescription)"
         }
     }
 

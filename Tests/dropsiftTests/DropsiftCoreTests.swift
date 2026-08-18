@@ -892,6 +892,39 @@ func desktopRecordingNotesGenerateATitleButManualTitlesWin() throws {
 }
 
 @Test
+func activeRecordingTitleCanBeSavedBeforeTheManifestExists() throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    try FileManager.default.createDirectory(
+        at: directory,
+        withIntermediateDirectories: true
+    )
+
+    try RecordingLibrary.saveTitle(
+        "Fineco integration review",
+        to: directory
+    )
+    try RecordingLibrary.saveNotes(
+        "A later note must not replace the live title",
+        to: directory
+    )
+
+    let storedTitle = try String(
+        contentsOf: directory.appendingPathComponent("title.txt"),
+        encoding: .utf8
+    )
+    #expect(storedTitle == "Fineco integration review")
+    #expect(
+        FileManager.default.fileExists(
+            atPath: directory.appendingPathComponent(
+                ContentTitleGenerator.manualMarkerFilename
+            ).path
+        )
+    )
+}
+
+@Test
 func recordingTranscriptCanBeSplitIntoASecondTimelineItem() async throws {
     let root = FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString, isDirectory: true)
