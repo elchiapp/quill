@@ -201,7 +201,6 @@ final class AppModel: ObservableObject {
     private var ticker: Timer?
     private var recordingStartedAt: Date?
     private var recordingElapsedBaseSeconds = 0
-    private var recordingPreparationTask: Task<Void, Never>?
     private var titleSaveTask: Task<Void, Never>?
     private var notesSaveTask: Task<Void, Never>?
     private var knowledgeSaveTasks: [UUID: Task<Void, Never>] = [:]
@@ -449,8 +448,6 @@ final class AppModel: ObservableObject {
         if isRecording {
             stopRecording()
         }
-        recordingPreparationTask?.cancel()
-        recordingPreparationTask = nil
         isPreparingRecording = false
         Task { [meetingDetector] in await meetingDetector.stop() }
         libraryRefreshTask?.cancel()
@@ -482,24 +479,12 @@ final class AppModel: ObservableObject {
     func resumeRecording(_ recording: RecordingItem) {
         guard !isRecording, !isPreparingRecording else { return }
         isPreparingRecording = true
-        recordingPreparationTask = Task { [weak self, transcription] in
-            guard let self else { return }
-            await transcription.prepareForResume(
-                recording.directory
-            )
-            guard !Task.isCancelled else {
-                self.isPreparingRecording = false
-                return
-            }
-
-            do {
-                try self.beginRecording(resuming: recording)
-            } catch {
-                self.handleRecordingStartFailure(error)
-            }
-            self.isPreparingRecording = false
-            self.recordingPreparationTask = nil
+        do {
+            try beginRecording(resuming: recording)
+        } catch {
+            handleRecordingStartFailure(error)
         }
+        isPreparingRecording = false
     }
 
     func stopRecording() {
@@ -2100,7 +2085,10 @@ final class AppModel: ObservableObject {
                     $0 == source.sourceID
                 }
             }
-            if summaryWasQueued {
+            if summaryWasQueued,
+               self.semanticSources().first(where: {
+                   $0.sourceID == source.sourceID
+               })?.presentationRevision == source.presentationRevision {
                 self.automaticSummarySourceIDs.removeAll {
                     $0 == source.sourceID
                 }
@@ -2571,11 +2559,35 @@ final class AppModel: ObservableObject {
             transcriptionStatus = queued > 0
                 ? "Detecting speakers in \(session) · \(queued) queued"
                 : "Detecting speakers in \(session)"
+        case .completed(let session):
+            transcriptionStatus = "Transcript ready · \(session)"
+            reloadRecordings()
+            scheduleSummaryAfterTranscription(recordingID: session)
         case .failed(let session):
             transcriptionStatus = "Transcription failed · \(session)"
             reloadRecordings()
         }
         onTranscriptionStateChange?(transcriptionStatus)
+    }
+
+    private func scheduleSummaryAfterTranscription(recordingID: String) {
+        let sourceID = "recording:\(recordingID)"
+        if summaryGenerationItemID == sourceID {
+            semanticAnalysisTask?.cancel()
+        }
+        automaticSummarySourceIDs = Self.summaryQueueAfterTranscription(
+            automaticSummarySourceIDs,
+            recordingID: recordingID
+        )
+        persistAutomaticProcessingQueues()
+        scanForSemanticCandidates()
+    }
+
+    nonisolated static func summaryQueueAfterTranscription(
+        _ existing: [String],
+        recordingID: String
+    ) -> [String] {
+        mergedSourceIDs(existing, ["recording:\(recordingID)"])
     }
 
     private func tickRecording() {

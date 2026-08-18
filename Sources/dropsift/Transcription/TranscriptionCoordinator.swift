@@ -11,8 +11,7 @@ import Foundation
 actor TranscriptionCoordinator {
     private enum TranscriptionOutcome {
         case completed
-        case deferredUntilRecordingStops
-        case retryWithLatestManifest
+        case completedAndRetry
     }
 
     enum Status: Sendable {
@@ -20,6 +19,7 @@ actor TranscriptionCoordinator {
         case preparingModel(session: String, detail: String, progress: Double)
         case transcribing(session: String, queued: Int)
         case diarizing(session: String, queued: Int)
+        case completed(session: String)
         case failed(session: String)
     }
 
@@ -45,15 +45,6 @@ actor TranscriptionCoordinator {
         queue.removeAll { $0.standardizedFileURL == sessionDir.standardizedFileURL }
         queue.append(sessionDir)
         drainIfIdle()
-    }
-
-    /// Remove a waiting duplicate before appending more audio. An active job
-    /// can safely continue because it holds a manifest snapshot and Resume
-    /// writes only new part files. Its result is discarded if capture is still
-    /// active or the manifest changes before the transcript is committed.
-    func prepareForResume(_ sessionDir: URL) {
-        let target = sessionDir.standardizedFileURL
-        queue.removeAll { $0.standardizedFileURL == target }
     }
 
     /// Splitting rewrites existing audio and transcript files, so unlike
@@ -121,36 +112,17 @@ actor TranscriptionCoordinator {
             do {
                 switch try await transcribe(dir) {
                 case .completed:
-                    if FileManager.default.fileExists(
-                        atPath: dir.appendingPathComponent(".recording-active").path
-                    ) {
-                        log(
-                            dir,
-                            "recording resumed before transcript publication; "
-                                + "waiting for capture to stop"
-                        )
-                    } else {
-                        try? FileManager.default.removeItem(
-                            at: dir.appendingPathComponent(".transcription-pending")
-                        )
-                        notifyUser(
-                            title: "Dropsift — transcript ready",
-                            body: dir.lastPathComponent
-                        )
-                        runHook(for: dir)
-                    }
-                case .deferredUntilRecordingStops:
+                    try? FileManager.default.removeItem(
+                        at: dir.appendingPathComponent(".transcription-pending")
+                    )
+                    publishCompletedCheckpoint(dir)
+                case .completedAndRetry:
                     log(
                         dir,
-                        "recording resumed during transcription; "
-                            + "discarding stale result until capture stops"
+                        "published checkpoint transcript; recording manifest "
+                            + "changed, so retrying with all tracks"
                     )
-                case .retryWithLatestManifest:
-                    log(
-                        dir,
-                        "recording manifest changed during transcription; "
-                            + "retrying with all tracks"
-                    )
+                    publishCompletedCheckpoint(dir)
                     queue.removeAll {
                         $0.standardizedFileURL == dir.standardizedFileURL
                     }
@@ -263,15 +235,7 @@ actor TranscriptionCoordinator {
                 : nil
         )
 
-        let fileManager = FileManager.default
-        if fileManager.fileExists(
-            atPath: dir.appendingPathComponent(".recording-active").path
-        ) {
-            return .deferredUntilRecordingStops
-        }
-        guard try SessionMeta.read(from: dir) == manifestSnapshot else {
-            return .retryWithLatestManifest
-        }
+        let manifestChanged = try SessionMeta.read(from: dir) != manifestSnapshot
 
         try ContentPresentationStore.invalidate(in: dir)
         try RecordingSummaryStore.invalidate(in: dir)
@@ -284,7 +248,13 @@ actor TranscriptionCoordinator {
             title: title
         )
         log(dir, "done — \(merged.count) segments")
-        return .completed
+        return manifestChanged ? .completedAndRetry : .completed
+    }
+
+    private func publishCompletedCheckpoint(_ dir: URL) {
+        notifyUser(title: "Dropsift — transcript ready", body: dir.lastPathComponent)
+        runHook(for: dir)
+        publish(.completed(session: dir.lastPathComponent))
     }
 
     private func preparedEngine(session: String) async throws -> TranscriptionEngine {

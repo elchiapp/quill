@@ -1164,3 +1164,19 @@ func desktopShiftSelectionIncludesTheEntireContiguousRange() {
         ) == ["c"]
     )
 }
+
+@Test
+func everyCompletedTranscriptionQueuesTheLatestRecordingSummary() {
+    #expect(
+        AppModel.summaryQueueAfterTranscription(
+            ["recording:earlier"],
+            recordingID: "meeting"
+        ) == ["recording:earlier", "recording:meeting"]
+    )
+    #expect(
+        AppModel.summaryQueueAfterTranscription(
+            ["recording:meeting"],
+            recordingID: "meeting"
+        ) == ["recording:meeting"]
+    )
+}
