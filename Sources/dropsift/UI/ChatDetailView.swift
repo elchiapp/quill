@@ -119,6 +119,7 @@ struct ChatDetailView: View {
                                     isStreaming: model.chatStage == .generating
                                         && message.id == thread.messages.last?.id
                                         && message.role == .assistant,
+                                    viewportWidth: viewport.size.width,
                                     onSourceSelected: model.openSource
                                 )
                                     .id(message.id)
@@ -413,86 +414,86 @@ private struct ChatScopePicker: View {
 private struct ChatBubble: View {
     let message: ChatMessage
     let isStreaming: Bool
+    let viewportWidth: CGFloat
     let onSourceSelected: (ChatSource) -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 0) {
-            if message.role == .user { Spacer(minLength: 100) }
-
-            VStack(alignment: .leading, spacing: 7) {
-                HStack(spacing: 7) {
-                    Text(message.role == .user ? "You" : "Dropsift")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    if isStreaming {
-                        ProgressView()
-                            .controlSize(.mini)
-                    }
-                }
-                if !message.content.isEmpty {
-                    Text(.init(message.content))
-                        .textSelection(.enabled)
-                        .lineSpacing(4)
-                }
-
-                if !message.sources.isEmpty {
-                    Divider()
-                        .padding(.vertical, 3)
-                    Text("Sources")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    ForEach(message.sources) { source in
-                        Button {
-                            onSourceSelected(source)
-                        } label: {
-                            HStack(alignment: .top, spacing: 10) {
-                                Text("[\(source.number)]")
-                                    .font(.caption.monospaced().weight(.semibold))
-                                    .foregroundStyle(.tint)
-                                    .frame(width: 28, alignment: .leading)
-                                VStack(alignment: .leading, spacing: 3) {
-                                    HStack {
-                                        Text(source.recordingTitle)
-                                            .font(.caption.weight(.semibold))
-                                            .lineLimit(1)
-                                        Spacer()
-                                        Text(source.locationLabel)
-                                            .font(.caption2.monospacedDigit())
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    Text(source.excerpt.replacingOccurrences(of: "\n", with: " "))
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(2)
-                                }
-                                Image(systemName: "arrow.right.circle")
-                                    .foregroundStyle(.tertiary)
-                            }
-                            .padding(9)
-                            .background(
-                                Color(nsColor: .textBackgroundColor).opacity(0.7),
-                                in: RoundedRectangle(cornerRadius: 9)
-                            )
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .help("Open \(source.recordingTitle) at \(source.locationLabel)")
-                    }
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 7) {
+                Text(message.role == .user ? "You" : "Dropsift")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                if isStreaming {
+                    ProgressView()
+                        .controlSize(.mini)
                 }
             }
-            .padding(14)
-            .background(
-                message.role == .user
-                    ? Color.accentColor.opacity(0.14)
-                    : Color(nsColor: .controlBackgroundColor),
-                in: RoundedRectangle(cornerRadius: 14)
-            )
-            .frame(
-                maxWidth: message.role == .assistant ? .infinity : 720,
-                alignment: .leading
-            )
+            if !message.content.isEmpty {
+                Text(.init(message.content))
+                    .textSelection(.enabled)
+                    .lineSpacing(4)
+            }
+
+            if !message.sources.isEmpty {
+                Divider()
+                    .padding(.vertical, 3)
+                Text("Sources")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                ForEach(message.sources) { source in
+                    Button {
+                        onSourceSelected(source)
+                    } label: {
+                        HStack(alignment: .top, spacing: 10) {
+                            Text("[\(source.number)]")
+                                .font(.caption.monospaced().weight(.semibold))
+                                .foregroundStyle(.tint)
+                                .frame(width: 28, alignment: .leading)
+                            VStack(alignment: .leading, spacing: 3) {
+                                HStack {
+                                    Text(source.recordingTitle)
+                                        .font(.caption.weight(.semibold))
+                                        .lineLimit(1)
+                                    Spacer()
+                                    Text(source.locationLabel)
+                                        .font(.caption2.monospacedDigit())
+                                        .foregroundStyle(.secondary)
+                                }
+                                Text(source.excerpt.replacingOccurrences(of: "\n", with: " "))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
+                            Image(systemName: "arrow.right.circle")
+                                .foregroundStyle(.tertiary)
+                        }
+                        .padding(9)
+                        .background(
+                            Color(nsColor: .textBackgroundColor).opacity(0.7),
+                            in: RoundedRectangle(cornerRadius: 9)
+                        )
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Open \(source.recordingTitle) at \(source.locationLabel)")
+                }
+            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(
+            message.role == .user
+                ? Color.accentColor.opacity(0.14)
+                : Color(nsColor: .controlBackgroundColor),
+            in: RoundedRectangle(cornerRadius: 14)
+        )
+        .frame(
+            maxWidth: message.role == .assistant ? .infinity : 720,
+            alignment: message.role == .user ? .trailing : .leading
+        )
         .padding(.horizontal, 24)
+        .frame(
+            width: viewportWidth,
+            alignment: message.role == .user ? .trailing : .leading
+        )
     }
 }
