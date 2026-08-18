@@ -9,6 +9,12 @@ import Foundation
 /// just retries on next run. Failures append to the session's transcribe.log
 /// and never block later jobs.
 actor TranscriptionCoordinator {
+    private enum TranscriptionOutcome {
+        case completed
+        case deferredUntilRecordingStops
+        case retryWithLatestManifest
+    }
+
     enum Status: Sendable {
         case idle
         case preparingModel(session: String, detail: String, progress: Double)
@@ -41,10 +47,18 @@ actor TranscriptionCoordinator {
         drainIfIdle()
     }
 
-    /// Remove a waiting transcription before appending more audio. An active
-    /// transcription cannot be mutated safely, so callers must wait for it to
-    /// finish before resuming that recording.
-    func prepareForResume(_ sessionDir: URL) -> Bool {
+    /// Remove a waiting duplicate before appending more audio. An active job
+    /// can safely continue because it holds a manifest snapshot and Resume
+    /// writes only new part files. Its result is discarded if capture is still
+    /// active or the manifest changes before the transcript is committed.
+    func prepareForResume(_ sessionDir: URL) {
+        let target = sessionDir.standardizedFileURL
+        queue.removeAll { $0.standardizedFileURL == target }
+    }
+
+    /// Splitting rewrites existing audio and transcript files, so unlike
+    /// append-only Resume it still requires exclusive access to the directory.
+    func prepareForExclusiveMutation(_ sessionDir: URL) -> Bool {
         let target = sessionDir.standardizedFileURL
         guard activeSession?.standardizedFileURL != target else { return false }
         queue.removeAll { $0.standardizedFileURL == target }
@@ -105,12 +119,43 @@ actor TranscriptionCoordinator {
             activeSession = dir
             publish(.transcribing(session: dir.lastPathComponent, queued: queue.count))
             do {
-                try await transcribe(dir)
-                try? FileManager.default.removeItem(
-                    at: dir.appendingPathComponent(".transcription-pending")
-                )
-                notifyUser(title: "Dropsift — transcript ready", body: dir.lastPathComponent)
-                runHook(for: dir)
+                switch try await transcribe(dir) {
+                case .completed:
+                    if FileManager.default.fileExists(
+                        atPath: dir.appendingPathComponent(".recording-active").path
+                    ) {
+                        log(
+                            dir,
+                            "recording resumed before transcript publication; "
+                                + "waiting for capture to stop"
+                        )
+                    } else {
+                        try? FileManager.default.removeItem(
+                            at: dir.appendingPathComponent(".transcription-pending")
+                        )
+                        notifyUser(
+                            title: "Dropsift — transcript ready",
+                            body: dir.lastPathComponent
+                        )
+                        runHook(for: dir)
+                    }
+                case .deferredUntilRecordingStops:
+                    log(
+                        dir,
+                        "recording resumed during transcription; "
+                            + "discarding stale result until capture stops"
+                    )
+                case .retryWithLatestManifest:
+                    log(
+                        dir,
+                        "recording manifest changed during transcription; "
+                            + "retrying with all tracks"
+                    )
+                    queue.removeAll {
+                        $0.standardizedFileURL == dir.standardizedFileURL
+                    }
+                    queue.append(dir)
+                }
             } catch {
                 log(dir, "transcription failed: \(error)")
                 lastFailure = dir.lastPathComponent
@@ -132,15 +177,15 @@ actor TranscriptionCoordinator {
         drainIfIdle()
     }
 
-    private func transcribe(_ dir: URL) async throws {
-        let meta = try SessionMeta.read(from: dir)
+    private func transcribe(_ dir: URL) async throws -> TranscriptionOutcome {
+        let manifestSnapshot = try SessionMeta.read(from: dir)
         let engine = try await preparedEngine(session: dir.lastPathComponent)
         publish(.transcribing(session: dir.lastPathComponent, queued: queue.count))
 
         var merged: [TranscriptDocument.Segment] = []
         var detectedRemoteSpeakers: Set<String> = []
         var usedDiarization = false
-        for track in meta.tracks {
+        for track in manifestSnapshot.tracks {
             let audio = dir.appendingPathComponent(track.file)
             guard FileManager.default.fileExists(atPath: audio.path) else {
                 log(dir, "skipping missing track \(track.file)")
@@ -217,6 +262,17 @@ actor TranscriptionCoordinator {
                 )
                 : nil
         )
+
+        let fileManager = FileManager.default
+        if fileManager.fileExists(
+            atPath: dir.appendingPathComponent(".recording-active").path
+        ) {
+            return .deferredUntilRecordingStops
+        }
+        guard try SessionMeta.read(from: dir) == manifestSnapshot else {
+            return .retryWithLatestManifest
+        }
+
         try ContentPresentationStore.invalidate(in: dir)
         try RecordingSummaryStore.invalidate(in: dir)
         let title = try RecordingLibrary.refreshGeneratedTitle(
@@ -228,6 +284,7 @@ actor TranscriptionCoordinator {
             title: title
         )
         log(dir, "done — \(merged.count) segments")
+        return .completed
     }
 
     private func preparedEngine(session: String) async throws -> TranscriptionEngine {
@@ -308,8 +365,8 @@ actor TranscriptionCoordinator {
 
 /// The slice of meta.json the coordinator needs: which files exist, who they
 /// represent, and how far each track started after the earliest one.
-struct SessionMeta {
-    struct Track {
+struct SessionMeta: Equatable {
+    struct Track: Equatable {
         let file: String
         let speaker: String
         let offsetMs: Int

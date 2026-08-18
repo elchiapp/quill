@@ -285,6 +285,16 @@ func resumedRecordingManifestKeepsOriginalTracksAndBuildsOneTimeline() throws {
         resumeCount: nil
     )
 
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    try FileManager.default.createDirectory(
+        at: directory,
+        withIntermediateDirectories: true
+    )
+    try original.write(to: directory)
+    let inFlightSnapshot = try SessionMeta.read(from: directory)
+
     let resumed = original.appendingResume(
         ended: "2026-07-30T10:00:15Z",
         addedDurationSeconds: 15,
@@ -308,16 +318,11 @@ func resumedRecordingManifestKeepsOriginalTracksAndBuildsOneTimeline() throws {
         ]
     )
 
-    let directory = FileManager.default.temporaryDirectory
-        .appendingPathComponent(UUID().uuidString, isDirectory: true)
-    defer { try? FileManager.default.removeItem(at: directory) }
-    try FileManager.default.createDirectory(
-        at: directory,
-        withIntermediateDirectories: true
-    )
     try resumed.write(to: directory)
 
     let transcriptionMeta = try SessionMeta.read(from: directory)
+    #expect(inFlightSnapshot.tracks.count == 2)
+    #expect(inFlightSnapshot != transcriptionMeta)
     #expect(transcriptionMeta.tracks.count == 4)
     #expect(transcriptionMeta.tracks[2].offsetMs == 60_020)
     #expect(transcriptionMeta.tracks[3].speaker == "them")

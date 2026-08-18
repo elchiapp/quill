@@ -484,18 +484,11 @@ final class AppModel: ObservableObject {
         isPreparingRecording = true
         recordingPreparationTask = Task { [weak self, transcription] in
             guard let self else { return }
-            let canResume = await transcription.prepareForResume(
+            await transcription.prepareForResume(
                 recording.directory
             )
             guard !Task.isCancelled else {
                 self.isPreparingRecording = false
-                return
-            }
-            guard canResume else {
-                self.isPreparingRecording = false
-                self.appError =
-                    "This recording is still being transcribed. "
-                    + "Wait for transcription to finish, then resume it."
                 return
             }
 
@@ -837,7 +830,7 @@ final class AppModel: ObservableObject {
         splittingRecordingID = recording.id
         Task { [weak self, transcription] in
             guard let self else { return }
-            let canEdit = await transcription.prepareForResume(
+            let canEdit = await transcription.prepareForExclusiveMutation(
                 recording.directory
             )
             guard canEdit else {
