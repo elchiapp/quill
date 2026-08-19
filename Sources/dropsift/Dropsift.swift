@@ -81,6 +81,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     private let menuBar = MenuBarController()
     private let meetingNotifications = MeetingNotificationController()
     private var meetingAutoStop = MeetingRecordingAutoStopState()
+    private var terminationIsPending = false
     private lazy var mainWindow = DropsiftWindowController(model: model)
 
     init(root: URL) {
@@ -152,6 +153,19 @@ final class AppController: NSObject, NSApplicationDelegate {
         model.shutdown()
     }
 
+    func applicationShouldTerminate(
+        _ sender: NSApplication
+    ) -> NSApplication.TerminateReply {
+        guard !terminationIsPending else { return .terminateLater }
+        terminationIsPending = true
+        model.shutdown()
+        Task { [weak self] in
+            await self?.model.finishShutdown()
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
+
     func showWindow() {
         mainWindow.showWindow(nil)
         mainWindow.window?.makeKeyAndOrderFront(nil)
@@ -159,7 +173,6 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     func shutdown() {
-        model.shutdown()
         NSApp.terminate(nil)
     }
 

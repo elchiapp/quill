@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 struct QVACBridgeMessage: Codable, Sendable {
@@ -138,9 +139,19 @@ actor QVACRuntime {
 
     func shutdown() async {
         if process?.isRunning == true {
-            _ = try? await request("shutdown")
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask { [weak self] in
+                    guard let self else { return }
+                    _ = try? await self.request("shutdown")
+                }
+                group.addTask {
+                    try? await Task.sleep(for: .seconds(5))
+                }
+                _ = await group.next()
+                group.cancelAll()
+            }
         }
-        stopProcess()
+        await stopProcess()
     }
 
     private func startIfNeeded() throws {
@@ -246,11 +257,22 @@ actor QVACRuntime {
         outputBuffer = ""
     }
 
-    private func stopProcess() {
-        if process?.isRunning == true {
-            process?.terminate()
+    private func stopProcess() async {
+        guard let process else {
+            input = nil
+            outputBuffer = ""
+            return
         }
-        process = nil
+        if process.isRunning {
+            process.terminate()
+            for _ in 0..<20 where process.isRunning {
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            if process.isRunning {
+                kill(process.processIdentifier, SIGKILL)
+            }
+        }
+        self.process = nil
         input = nil
         outputBuffer = ""
     }

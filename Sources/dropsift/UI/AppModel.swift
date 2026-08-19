@@ -68,6 +68,11 @@ final class AppModel: ObservableObject {
         let expectedTitle: String
     }
 
+    private struct LibrarySnapshot: Sendable {
+        let recordings: [RecordingItem]
+        let knowledgeItems: [KnowledgeItem]
+    }
+
     enum DeletionRequest: Identifiable, Equatable {
         case thread(id: UUID, title: String)
         case recording(id: String, title: String)
@@ -207,6 +212,9 @@ final class AppModel: ObservableObject {
     private var notesSaveTask: Task<Void, Never>?
     private var knowledgeSaveTasks: [UUID: Task<Void, Never>] = [:]
     private var libraryRefreshTask: Task<Void, Never>?
+    private var libraryLoadTask: Task<Void, Never>?
+    private var libraryRefreshQueued = false
+    private var queuedRefreshGeneratesTitles = false
     private var aiPreparationTask: Task<Void, Never>?
     private var aiDownloadStallTask: Task<Void, Never>?
     private var semanticAnalysisTask: Task<Void, Never>?
@@ -471,6 +479,10 @@ final class AppModel: ObservableObject {
         Task { [meetingDetector] in await meetingDetector.stop() }
         libraryRefreshTask?.cancel()
         libraryRefreshTask = nil
+        libraryLoadTask?.cancel()
+        libraryLoadTask = nil
+        libraryRefreshQueued = false
+        queuedRefreshGeneratesTitles = false
         aiPreparationTask?.cancel()
         aiPreparationTask = nil
         aiDownloadStallTask?.cancel()
@@ -479,7 +491,10 @@ final class AppModel: ObservableObject {
         semanticAnalysisTask = nil
         semanticProcessingSourceID = nil
         semanticProcessingLabel = nil
-        Task { await QVACRuntime.shared.shutdown() }
+    }
+
+    func finishShutdown() async {
+        await QVACRuntime.shared.shutdown()
     }
 
     func toggleRecording() {
@@ -576,9 +591,7 @@ final class AppModel: ObservableObject {
     }
 
     func reloadRecordings(selecting recordingID: String? = nil) {
-        recordings = RecordingLibrary.load(from: root)
-        enqueueNewSourceProcessing()
-        if let recordingID, recordings.contains(where: { $0.id == recordingID }) {
+        if let recordingID {
             selectedRecordingID = recordingID
             selectedTimelineItemID = "recording:\(recordingID)"
         } else if let selectedTimelineItemID,
@@ -588,17 +601,59 @@ final class AppModel: ObservableObject {
             // directory as a request to navigate somewhere else.
             selectedRecordingID = String(selectedTimelineItemID.dropFirst(10))
         }
+        requestLibraryRefresh(refreshGeneratedTitles: true)
     }
 
     func refreshLibrary() {
+        requestLibraryRefresh(refreshGeneratedTitles: false)
+    }
+
+    private func requestLibraryRefresh(refreshGeneratedTitles: Bool) {
+        guard libraryLoadTask == nil else {
+            libraryRefreshQueued = true
+            queuedRefreshGeneratesTitles = queuedRefreshGeneratesTitles
+                || refreshGeneratedTitles
+            return
+        }
+
+        let root = root
+        let knowledgeRoot = knowledgeRoot
+        libraryLoadTask = Task { [weak self] in
+            let snapshot = await Task.detached(priority: .utility) {
+                LibrarySnapshot(
+                    recordings: RecordingLibrary.load(
+                        from: root,
+                        refreshGeneratedTitles: refreshGeneratedTitles
+                    ),
+                    knowledgeItems: KnowledgeLibrary.load(
+                        from: knowledgeRoot,
+                        refreshGeneratedTitles: refreshGeneratedTitles
+                    )
+                )
+            }.value
+            guard let self, !Task.isCancelled else { return }
+
+            libraryLoadTask = nil
+            applyLibrarySnapshot(snapshot)
+
+            if libraryRefreshQueued {
+                let generatesTitles = queuedRefreshGeneratesTitles
+                libraryRefreshQueued = false
+                queuedRefreshGeneratesTitles = false
+                requestLibraryRefresh(
+                    refreshGeneratedTitles: generatesTitles
+                )
+            }
+        }
+    }
+
+    private func applyLibrarySnapshot(_ snapshot: LibrarySnapshot) {
         // Load the complete snapshot before publishing either collection.
         // Publishing half a snapshot used to make SwiftUI reconcile selection
         // against an intermediate timeline and write the previous row back.
         let selectionBeforeRefresh = selectedTimelineItemID
-        let loadedRecordings = RecordingLibrary.load(from: root)
-        let loadedKnowledge = KnowledgeLibrary.load(from: knowledgeRoot)
-        recordings = loadedRecordings
-        knowledgeItems = loadedKnowledge
+        recordings = snapshot.recordings
+        knowledgeItems = snapshot.knowledgeItems
         enqueueNewSourceProcessing()
         refreshSemantics()
         selectedTimelineItemID = Self.selectionAfterPassiveRefresh(
@@ -665,7 +720,9 @@ final class AppModel: ObservableObject {
             try? await Task.sleep(for: .milliseconds(250))
             guard !Task.isCancelled else { return }
             do {
-                try RecordingLibrary.saveNotes(notes, to: directory)
+                try await Task.detached(priority: .utility) {
+                    try RecordingLibrary.saveNotes(notes, to: directory)
+                }.value
             } catch {
                 self?.appError = "Couldn’t save recording notes: \(error.localizedDescription)"
             }
@@ -801,7 +858,12 @@ final class AppModel: ObservableObject {
             try? await Task.sleep(for: .milliseconds(300))
             guard !Task.isCancelled else { return }
             do {
-                try RecordingLibrary.saveNotes(notes, to: recording.directory)
+                try await Task.detached(priority: .utility) {
+                    try RecordingLibrary.saveNotes(
+                        notes,
+                        to: recording.directory
+                    )
+                }.value
                 self?.reloadRecordings()
             } catch {
                 self?.appError = "Couldn’t save recording notes: \(error.localizedDescription)"
@@ -1792,12 +1854,10 @@ final class AppModel: ObservableObject {
     }
 
     private func reloadKnowledge(selecting itemID: UUID? = nil) {
-        knowledgeItems = KnowledgeLibrary.load(from: knowledgeRoot)
-        enqueueNewSourceProcessing()
-        if let itemID, knowledgeItems.contains(where: { $0.id == itemID }) {
+        if let itemID {
             selectedTimelineItemID = "knowledge:\(itemID.uuidString)"
         }
-        scanForSemanticCandidates()
+        requestLibraryRefresh(refreshGeneratedTitles: true)
     }
 
     private func refreshSemantics() {
@@ -2550,7 +2610,6 @@ final class AppModel: ObservableObject {
                     self.threads[index].updatedAt = Date()
                 }
                 self.persistThreads()
-                self.refreshLibrary()
                 let selectedWasDeleted = self.selectedTimelineItemID.map { selected in
                     if selected.hasPrefix("recording:") {
                         return recordingIDs.contains(String(selected.dropFirst(10)))
@@ -2562,9 +2621,18 @@ final class AppModel: ObservableObject {
                     return false
                 } ?? false
                 if selectedWasDeleted {
-                    self.selectedTimelineItemID = self.timelineItems.first?.id
+                    self.selectedTimelineItemID = self.timelineItems.first {
+                        item in
+                        switch item {
+                        case .recording(let recording):
+                            !recordingIDs.contains(recording.id)
+                        case .knowledge(let item):
+                            !knowledgeIDs.contains(item.id)
+                        }
+                    }?.id
                     self.selectTimelineItem(self.selectedTimelineItemID)
                 }
+                self.refreshLibrary()
             }
         }
     }
@@ -2585,11 +2653,13 @@ final class AppModel: ObservableObject {
                     self.threads[index].updatedAt = Date()
                 }
                 self.persistThreads()
-                self.reloadRecordings()
                 if self.selectedTimelineItemID == "recording:\(id)" {
-                    self.selectedTimelineItemID = self.timelineItems.first?.id
+                    self.selectedTimelineItemID = self.timelineItems.first {
+                        $0.id != "recording:\(id)"
+                    }?.id
                     self.selectTimelineItem(self.selectedTimelineItemID)
                 }
+                self.reloadRecordings()
             }
         }
     }
@@ -2603,10 +2673,12 @@ final class AppModel: ObservableObject {
                     self.appError = "Couldn’t move this item to Trash: \(error.localizedDescription)"
                     return
                 }
-                self.reloadKnowledge()
                 if self.selectedTimelineItemID == "knowledge:\(id.uuidString)" {
-                    self.selectedTimelineItemID = self.timelineItems.first?.id
+                    self.selectedTimelineItemID = self.timelineItems.first {
+                        $0.id != "knowledge:\(id.uuidString)"
+                    }?.id
                 }
+                self.reloadKnowledge()
             }
         }
     }

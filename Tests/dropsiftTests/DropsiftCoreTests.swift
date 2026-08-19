@@ -945,6 +945,43 @@ func desktopRecordingNotesGenerateATitleButManualTitlesWin() throws {
 }
 
 @Test
+func passiveRecordingLibraryRefreshDoesNotRegenerateTitles() throws {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let directory = root.appendingPathComponent(
+        "2026.08.19-1300",
+        isDirectory: true
+    )
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(
+        at: directory,
+        withIntermediateDirectories: true
+    )
+    try Data(#"{"duration_seconds": 30}"#.utf8).write(
+        to: directory.appendingPathComponent("meta.json")
+    )
+    try Data("Existing generated title".utf8).write(
+        to: directory.appendingPathComponent("title.txt")
+    )
+    try Data("A completely different note".utf8).write(
+        to: directory.appendingPathComponent("notes.md")
+    )
+    try ContentTitleGenerator.markGenerated(in: directory)
+
+    let recordings = RecordingLibrary.load(
+        from: root,
+        refreshGeneratedTitles: false
+    )
+
+    #expect(recordings.first?.title == "Existing generated title")
+    let storedTitle = try String(
+        contentsOf: directory.appendingPathComponent("title.txt"),
+        encoding: .utf8
+    )
+    #expect(storedTitle == "Existing generated title")
+}
+
+@Test
 func activeRecordingTitleCanBeSavedBeforeTheManifestExists() throws {
     let directory = FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString, isDirectory: true)

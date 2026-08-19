@@ -23,7 +23,10 @@ enum RecordingLibrary {
     static let legacyRoot = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Recordings", isDirectory: true)
 
-    static func load(from root: URL) -> [RecordingItem] {
+    static func load(
+        from root: URL,
+        refreshGeneratedTitles: Bool = true
+    ) -> [RecordingItem] {
         let fileManager = FileManager.default
         guard let entries = try? fileManager.contentsOfDirectory(
             at: root,
@@ -31,16 +34,18 @@ enum RecordingLibrary {
             options: [.skipsHiddenFiles]
         ) else { return [] }
 
-        for directory in entries {
-            guard let recording = RecordingItem.load(from: directory) else { continue }
-            let hasContent = !recording.notes
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .isEmpty || !(recording.transcript?.segments.isEmpty ?? true)
-            if hasContent {
-                _ = try? refreshGeneratedTitle(
-                    in: directory,
-                    transcript: recording.transcript
-                )
+        if refreshGeneratedTitles {
+            for directory in entries {
+                guard let recording = RecordingItem.load(from: directory) else { continue }
+                let hasContent = !recording.notes
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .isEmpty || !(recording.transcript?.segments.isEmpty ?? true)
+                if hasContent {
+                    _ = try? refreshGeneratedTitle(
+                        in: directory,
+                        transcript: recording.transcript
+                    )
+                }
             }
         }
         return entries

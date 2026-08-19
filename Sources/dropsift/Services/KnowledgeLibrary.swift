@@ -3,18 +3,23 @@ import Foundation
 import UniformTypeIdentifiers
 
 enum KnowledgeLibrary {
-    static func load(from root: URL) -> [KnowledgeItem] {
+    static func load(
+        from root: URL,
+        refreshGeneratedTitles: Bool = true
+    ) -> [KnowledgeItem] {
         guard let entries = try? FileManager.default.contentsOfDirectory(
             at: root,
             includingPropertiesForKeys: [.isDirectoryKey],
             options: [.skipsHiddenFiles]
         ) else { return [] }
-        for directory in entries {
-            guard var metadata = KnowledgeItem.load(from: directory)?.metadata
-            else { continue }
-            if (try? refreshGeneratedTitle(&metadata, in: directory)) == true {
-                metadata.updatedAt = Date()
-                try? write(metadata, to: directory)
+        if refreshGeneratedTitles {
+            for directory in entries {
+                guard var metadata = KnowledgeItem.load(from: directory)?.metadata
+                else { continue }
+                if (try? refreshGeneratedTitle(&metadata, in: directory)) == true {
+                    metadata.updatedAt = Date()
+                    try? write(metadata, to: directory)
+                }
             }
         }
         return entries
