@@ -77,7 +77,9 @@ APP_BUNDLE="$PACKAGE_WORK/Dropsift.app"
 # only the Apple-silicon addon prebuilds; npm packages otherwise include native
 # binaries for every desktop, mobile, and server platform.
 QVAC_EXECUTABLE="$QVAC_SOURCE/node_modules/bare-runtime-darwin-arm64/bin/bare"
-if [[ ! -f "$QVAC_SOURCE/bridge.mjs" || ! -f "$QVAC_SOURCE/package-lock.json" ]]; then
+if [[ ! -f "$QVAC_SOURCE/bootstrap.cjs" \
+    || ! -f "$QVAC_SOURCE/bridge.mjs" \
+    || ! -f "$QVAC_SOURCE/package-lock.json" ]]; then
     print -u2 "Missing QVAC bridge sources in $QVAC_SOURCE"
     exit 1
 fi
@@ -91,6 +93,7 @@ if [[ "$QVAC_RUNTIME" != "$APP_BUNDLE/Contents/Resources/QVACRuntime" ]]; then
     exit 1
 fi
 /bin/mkdir -p "$QVAC_RUNTIME"
+/usr/bin/ditto "$QVAC_SOURCE/bootstrap.cjs" "$QVAC_RUNTIME/bootstrap.cjs"
 /usr/bin/ditto "$QVAC_SOURCE/bridge.mjs" "$QVAC_RUNTIME/bridge.mjs"
 /usr/bin/ditto "$QVAC_SOURCE/package.json" "$QVAC_RUNTIME/package.json"
 /usr/bin/ditto "$QVAC_SOURCE/package-lock.json" "$QVAC_RUNTIME/package-lock.json"

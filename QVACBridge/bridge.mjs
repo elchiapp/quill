@@ -38,6 +38,12 @@ const loaded = {
   diarization: null,
   ocr: null
 }
+const loading = {
+  llm: null,
+  transcription: null,
+  diarization: null,
+  ocr: null
+}
 
 const llmModels = {
   '2B': QWEN3_5_2B_MULTIMODAL_Q4_K_M,
@@ -56,6 +62,53 @@ function errorMessage (error) {
   return String(error)
 }
 
+async function prepareModel (kind, id, detail, loader) {
+  if (loaded[kind]) {
+    send({ id, type: 'result', model: loaded[kind] })
+    return
+  }
+
+  let entry = loading[kind]
+  if (!entry) {
+    const listeners = new Set()
+    let lastPercentage = -1
+    const task = Promise.resolve().then(() => loader(progress => {
+      const percentage = Math.max(
+        0,
+        Math.min(100, progress.percentage ?? 0)
+      )
+      // Registry downloads report every tiny block. A quarter-percent update
+      // keeps the UI smooth without flooding the bridge with tens of thousands
+      // of redundant JSON messages.
+      if (percentage < 100 && percentage - lastPercentage < 0.25) return
+      lastPercentage = percentage
+      for (const listener of listeners) {
+        send({
+          id: listener,
+          type: 'progress',
+          percentage,
+          detail
+        })
+      }
+    })).then(modelId => {
+      loaded[kind] = modelId
+      return modelId
+    }).finally(() => {
+      if (loading[kind]?.task === task) loading[kind] = null
+    })
+    entry = { listeners, task }
+    loading[kind] = entry
+  }
+
+  entry.listeners.add(id)
+  try {
+    const modelId = await entry.task
+    send({ id, type: 'result', model: modelId })
+  } finally {
+    entry.listeners.delete(id)
+  }
+}
+
 async function unload (kind) {
   const modelId = loaded[kind]
   if (!modelId) return
@@ -65,31 +118,24 @@ async function unload (kind) {
 
 async function prepareLLM (id, params) {
   const requested = llmModels[params.modelSize] ?? llmModels['2B']
-  if (loaded.llm) {
-    send({ id, type: 'result', model: loaded.llm })
-    return
-  }
-  loaded.llm = await loadModel({
-    modelSrc: requested,
-    modelType: 'llamacpp-completion',
-    modelConfig: {
-      ctx_size: Math.max(16384, Math.min(262144, params.contextTokens ?? 32768)),
-      temp: 0.4,
-      top_p: 0.8,
-      top_k: 20,
-      repeat_penalty: 1.05,
-      reasoning_budget: 0
-    },
-    onProgress: progress => {
-      send({
-        id,
-        type: 'progress',
-        percentage: Math.max(0, Math.min(100, progress.percentage ?? 0)),
-        detail: 'Downloading QVAC language model'
-      })
-    }
-  })
-  send({ id, type: 'result', model: loaded.llm })
+  await prepareModel(
+    'llm',
+    id,
+    'Downloading QVAC language model',
+    onProgress => loadModel({
+      modelSrc: requested,
+      modelType: 'llamacpp-completion',
+      modelConfig: {
+        ctx_size: Math.max(16384, Math.min(262144, params.contextTokens ?? 32768)),
+        temp: 0.4,
+        top_p: 0.8,
+        top_k: 20,
+        repeat_penalty: 1.05,
+        reasoning_budget: 0
+      },
+      onProgress
+    })
+  )
 }
 
 async function complete (id, params) {
@@ -130,30 +176,23 @@ async function complete (id, params) {
 }
 
 async function prepareTranscription (id) {
-  if (loaded.transcription) {
-    send({ id, type: 'result', model: loaded.transcription })
-    return
-  }
-  loaded.transcription = await loadModel({
-    modelSrc: WHISPER_SMALL_Q8_0,
-    modelType: 'whispercpp-transcription',
-    modelConfig: {
-      detect_language: true,
-      no_timestamps: false,
-      token_timestamps: true,
-      split_on_word: true,
-      max_len: 80
-    },
-    onProgress: progress => {
-      send({
-        id,
-        type: 'progress',
-        percentage: Math.max(0, Math.min(100, progress.percentage ?? 0)),
-        detail: 'Downloading QVAC multilingual speech model'
-      })
-    }
-  })
-  send({ id, type: 'result', model: loaded.transcription })
+  await prepareModel(
+    'transcription',
+    id,
+    'Downloading QVAC multilingual speech model',
+    onProgress => loadModel({
+      modelSrc: WHISPER_SMALL_Q8_0,
+      modelType: 'whispercpp-transcription',
+      modelConfig: {
+        detect_language: true,
+        no_timestamps: false,
+        token_timestamps: true,
+        split_on_word: true,
+        max_len: 80
+      },
+      onProgress
+    })
+  )
 }
 
 async function transcribeAudio (id, params) {
@@ -177,23 +216,16 @@ async function transcribeAudio (id, params) {
 }
 
 async function prepareDiarization (id) {
-  if (loaded.diarization) {
-    send({ id, type: 'result', model: loaded.diarization })
-    return
-  }
-  loaded.diarization = await loadModel({
-    modelSrc: PARAKEET_SORTFORMER_4SPK_V2_1_Q8_0,
-    modelType: 'parakeet-transcription',
-    onProgress: progress => {
-      send({
-        id,
-        type: 'progress',
-        percentage: Math.max(0, Math.min(100, progress.percentage ?? 0)),
-        detail: 'Downloading QVAC speaker model'
-      })
-    }
-  })
-  send({ id, type: 'result', model: loaded.diarization })
+  await prepareModel(
+    'diarization',
+    id,
+    'Downloading QVAC speaker model',
+    onProgress => loadModel({
+      modelSrc: PARAKEET_SORTFORMER_4SPK_V2_1_Q8_0,
+      modelType: 'parakeet-transcription',
+      onProgress
+    })
+  )
 }
 
 async function diarizeAudio (id, params) {
@@ -219,31 +251,24 @@ async function diarizeAudio (id, params) {
 }
 
 async function prepareOCR (id) {
-  if (loaded.ocr) {
-    send({ id, type: 'result', model: loaded.ocr })
-    return
-  }
-  loaded.ocr = await loadModel({
-    modelSrc: OCR_LATIN,
-    modelType: 'ggml-ocr',
-    modelConfig: {
-      magRatio: 1.5,
-      defaultRotationAngles: [90, 180, 270],
-      contrastRetry: true,
-      lowConfidenceThreshold: 0.35,
-      recognizerBatchSize: 1,
-      backendDevice: 'metal'
-    },
-    onProgress: progress => {
-      send({
-        id,
-        type: 'progress',
-        percentage: Math.max(0, Math.min(100, progress.percentage ?? 0)),
-        detail: 'Downloading QVAC OCR model'
-      })
-    }
-  })
-  send({ id, type: 'result', model: loaded.ocr })
+  await prepareModel(
+    'ocr',
+    id,
+    'Downloading QVAC OCR model',
+    onProgress => loadModel({
+      modelSrc: OCR_LATIN,
+      modelType: 'ggml-ocr',
+      modelConfig: {
+        magRatio: 1.5,
+        defaultRotationAngles: [90, 180, 270],
+        contrastRetry: true,
+        lowConfidenceThreshold: 0.35,
+        recognizerBatchSize: 1,
+        backendDevice: 'metal'
+      },
+      onProgress
+    })
+  )
 }
 
 async function extractImageText (id, params) {

@@ -277,7 +277,7 @@ actor QVACRuntime {
             let executable = root.appendingPathComponent(
                 "node_modules/bare-runtime-darwin-arm64/bin/bare"
             )
-            let bridge = root.appendingPathComponent("bridge.mjs")
+            let bridge = root.appendingPathComponent("bootstrap.cjs")
             if FileManager.default.isExecutableFile(atPath: executable.path),
                FileManager.default.fileExists(atPath: bridge.path) {
                 return RuntimeLayout(
