@@ -174,25 +174,41 @@ first use. If model preparation or diarization fails, transcription still
 finishes with the fallback `them` label and records the failure in
 `transcribe.log`.
 
-## Local AI
+## Local AI backends
 
-Inference is part of Dropsift itself. It uses Apple's
-[MLX Swift](https://github.com/ml-explore/mlx-swift) runtime and current
-Qwen3.5/Qwen3.6 models directly in the app process. The conservative default is
-`Qwen3.5 2B` at 4-bit. Dropsift detects the chip, CPU count, and unified memory,
-then offers a stronger 4B, 9B, 27B, or 35B-A3B model when appropriate.
+Inference is part of Dropsift itself. Desktop Settings has a persistent,
+hot-swappable **AI backend** control:
+
+- **Apple native** runs current Qwen3.5/Qwen3.6 models with MLX Swift,
+  multilingual Parakeet transcription with FluidAudio, offline VBx speaker
+  diarization, and Apple Vision OCR.
+- **QVAC** runs Qwen through QVAC's llama.cpp plugin, multilingual Whisper
+  transcription with timestamps, Sortformer speaker diarization, and QVAC OCR.
+  Dropsift starts and stops its packaged Bare/QVAC child runtime itself; no
+  terminal command, localhost server, or separately installed QVAC app is
+  required.
+
+The backend selected when a transcription job starts stays attached to that
+job, while new chat and ingestion work switches immediately. This makes it safe
+to change providers while the background queue is finishing an earlier item.
+Models for each backend use separate caches and download on first use.
+
+The conservative language-model default is `Qwen3.5 2B` at 4-bit. Dropsift
+detects the chip, CPU count, and unified memory, then offers a stronger 4B, 9B,
+27B, or 35B-A3B model when appropriate.
 
 For every model, Dropsift:
 
-- caps MLX at 50% of total unified memory;
+- caps the selected runtime at 50% of total unified memory;
 - calculates the largest context window that fits that limit, up to the
   model's native 262K tokens;
 - shows download progress, in-memory loading, failures, and the active model;
-- downloads weights into `~/Library/Caches/Dropsift/Models` only after the user
+- downloads Apple-native weights into `~/Library/Caches/Dropsift/Models` and
+  QVAC weights into `~/Library/Caches/Dropsift/QVAC/Models` only after the user
   selects the model or asks the first question.
 
 There is no LM Studio, llama server, localhost API, Python runtime, terminal
-command, or separate application.
+command, or separate application for either backend.
 
 Chat never uploads knowledge. Dropsift chunks and ranks transcript passages,
 recording notes, document pages, OCR text, note content, and imported-item

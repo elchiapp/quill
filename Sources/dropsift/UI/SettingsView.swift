@@ -18,7 +18,9 @@ struct SettingsView: View {
                 Label(model.deviceProfile.summary, systemImage: "memorychip")
                     .font(.body.weight(.semibold))
                 Text(
-                    "MLX is hard-limited to \(model.recommendedModelPlan.budgetLabel), leaving at least 50% of unified memory available."
+                    model.aiBackend == .qvac
+                        ? "QVAC model selection is limited to \(model.recommendedModelPlan.budgetLabel), leaving at least 50% of unified memory available."
+                        : "MLX is hard-limited to \(model.recommendedModelPlan.budgetLabel), leaving at least 50% of unified memory available."
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -52,11 +54,42 @@ struct SettingsView: View {
 
             Divider()
 
+            VStack(alignment: .leading, spacing: 8) {
+                Text("AI backend")
+                    .font(.headline)
+                Picker(
+                    "AI backend",
+                    selection: Binding(
+                        get: { model.aiBackend },
+                        set: { model.selectAIBackend($0) }
+                    )
+                ) {
+                    ForEach(AIBackend.allCases) { backend in
+                        Text(backend.name).tag(backend)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .disabled(model.isAnswering || model.isAITransitioning)
+                Text(model.aiBackend.shortDetail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Divider()
+
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Built-in local AI")
+                    Text(
+                        model.aiBackend == .qvac
+                            ? "QVAC local AI"
+                            : "Apple-native local AI"
+                    )
                         .font(.headline)
-                    Text("In-process Apple MLX · native context up to 262K tokens")
+                    Text(
+                        model.aiBackend == .qvac
+                            ? "Managed in-app QVAC runtime · GGUF · context up to 262K tokens"
+                            : "In-process Apple MLX · native context up to 262K tokens"
+                    )
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -169,6 +202,8 @@ struct SettingsView: View {
     private func modelRow(_ plan: BuiltInModelPlan) -> some View {
         let selected = plan.model.id == model.selectedModelID
         let recommended = plan.model.id == model.recommendedModelPlan.model.id
+        let cached = model.aiBackend == .native
+            && model.isModelCached(plan.model)
         let compatible = plan.fitsMemoryBudget
             && model.deviceProfile.totalMemoryBytes
                 >= plan.model.minimumDeviceMemoryBytes
@@ -196,7 +231,7 @@ struct SettingsView: View {
                             .font(.caption2.weight(.semibold))
                             .foregroundStyle(.tint)
                     }
-                    if model.isModelCached(plan.model) {
+                    if cached {
                         Text("Downloaded")
                             .font(.caption2.weight(.semibold))
                             .foregroundStyle(.green)
@@ -209,7 +244,9 @@ struct SettingsView: View {
 
                 Text(
                     compatible
-                        ? "\(plan.model.downloadLabel) download · \(plan.contextLabel) context · ~\(plan.memoryLabel) memory"
+                        ? model.aiBackend == .qvac
+                            ? "QVAC GGUF download · \(plan.contextLabel) context · 50% memory ceiling"
+                            : "\(plan.model.downloadLabel) download · \(plan.contextLabel) context · ~\(plan.memoryLabel) memory"
                         : "Unavailable under the 50% memory safety limit"
                 )
                 .font(.caption2.monospacedDigit())
@@ -247,7 +284,7 @@ struct SettingsView: View {
                 if selected {
                     selectedModelAction
                 } else {
-                    Button(model.isModelCached(plan.model) ? "Load & use" : "Download & use") {
+                    Button(cached ? "Load & use" : "Download & use") {
                         model.selectModel(plan.model.id)
                     }
                     .disabled(
@@ -257,7 +294,7 @@ struct SettingsView: View {
                     )
                 }
 
-                if model.isModelCached(plan.model) {
+                if cached {
                     Button("Delete", role: .destructive) {
                         model.requestDeleteModel(plan.model)
                     }

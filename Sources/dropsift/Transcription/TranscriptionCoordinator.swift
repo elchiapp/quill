@@ -27,12 +27,30 @@ actor TranscriptionCoordinator {
     private var draining = false
     private var activeSession: URL?
     private var engine: TranscriptionEngine?
-    private var diarizer: SpeakerDiarizationEngine?
+    private var engineBackend: AIBackend?
+    private var diarizer: (any SpeakerDiarization)?
+    private var diarizerBackend: AIBackend?
+    private var aiBackend: AIBackend = .native
     private var lastFailure: String?
     private var statusHandler: (@Sendable (Status) -> Void)?
 
     func setStatusHandler(_ handler: @escaping @Sendable (Status) -> Void) {
         statusHandler = handler
+    }
+
+    func configureBackend(_ backend: AIBackend) async {
+        aiBackend = backend
+        guard activeSession == nil else { return }
+        if engineBackend != backend {
+            await engine?.release()
+            engine = nil
+            engineBackend = nil
+        }
+        if diarizerBackend != backend {
+            await diarizer?.release()
+            diarizer = nil
+            diarizerBackend = nil
+        }
     }
 
     /// Queue a finished session. With transcription disabled in config, the
@@ -140,8 +158,10 @@ actor TranscriptionCoordinator {
         }
         await engine?.release()
         engine = nil
-        diarizer?.release()
+        engineBackend = nil
+        await diarizer?.release()
         diarizer = nil
+        diarizerBackend = nil
         publish(lastFailure.map { .failed(session: $0) } ?? .idle)
         draining = false
         // An enqueue that landed between the loop exiting and the release
@@ -151,7 +171,11 @@ actor TranscriptionCoordinator {
 
     private func transcribe(_ dir: URL) async throws -> TranscriptionOutcome {
         let manifestSnapshot = try SessionMeta.read(from: dir)
-        let engine = try await preparedEngine(session: dir.lastPathComponent)
+        let selectedBackend = aiBackend
+        let engine = try await preparedEngine(
+            session: dir.lastPathComponent,
+            backend: selectedBackend
+        )
         publish(.transcribing(session: dir.lastPathComponent, queued: queue.count))
 
         var merged: [TranscriptDocument.Segment] = []
@@ -179,7 +203,10 @@ actor TranscriptionCoordinator {
                 publish(.diarizing(session: dir.lastPathComponent, queued: queue.count))
                 log(dir, "diarizing \(track.file) (\(Config.diarizationEngine()))")
                 do {
-                    speakerTurns = try await preparedDiarizer().diarize(audio)
+                    let diarizer = try await preparedDiarizer(
+                        backend: selectedBackend
+                    )
+                    speakerTurns = try await diarizer.diarize(audio)
                     detectedRemoteSpeakers.formUnion(speakerTurns.map(\.speaker))
                     usedDiarization = !speakerTurns.isEmpty
                     log(
@@ -227,8 +254,8 @@ actor TranscriptionCoordinator {
             languageCode: TranscriptLanguageDetector.detect(in: merged),
             diarization: usedDiarization
                 ? TranscriptDocument.DiarizationInfo(
-                    engine: preparedDiarizerName,
-                    model: preparedDiarizerModel,
+                    engine: preparedDiarizerName(for: selectedBackend),
+                    model: preparedDiarizerModel(for: selectedBackend),
                     track: "system",
                     speakerCount: detectedRemoteSpeakers.count
                 )
@@ -257,8 +284,29 @@ actor TranscriptionCoordinator {
         publish(.completed(session: dir.lastPathComponent))
     }
 
-    private func preparedEngine(session: String) async throws -> TranscriptionEngine {
-        if let engine { return engine }
+    private func preparedEngine(
+        session: String,
+        backend: AIBackend
+    ) async throws -> TranscriptionEngine {
+        if let engine, engineBackend == backend { return engine }
+        await engine?.release()
+        self.engine = nil
+        engineBackend = nil
+        if backend == .qvac {
+            let engine = QVACTranscriptionEngine { [weak self] progress, detail in
+                Task {
+                    await self?.publish(.preparingModel(
+                        session: session,
+                        detail: detail,
+                        progress: progress
+                    ))
+                }
+            }
+            try await engine.prepare()
+            self.engine = engine
+            engineBackend = backend
+            return engine
+        }
         let configured = Config.transcriptionEngine()
         if configured != "parakeet" {
             FileHandle.standardError.write(Data(
@@ -276,21 +324,36 @@ actor TranscriptionCoordinator {
         }
         try await engine.prepare()
         self.engine = engine
+        engineBackend = backend
         return engine
     }
 
-    private var preparedDiarizerName: String {
-        "offline-vbx"
+    private func preparedDiarizerName(for backend: AIBackend) -> String {
+        backend == .qvac ? "qvac-sortformer" : "offline-vbx"
     }
 
-    private var preparedDiarizerModel: String {
-        "pyannote-community-1-wespeaker-vbx-coreml"
+    private func preparedDiarizerModel(for backend: AIBackend) -> String {
+        backend == .qvac
+            ? "parakeet-sortformer-4spk-v2.1-q8_0"
+            : "pyannote-community-1-wespeaker-vbx-coreml"
     }
 
-    private func preparedDiarizer() async throws -> SpeakerDiarizationEngine {
-        if let diarizer { return diarizer }
+    private func preparedDiarizer(
+        backend: AIBackend
+    ) async throws -> any SpeakerDiarization {
+        if let diarizer, diarizerBackend == backend { return diarizer }
+        await diarizer?.release()
+        diarizer = nil
+        diarizerBackend = nil
+        if backend == .qvac {
+            let diarizer = QVACSpeakerDiarizationEngine()
+            try await diarizer.prepare()
+            self.diarizer = diarizer
+            diarizerBackend = backend
+            return diarizer
+        }
         let configured = Config.diarizationEngine()
-        if configured != preparedDiarizerName {
+        if configured != preparedDiarizerName(for: backend) {
             FileHandle.standardError.write(Data(
                 "warning: unknown diarization engine \"\(configured)\" — using offline-vbx\n".utf8
             ))
@@ -298,6 +361,7 @@ actor TranscriptionCoordinator {
         let diarizer = SpeakerDiarizationEngine()
         try await diarizer.prepare()
         self.diarizer = diarizer
+        diarizerBackend = backend
         return diarizer
     }
 

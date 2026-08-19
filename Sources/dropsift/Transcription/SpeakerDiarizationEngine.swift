@@ -8,10 +8,18 @@ struct DetectedSpeakerTurn: Sendable, Equatable {
     let confidence: Float
 }
 
+protocol SpeakerDiarization: Sendable {
+    var name: String { get }
+    var model: String { get }
+    func prepare() async throws
+    func diarize(_ audio: URL) async throws -> [DetectedSpeakerTurn]
+    func release() async
+}
+
 /// Batch diarization for completed system-audio tracks. The offline
 /// Pyannote/WeSpeaker/VBx pipeline is FluidAudio's highest-quality option for
 /// complete meeting files and determines the speaker count automatically.
-final class SpeakerDiarizationEngine: @unchecked Sendable {
+final class SpeakerDiarizationEngine: SpeakerDiarization, @unchecked Sendable {
     let name = "offline-vbx"
     let model = "pyannote-community-1-wespeaker-vbx-coreml"
 
@@ -88,7 +96,7 @@ final class SpeakerDiarizationEngine: @unchecked Sendable {
             }
     }
 
-    func release() {
+    func release() async {
         manager = nil
     }
 }

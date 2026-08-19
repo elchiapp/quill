@@ -69,6 +69,14 @@ enum Config {
         return preferred(new: dropsift, legacy: quill)
     }
 
+    static var qvacCacheRoot: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(
+                "Library/Caches/Dropsift/QVAC",
+                isDirectory: true
+            )
+    }
+
     /// The configured recordings root, or nil if no config file / no key.
     static func recordingsDir() -> URL? {
         guard let dir = load()?["recordings_dir"] as? String, !dir.isEmpty else { return nil }

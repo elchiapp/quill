@@ -3,3 +3,5 @@
 dist/
 .dropsift-private/
 xcuserdata/
+QVACBridge/node_modules/
+.DS_Store

@@ -177,6 +177,7 @@ final class AppModel: ObservableObject {
 
     @Published var aiStatus: BuiltInAIState
     @Published private(set) var aiDownloadIsStalled = false
+    @Published var aiBackend: AIBackend
     @Published var selectedModelID: String
     @Published var selectedModelPlan: BuiltInModelPlan
     @Published var showingSettings = false
@@ -194,7 +195,7 @@ final class AppModel: ObservableObject {
 
     private let transcription = TranscriptionCoordinator()
     private let meetingDetector = MeetingDetector()
-    private let llm: BuiltInLLMEngine
+    private let llm: LocalAIEngine
     private let chatStore: ChatStore
     private let semanticStore: SharedSemanticStore
     private var session: RecordingSession?
@@ -222,6 +223,7 @@ final class AppModel: ObservableObject {
     private var systemLevelUpdatedAt: Date?
 
     private static let selectedModelKey = "dropsift.builtInAI.selectedModel"
+    private static let selectedBackendKey = "dropsift.localAI.backend"
     private static let recommendationKey = "dropsift.builtInAI.recommendationHandled"
     private static let legacySelectedModelKey = "quill.builtInAI.selectedModel"
     private static let legacyRecommendationKey = "quill.builtInAI.recommendationHandled"
@@ -248,6 +250,10 @@ final class AppModel: ObservableObject {
             ?? Self.legacyDefaults?.string(forKey: Self.legacySelectedModelKey)
         let selectedModel = AIModelCatalog.model(id: storedModelID)
         let modelPlan = AIModelCatalog.plan(for: selectedModel, device: profile)
+        let storedBackend = UserDefaults.standard.string(
+            forKey: Self.selectedBackendKey
+        )
+        let selectedBackend = AIBackend(rawValue: storedBackend ?? "") ?? .native
 
         self.root = root
         knowledgeRoot = root.deletingLastPathComponent().appendingPathComponent(
@@ -257,9 +263,11 @@ final class AppModel: ObservableObject {
         deviceProfile = profile
         selectedModelID = selectedModel.id
         selectedModelPlan = modelPlan
-        llm = BuiltInLLMEngine(
+        aiBackend = selectedBackend
+        llm = LocalAIEngine(
             cacheRoot: Config.modelCacheRoot,
-            plan: modelPlan
+            plan: modelPlan,
+            backend: selectedBackend
         )
         chatStore = ChatStore(directory: root.deletingLastPathComponent().appendingPathComponent(
             "Threads",
@@ -268,12 +276,13 @@ final class AppModel: ObservableObject {
         semanticStore = SharedSemanticStore(
             root: root.deletingLastPathComponent()
         )
-        aiStatus = BuiltInLLMEngine.hasCachedModel(
-            selectedModel,
-            in: Config.modelCacheRoot
-        )
-            ? .downloaded
-            : .notDownloaded
+        aiStatus = selectedBackend == .native
+            && BuiltInLLMEngine.hasCachedModel(
+                selectedModel,
+                in: Config.modelCacheRoot
+            )
+                ? .downloaded
+                : .notDownloaded
         meetingDetectionEnabled = UserDefaults.standard.object(
             forKey: Self.meetingDetectionKey
         ) as? Bool ?? true
@@ -345,11 +354,18 @@ final class AppModel: ObservableObject {
     }
 
     var selectedModel: String {
-        selectedModelPlan.model.displayName
+        aiBackend == .qvac
+            ? "\(selectedModelPlan.model.name) · QVAC GGUF 4-bit"
+            : selectedModelPlan.model.displayName
     }
 
     var modelCacheRoot: URL {
-        Config.modelCacheRoot
+        aiBackend == .qvac
+            ? Config.qvacCacheRoot.appendingPathComponent(
+                "Models",
+                isDirectory: true
+            )
+            : Config.modelCacheRoot
     }
 
     var recommendedModelPlan: BuiltInModelPlan {
@@ -386,6 +402,7 @@ final class AppModel: ObservableObject {
     func startServices() {
         let model = self
         Task { [transcription, root, model] in
+            await transcription.configureBackend(model.aiBackend)
             await transcription.setStatusHandler { status in
                 Task { @MainActor in model.apply(status) }
             }
@@ -405,7 +422,8 @@ final class AppModel: ObservableObject {
             let pendingModelID = UserDefaults.standard.string(
                 forKey: Self.pendingModelDownloadKey
             )
-            if selectedModelIsCached
+            if model.aiBackend == .qvac
+                || selectedModelIsCached
                 || selectedModelIsPartial
                 || pendingModelID == selectedModel.id
             {
@@ -460,6 +478,7 @@ final class AppModel: ObservableObject {
         semanticAnalysisTask = nil
         semanticProcessingSourceID = nil
         semanticProcessingLabel = nil
+        Task { await QVACRuntime.shared.shutdown() }
     }
 
     func toggleRecording() {
@@ -732,14 +751,10 @@ final class AppModel: ObservableObject {
                     } else {
                         let kind: KnowledgeItemKind =
                             type?.conforms(to: .image) == true ? .image : .document
-                        let destinationRoot = knowledgeRoot
-                        let item = try await Task.detached(priority: .userInitiated) {
-                            try KnowledgeLibrary.importFile(
-                                url,
-                                as: kind,
-                                into: destinationRoot
-                            )
-                        }.value
+                        let item = try await importKnowledgeFile(
+                            url,
+                            requestedKind: kind
+                        )
                         lastSelection = "knowledge:\(item.id.uuidString)"
                         reloadKnowledge(selecting: item.id)
                     }
@@ -1423,13 +1438,41 @@ final class AppModel: ObservableObject {
             model,
             in: Config.modelCacheRoot
         )
-        aiStatus = cached ? .downloaded : .notDownloaded
+        aiStatus = aiBackend == .native && cached ? .downloaded : .notDownloaded
         Task { [weak self, llm] in
             await llm.configure(newPlan)
             guard let self else { return }
             if downloadAndUse || cached {
                 await self.prepareBuiltInAI()
             }
+        }
+    }
+
+    func selectAIBackend(_ backend: AIBackend) {
+        guard backend != aiBackend, !isAnswering, !isAITransitioning else { return }
+        aiPreparationTask?.cancel()
+        aiPreparationTask = nil
+        aiDownloadStallTask?.cancel()
+        aiDownloadStallTask = nil
+        aiDownloadIsStalled = false
+        aiBackend = backend
+        UserDefaults.standard.set(backend.rawValue, forKey: Self.selectedBackendKey)
+        aiStatus = backend == .native
+            && BuiltInLLMEngine.hasCachedModel(
+                selectedModelPlan.model,
+                in: Config.modelCacheRoot
+            )
+                ? .downloaded
+                : .notDownloaded
+
+        Task { [weak self, llm, transcription] in
+            await llm.setBackend(backend)
+            await transcription.configureBackend(backend)
+            if backend == .native {
+                await QVACImageExtractor.shared.unload()
+            }
+            guard let self else { return }
+            await self.prepareBuiltInAI()
         }
     }
 
@@ -1586,13 +1629,14 @@ final class AppModel: ObservableObject {
 
     func openModelFolder() {
         try? FileManager.default.createDirectory(
-            at: Config.modelCacheRoot,
+            at: modelCacheRoot,
             withIntermediateDirectories: true
         )
-        NSWorkspace.shared.open(Config.modelCacheRoot)
+        NSWorkspace.shared.open(modelCacheRoot)
     }
 
     private var shouldOfferModelRecommendation: Bool {
+        guard aiBackend == .native else { return false }
         let recommendation = recommendedModelPlan
         guard recommendation.model.id != selectedModelID else { return false }
         return (
@@ -1654,14 +1698,10 @@ final class AppModel: ObservableObject {
                     currentName: url.lastPathComponent
                 )
                 do {
-                    let root = knowledgeRoot
-                    let item = try await Task.detached(priority: .userInitiated) {
-                        try KnowledgeLibrary.importFile(
-                            url,
-                            as: requestedKind,
-                            into: root
-                        )
-                    }.value
+                    let item = try await importKnowledgeFile(
+                        url,
+                        requestedKind: requestedKind
+                    )
                     lastID = item.id
                     reloadKnowledge(selecting: item.id)
                 } catch {
@@ -1674,6 +1714,31 @@ final class AppModel: ObservableObject {
                 section = .timeline
             }
         }
+    }
+
+    private func importKnowledgeFile(
+        _ url: URL,
+        requestedKind: KnowledgeItemKind
+    ) async throws -> KnowledgeItem {
+        let resolvedKind: KnowledgeItemKind = contentType(for: url)?
+            .conforms(to: .image) == true ? .image : requestedKind
+        let extractedBlocks: [KnowledgeBlock]?
+        if aiBackend == .qvac, resolvedKind == .image {
+            extractedBlocks = try await QVACImageExtractor.shared.extract(
+                from: url
+            )
+        } else {
+            extractedBlocks = nil
+        }
+        let root = knowledgeRoot
+        return try await Task.detached(priority: .userInitiated) {
+            try KnowledgeLibrary.importFile(
+                url,
+                as: resolvedKind,
+                into: root,
+                extractedBlocks: extractedBlocks
+            )
+        }.value
     }
 
     private func importAudioFiles(_ urls: [URL]) {
@@ -1853,10 +1918,12 @@ final class AppModel: ObservableObject {
         }.first
         let semanticSource = manuallyRequestedSource
             ?? automaticSemanticSource
-        let modelIsCached = BuiltInLLMEngine.hasCachedModel(
-            selectedModelPlan.model,
-            in: Config.modelCacheRoot
-        )
+        let modelIsCached = aiBackend == .qvac
+            ? aiStatus == .ready
+            : BuiltInLLMEngine.hasCachedModel(
+                selectedModelPlan.model,
+                in: Config.modelCacheRoot
+            )
         removeCompletedAutomaticPresentationRequests(from: sources)
         removeCompletedAutomaticSummaryRequests(from: sources)
         let automaticPresentationSource = modelIsCached
@@ -1928,7 +1995,9 @@ final class AppModel: ObservableObject {
         summaryGenerationItemID = needsSummary ? source.sourceID : nil
         let store = semanticStore
         let engine = llm
-        let modelName = selectedModelPlan.model.name
+        let modelName = aiBackend == .qvac
+            ? "\(selectedModelPlan.model.name) · QVAC"
+            : selectedModelPlan.model.name
         semanticAnalysisTask = Task { [weak self] in
             guard let self else { return }
             var presentationSaved = false

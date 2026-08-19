@@ -15,6 +15,7 @@ MLX_METALLIB="$MLX_DERIVED_DATA/Build/Products/Release/Cmlx.framework/Versions/A
 MLX_BUILD_LOG="$DIST_DIR/mlx-metal-build.log"
 VERSION_FILE="$PROJECT_ROOT/VERSION"
 BUILD_NUMBER_FILE="$PROJECT_ROOT/BUILD_NUMBER"
+QVAC_SOURCE="$PROJECT_ROOT/QVACBridge"
 
 cd "$PROJECT_ROOT"
 
@@ -71,6 +72,40 @@ APP_BUNDLE="$PACKAGE_WORK/Dropsift.app"
 /bin/mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
 /usr/bin/ditto "$DROPSIFT_BINARY" "$APP_BUNDLE/Contents/MacOS/dropsift"
 /usr/bin/ditto "$MLX_METALLIB" "$APP_BUNDLE/Contents/Resources/mlx.metallib"
+
+# QVAC runs as a child Bare process managed by Dropsift. Bundle the bridge and
+# only the Apple-silicon addon prebuilds; npm packages otherwise include native
+# binaries for every desktop, mobile, and server platform.
+QVAC_EXECUTABLE="$QVAC_SOURCE/node_modules/bare-runtime-darwin-arm64/bin/bare"
+if [[ ! -f "$QVAC_SOURCE/bridge.mjs" || ! -f "$QVAC_SOURCE/package-lock.json" ]]; then
+    print -u2 "Missing QVAC bridge sources in $QVAC_SOURCE"
+    exit 1
+fi
+if [[ ! -x "$QVAC_EXECUTABLE" ]]; then
+    /usr/bin/env npm ci --omit=dev --prefix "$QVAC_SOURCE"
+    /bin/chmod 755 "$QVAC_EXECUTABLE"
+fi
+QVAC_RUNTIME="$APP_BUNDLE/Contents/Resources/QVACRuntime"
+if [[ "$QVAC_RUNTIME" != "$APP_BUNDLE/Contents/Resources/QVACRuntime" ]]; then
+    print -u2 "Refusing to assemble QVAC at an unexpected path: $QVAC_RUNTIME"
+    exit 1
+fi
+/bin/mkdir -p "$QVAC_RUNTIME"
+/usr/bin/ditto "$QVAC_SOURCE/bridge.mjs" "$QVAC_RUNTIME/bridge.mjs"
+/usr/bin/ditto "$QVAC_SOURCE/package.json" "$QVAC_RUNTIME/package.json"
+/usr/bin/ditto "$QVAC_SOURCE/package-lock.json" "$QVAC_RUNTIME/package-lock.json"
+/usr/bin/rsync -a --exclude='prebuilds/*' \
+    "$QVAC_SOURCE/node_modules/" "$QVAC_RUNTIME/node_modules/"
+while IFS= read -r PREBUILD
+do
+    RELATIVE_PREBUILD=${PREBUILD#"$QVAC_SOURCE/"}
+    /bin/mkdir -p "${QVAC_RUNTIME}/${RELATIVE_PREBUILD:h}"
+    /usr/bin/ditto "$PREBUILD" "$QVAC_RUNTIME/$RELATIVE_PREBUILD"
+done < <(/usr/bin/find "$QVAC_SOURCE/node_modules" \
+    -type d -path '*/prebuilds/darwin-arm64')
+/bin/chmod 755 \
+    "$QVAC_RUNTIME/node_modules/bare-runtime-darwin-arm64/bin/bare"
+
 /bin/ln -s ../Resources "$APP_BUNDLE/Contents/MacOS/Resources"
 /bin/chmod 755 "$APP_BUNDLE/Contents/MacOS/dropsift"
 /usr/bin/ditto "$PROJECT_ROOT/Packaging/Info.plist" "$APP_BUNDLE/Contents/Info.plist"

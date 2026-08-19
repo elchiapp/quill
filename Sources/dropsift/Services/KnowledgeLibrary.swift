@@ -48,7 +48,8 @@ enum KnowledgeLibrary {
     static func importFile(
         _ source: URL,
         as requestedKind: KnowledgeItemKind,
-        into root: URL
+        into root: URL,
+        extractedBlocks: [KnowledgeBlock]? = nil
     ) throws -> KnowledgeItem {
         let kind = resolvedKind(for: source, requested: requestedKind)
         let id = UUID()
@@ -63,12 +64,14 @@ enum KnowledgeLibrary {
         let destination = directory.appendingPathComponent(assetName)
         try FileManager.default.copyItem(at: source, to: destination)
 
-        var blocks: [KnowledgeBlock] = []
+        var blocks: [KnowledgeBlock] = extractedBlocks ?? []
         var extractionError: String?
-        do {
-            blocks = try KnowledgeExtractor.extract(from: destination, kind: kind)
-        } catch {
-            extractionError = error.localizedDescription
+        if extractedBlocks == nil {
+            do {
+                blocks = try KnowledgeExtractor.extract(from: destination, kind: kind)
+            } catch {
+                extractionError = error.localizedDescription
+            }
         }
 
         let fallbackTitle = source.deletingPathExtension().lastPathComponent

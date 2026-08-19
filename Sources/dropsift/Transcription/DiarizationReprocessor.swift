@@ -61,8 +61,14 @@ enum DiarizationReprocessor {
             recoverUnassignedSpeech: recoverUnassignedSpeech
         )
         try await engine.prepare()
-        defer { engine.release() }
-        let turns = try await engine.diarize(audioURL)
+        let turns: [DetectedSpeakerTurn]
+        do {
+            turns = try await engine.diarize(audioURL)
+        } catch {
+            await engine.release()
+            throw error
+        }
+        await engine.release()
         let offsetSeconds = TimeInterval(remoteTrack.offsetMs) / 1_000
 
         var reassignedSegmentCount = 0
