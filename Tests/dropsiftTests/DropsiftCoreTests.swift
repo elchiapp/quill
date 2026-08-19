@@ -772,6 +772,7 @@ func chatStoreRoundTripsThreads() throws {
     let store = ChatStore(directory: root)
     let thread = ChatThread(
         title: "Project decisions",
+        titleIsManual: true,
         scope: .recording("meeting-1"),
         messages: [
             ChatMessage(role: .user, content: "What did we decide?"),
@@ -797,9 +798,56 @@ func chatStoreRoundTripsThreads() throws {
 
     #expect(loaded.count == 1)
     #expect(loaded[0].id == thread.id)
+    #expect(loaded[0].titleIsManual)
     #expect(loaded[0].scope.recordingID == "meeting-1")
     #expect(loaded[0].messages.count == 2)
     #expect(loaded[0].messages[1].sources.first?.startMs == 4_000)
+}
+
+@Test
+func legacyChatThreadsDecodeWithAutomaticTitles() throws {
+    let id = UUID()
+    let timestamp = "2026-08-19T10:00:00Z"
+    let json = """
+    {
+      "id": "\(id.uuidString)",
+      "title": "Existing conversation",
+      "createdAt": "\(timestamp)",
+      "updatedAt": "\(timestamp)",
+      "scope": { "kind": "allRecordings" },
+      "messages": []
+    }
+    """
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    let thread = try decoder.decode(ChatThread.self, from: Data(json.utf8))
+
+    #expect(!thread.titleIsManual)
+}
+
+@Test
+@MainActor
+func conversationTitleChangesPersistImmediately() throws {
+    let base = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let recordings = base.appendingPathComponent("Recordings", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: base) }
+    try FileManager.default.createDirectory(
+        at: recordings,
+        withIntermediateDirectories: true
+    )
+
+    let model = AppModel(root: recordings)
+    model.createThread()
+    let threadID = try #require(model.selectedThreadID)
+    model.renameThread(threadID, to: "Malta tax follow-up")
+
+    let saved = ChatStore(
+        directory: base.appendingPathComponent("Threads", isDirectory: true)
+    ).load()
+    let thread = try #require(saved.first(where: { $0.id == threadID }))
+    #expect(thread.title == "Malta tax follow-up")
+    #expect(thread.titleIsManual)
 }
 
 @Test

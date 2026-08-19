@@ -121,6 +121,7 @@ struct ChatMessage: Codable, Identifiable, Sendable {
 struct ChatThread: Codable, Identifiable, Sendable {
     let id: UUID
     var title: String
+    var titleIsManual: Bool
     var createdAt: Date
     var updatedAt: Date
     var scope: ChatScope
@@ -129,6 +130,7 @@ struct ChatThread: Codable, Identifiable, Sendable {
     init(
         id: UUID = UUID(),
         title: String = "New conversation",
+        titleIsManual: Bool = false,
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
         scope: ChatScope = .all,
@@ -136,9 +138,47 @@ struct ChatThread: Codable, Identifiable, Sendable {
     ) {
         self.id = id
         self.title = title
+        self.titleIsManual = titleIsManual
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.scope = scope
         self.messages = messages
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case title
+        case titleIsManual
+        case createdAt
+        case updatedAt
+        case scope
+        case messages
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        title = try container.decode(String.self, forKey: .title)
+        titleIsManual = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .titleIsManual
+        ) ?? false
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        scope = try container.decode(ChatScope.self, forKey: .scope)
+        messages = try container.decode([ChatMessage].self, forKey: .messages)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(title, forKey: .title)
+        if titleIsManual {
+            try container.encode(true, forKey: .titleIsManual)
+        }
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(updatedAt, forKey: .updatedAt)
+        try container.encode(scope, forKey: .scope)
+        try container.encode(messages, forKey: .messages)
     }
 }

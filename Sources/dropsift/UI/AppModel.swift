@@ -65,6 +65,7 @@ final class AppModel: ObservableObject {
     private struct ThreadTitleRequest: Sendable {
         let threadID: UUID
         let reportsErrors: Bool
+        let expectedTitle: String
     }
 
     enum DeletionRequest: Identifiable, Equatable {
@@ -1087,11 +1088,26 @@ final class AppModel: ObservableObject {
         persistThreads()
     }
 
+    func renameThread(_ threadID: UUID, to title: String) {
+        guard let index = threads.firstIndex(where: { $0.id == threadID }) else { return }
+        let sanitizedTitle = title.replacingOccurrences(of: "\n", with: " ")
+        guard threads[index].title != sanitizedTitle else { return }
+        threads[index].title = sanitizedTitle
+        threads[index].titleIsManual = true
+        threads[index].updatedAt = Date()
+        requestedThreadTitles.removeAll { $0.threadID == threadID }
+        persistThreads()
+    }
+
     func regenerateThreadTitle(_ threadID: UUID) {
-        guard threads.contains(where: { $0.id == threadID }) else { return }
+        guard let thread = threads.first(where: { $0.id == threadID }) else { return }
         requestedThreadTitles.removeAll { $0.threadID == threadID }
         requestedThreadTitles.insert(
-            ThreadTitleRequest(threadID: threadID, reportsErrors: true),
+            ThreadTitleRequest(
+                threadID: threadID,
+                reportsErrors: true,
+                expectedTitle: thread.title
+            ),
             at: 0
         )
         scanForSemanticCandidates()
@@ -1213,7 +1229,8 @@ final class AppModel: ObservableObject {
         let userMessage = ChatMessage(role: .user, content: question)
         threads[index].messages.append(userMessage)
         threads[index].updatedAt = Date()
-        if threads[index].messages.count == 1 {
+        if threads[index].messages.count == 1,
+           !threads[index].titleIsManual {
             threads[index].title = Self.threadTitle(from: question)
         }
         let scope = threads[index].scope
@@ -1347,13 +1364,15 @@ final class AppModel: ObservableObject {
                 persistThreads()
                 chatStage = .idle
                 if shouldGenerateConversationTitle,
+                   !threads[currentIndex].titleIsManual,
                    !requestedThreadTitles.contains(where: {
                        $0.threadID == threadID
                    }) {
                     requestedThreadTitles.append(
                         ThreadTitleRequest(
                             threadID: threadID,
-                            reportsErrors: false
+                            reportsErrors: false,
+                            expectedTitle: threads[currentIndex].title
                         )
                     )
                 }
@@ -1828,8 +1847,11 @@ final class AppModel: ObservableObject {
                     }
                     if let index = threads.firstIndex(where: {
                         $0.id == request.threadID
-                    }) {
+                    }),
+                       threads[index].title == request.expectedTitle,
+                       request.reportsErrors || !threads[index].titleIsManual {
                         threads[index].title = title
+                        threads[index].titleIsManual = false
                         threads[index].updatedAt = Date()
                         persistThreads()
                     }

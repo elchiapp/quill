@@ -26,9 +26,11 @@ struct ChatDetailView: View {
     private var chatHeader: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(thread.title)
+                TextField("Conversation title", text: titleBinding)
+                    .textFieldStyle(.plain)
                     .font(.title2.weight(.semibold))
                     .lineLimit(1)
+                    .accessibilityIdentifier("conversation-title")
                 if model.regeneratingThreadID == thread.id {
                     HStack(spacing: 6) {
                         ProgressView()
@@ -84,6 +86,16 @@ struct ChatDetailView: View {
             .fixedSize()
         }
         .padding(20)
+    }
+
+    private var titleBinding: Binding<String> {
+        Binding(
+            get: {
+                model.threads.first(where: { $0.id == thread.id })?.title
+                    ?? thread.title
+            },
+            set: { model.renameThread(thread.id, to: $0) }
+        )
     }
 
     @ViewBuilder

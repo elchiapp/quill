@@ -381,7 +381,11 @@ private struct ChatsColumn: View {
                                 )
                             }
                             VStack(alignment: .leading, spacing: 5) {
-                                Text(thread.title)
+                                Text(
+                                    thread.title.isEmpty
+                                        ? "Untitled conversation"
+                                        : thread.title
+                                )
                                     .font(.body.weight(.medium))
                                     .lineLimit(2)
                                 HStack {
