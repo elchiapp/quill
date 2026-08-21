@@ -984,14 +984,56 @@ func passiveRecordingLibraryRefreshDoesNotRegenerateTitles() throws {
 @Test
 func qvacLongAudioIsSplitIntoBoundedTranscriptionParts() throws {
     let chunks = QVACAudioChunkPlan.make(
-        duration: 12 * 60 + 17,
-        maximumDuration: 5 * 60
+        duration: 2 * 60 + 17,
+        maximumDuration: QVACTranscriptionEngine.chunkDuration
     )
 
     #expect(chunks.count == 3)
-    #expect(chunks[0] == .init(index: 0, start: 0, duration: 300))
-    #expect(chunks[1] == .init(index: 1, start: 300, duration: 300))
-    #expect(chunks[2] == .init(index: 2, start: 600, duration: 137))
+    #expect(chunks[0] == .init(index: 0, start: 0, duration: 60))
+    #expect(chunks[1] == .init(index: 1, start: 60, duration: 60))
+    #expect(chunks[2] == .init(index: 2, start: 120, duration: 17))
+}
+
+@Test
+func qvacAudioNormalizationProducesRaw16KMonoFloat32() async throws {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let source = root.appendingPathComponent("source.caf")
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(
+        at: root,
+        withIntermediateDirectories: true
+    )
+    let format = try #require(AVAudioFormat(
+        standardFormatWithSampleRate: 48_000,
+        channels: 2
+    ))
+    let buffer = try #require(AVAudioPCMBuffer(
+        pcmFormat: format,
+        frameCapacity: 96_000
+    ))
+    buffer.frameLength = 96_000
+    for channel in 0..<2 {
+        let samples = try #require(buffer.floatChannelData?[channel])
+        for frame in 0..<96_000 {
+            samples[frame] = sin(Float(frame) * 0.03) * 0.1
+        }
+    }
+    let file = try AVAudioFile(forWriting: source, settings: format.settings)
+    try file.write(from: buffer)
+
+    let raw = try await QVACAudioConverter.convertToPCM(
+        source,
+        range: .init(index: 0, start: 0, duration: 2)
+    )
+    defer { try? FileManager.default.removeItem(at: raw) }
+    let size = try #require(
+        FileManager.default.attributesOfItem(atPath: raw.path)[.size] as? NSNumber
+    ).intValue
+    let expectedSize = 2 * 16_000 * MemoryLayout<Float>.size
+
+    #expect(raw.pathExtension == "raw")
+    #expect(abs(size - expectedSize) <= 256)
 }
 
 @Test

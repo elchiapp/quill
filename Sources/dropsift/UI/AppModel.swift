@@ -415,10 +415,15 @@ final class AppModel: ObservableObject {
             await transcription.setStatusHandler { status in
                 Task { @MainActor in model.apply(status) }
             }
+            await transcription.setWillBeginWorkHandler {
+                await model.prepareForTranscription()
+            }
             await model.llm.setStateHandler { state in
                 Task { @MainActor in model.applyAIState(state) }
             }
-            await transcription.resumePending(root: root)
+            let resumedTranscription = await transcription.resumePending(
+                root: root
+            )
             let selectedModel = model.selectedModelPlan.model
             let selectedModelIsCached = BuiltInLLMEngine.hasCachedModel(
                 selectedModel,
@@ -431,11 +436,14 @@ final class AppModel: ObservableObject {
             let pendingModelID = UserDefaults.standard.string(
                 forKey: Self.pendingModelDownloadKey
             )
-            if model.aiBackend == .qvac
-                || selectedModelIsCached
-                || selectedModelIsPartial
-                || pendingModelID == selectedModel.id
-            {
+            let shouldPrepareLanguageModel = if model.aiBackend == .qvac {
+                !resumedTranscription
+            } else {
+                selectedModelIsCached
+                    || selectedModelIsPartial
+                    || pendingModelID == selectedModel.id
+            }
+            if shouldPrepareLanguageModel {
                 await model.prepareBuiltInAI()
             }
             if model.shouldOfferModelRecommendation {
@@ -495,6 +503,11 @@ final class AppModel: ObservableObject {
 
     func finishShutdown() async {
         await QVACRuntime.shared.shutdown()
+    }
+
+    private func prepareForTranscription() async {
+        guard aiBackend == .qvac else { return }
+        await llm.suspendForTranscription()
     }
 
     func toggleRecording() {
@@ -2711,6 +2724,13 @@ final class AppModel: ObservableObject {
         case .idle:
             transcriptionStatus = nil
             reloadRecordings()
+            if aiBackend == .qvac {
+                Task { [weak self] in
+                    guard let self else { return }
+                    await self.llm.resumeAfterTranscription()
+                    await self.prepareBuiltInAI()
+                }
+            }
         case .preparingModel(let session, let detail, let progress):
             let percent = Int((progress * 100).rounded())
             transcriptionStatus = "\(detail) · \(percent)% · \(session)"

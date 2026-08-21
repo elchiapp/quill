@@ -34,9 +34,16 @@ actor TranscriptionCoordinator {
     private var aiBackend: AIBackend = .native
     private var lastFailure: String?
     private var statusHandler: (@Sendable (Status) -> Void)?
+    private var willBeginWorkHandler: (@Sendable () async -> Void)?
 
     func setStatusHandler(_ handler: @escaping @Sendable (Status) -> Void) {
         statusHandler = handler
+    }
+
+    func setWillBeginWorkHandler(
+        _ handler: @escaping @Sendable () async -> Void
+    ) {
+        willBeginWorkHandler = handler
     }
 
     func configureBackend(_ backend: AIBackend) async {
@@ -78,11 +85,12 @@ actor TranscriptionCoordinator {
     /// Scan the recordings root for sessions that finished (meta.json exists)
     /// but were never transcribed. Folder names sort chronologically, so
     /// oldest-first is a name sort.
-    func resumePending(root: URL) {
-        guard Config.transcriptionEnabled() else { return }
+    @discardableResult
+    func resumePending(root: URL) -> Bool {
+        guard Config.transcriptionEnabled() else { return false }
         guard let entries = try? FileManager.default.contentsOfDirectory(
             at: root, includingPropertiesForKeys: nil
-        ) else { return }
+        ) else { return false }
 
         let fm = FileManager.default
         let pending = entries
@@ -103,7 +111,8 @@ actor TranscriptionCoordinator {
                     )
             }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
-        for dir in pending where !queue.contains(dir) {
+        for dir in pending where !queue.contains(dir)
+            && activeSession?.standardizedFileURL != dir.standardizedFileURL {
             queue.append(dir)
         }
         if !pending.isEmpty {
@@ -112,6 +121,7 @@ actor TranscriptionCoordinator {
             ))
         }
         drainIfIdle()
+        return !pending.isEmpty
     }
 
     // MARK: -
@@ -124,6 +134,9 @@ actor TranscriptionCoordinator {
     }
 
     private func drain() async {
+        if !queue.isEmpty {
+            await willBeginWorkHandler?()
+        }
         while !queue.isEmpty {
             let dir = queue.removeFirst()
             activeSession = dir
@@ -182,6 +195,8 @@ actor TranscriptionCoordinator {
         var merged: [TranscriptDocument.Segment] = []
         var detectedRemoteSpeakers: Set<String> = []
         var usedDiarization = false
+        var usedNativeDiarizationFallback = false
+        var usedNativeTranscriptionFallback = false
         for track in manifestSnapshot.tracks {
             let audio = dir.appendingPathComponent(track.file)
             guard FileManager.default.fileExists(atPath: audio.path) else {
@@ -194,6 +209,17 @@ actor TranscriptionCoordinator {
             let segments: [TranscriptSegment]
             do {
                 segments = try await engine.transcribe(audio)
+            } catch QVACRuntime.RuntimeError.requestTimedOut
+                where selectedBackend == .qvac {
+                log(
+                    dir,
+                    "QVAC stalled on \(track.file); using native multilingual fallback"
+                )
+                segments = try await transcribeWithNativeFallback(
+                    audio,
+                    session: dir.lastPathComponent
+                )
+                usedNativeTranscriptionFallback = true
             } catch {
                 log(dir, "skipping \(track.file): \(error)")
                 continue
@@ -215,7 +241,36 @@ actor TranscriptionCoordinator {
                         "diarization found \(detectedRemoteSpeakers.count) remote speaker(s)"
                     )
                 } catch {
-                    log(dir, "diarization unavailable; using \"them\": \(error)")
+                    if selectedBackend == .qvac {
+                        log(
+                            dir,
+                            "QVAC diarization unavailable; using native fallback: \(error)"
+                        )
+                        do {
+                            speakerTurns = try await diarizeWithNativeFallback(
+                                audio
+                            )
+                            detectedRemoteSpeakers.formUnion(
+                                speakerTurns.map(\.speaker)
+                            )
+                            usedDiarization = !speakerTurns.isEmpty
+                            usedNativeDiarizationFallback = usedDiarization
+                            log(
+                                dir,
+                                "native diarization found \(detectedRemoteSpeakers.count) remote speaker(s)"
+                            )
+                        } catch {
+                            log(
+                                dir,
+                                "native diarization unavailable; using \"them\": \(error)"
+                            )
+                        }
+                    } else {
+                        log(
+                            dir,
+                            "diarization unavailable; using \"them\": \(error)"
+                        )
+                    }
                 }
             }
 
@@ -248,15 +303,23 @@ actor TranscriptionCoordinator {
         }
 
         let transcript = TranscriptDocument(
-            engine: engine.name,
-            model: engine.model,
+            engine: usedNativeTranscriptionFallback
+                ? engine.name + "+parakeet-fallback"
+                : engine.name,
+            model: usedNativeTranscriptionFallback
+                ? engine.model + "+parakeet-tdt-0.6b-v3-coreml"
+                : engine.model,
             createdAt: ISO8601DateFormatter().string(from: Date()),
             segments: merged,
             languageCode: TranscriptLanguageDetector.detect(in: merged),
             diarization: usedDiarization
                 ? TranscriptDocument.DiarizationInfo(
-                    engine: preparedDiarizerName(for: selectedBackend),
-                    model: preparedDiarizerModel(for: selectedBackend),
+                    engine: usedNativeDiarizationFallback
+                        ? "offline-vbx"
+                        : preparedDiarizerName(for: selectedBackend),
+                    model: usedNativeDiarizationFallback
+                        ? "pyannote-community-1-wespeaker-vbx-coreml"
+                        : preparedDiarizerModel(for: selectedBackend),
                     track: "system",
                     speakerCount: detectedRemoteSpeakers.count
                 )
@@ -277,6 +340,45 @@ actor TranscriptionCoordinator {
         )
         log(dir, "done — \(merged.count) segments")
         return manifestChanged ? .completedAndRetry : .completed
+    }
+
+    private func transcribeWithNativeFallback(
+        _ audio: URL,
+        session: String
+    ) async throws -> [TranscriptSegment] {
+        let fallback = ParakeetEngine { [weak self] progress, detail in
+            Task {
+                await self?.publish(.preparingModel(
+                    session: session,
+                    detail: "QVAC stalled · " + detail,
+                    progress: progress
+                ))
+            }
+        }
+        do {
+            try await fallback.prepare()
+            let segments = try await fallback.transcribe(audio)
+            await fallback.release()
+            return segments
+        } catch {
+            await fallback.release()
+            throw error
+        }
+    }
+
+    private func diarizeWithNativeFallback(
+        _ audio: URL
+    ) async throws -> [DetectedSpeakerTurn] {
+        let fallback = SpeakerDiarizationEngine()
+        do {
+            try await fallback.prepare()
+            let turns = try await fallback.diarize(audio)
+            await fallback.release()
+            return turns
+        } catch {
+            await fallback.release()
+            throw error
+        }
     }
 
     private func publishCompletedCheckpoint(_ dir: URL) {

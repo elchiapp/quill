@@ -1,6 +1,14 @@
 import Foundation
 
 actor LocalAIEngine {
+    enum AvailabilityError: LocalizedError {
+        case transcriptionInProgress
+
+        var errorDescription: String? {
+            "QVAC language features will resume when transcription finishes."
+        }
+    }
+
     typealias StateHandler = @Sendable (BuiltInAIState) -> Void
 
     private let native: BuiltInLLMEngine
@@ -8,6 +16,7 @@ actor LocalAIEngine {
     private var backend: AIBackend
     private var plan: BuiltInModelPlan
     private var stateHandler: StateHandler?
+    private var qvacIsReservedForTranscription = false
 
     init(
         cacheRoot: URL,
@@ -38,6 +47,7 @@ actor LocalAIEngine {
         }
         let oldBackend = backend
         backend = newBackend
+        qvacIsReservedForTranscription = false
         if oldBackend == .qvac {
             await qvac.unload()
         } else {
@@ -61,7 +71,11 @@ actor LocalAIEngine {
     func prepare() async throws {
         switch backend {
         case .native: try await native.prepare()
-        case .qvac: try await qvac.prepare()
+        case .qvac:
+            guard !qvacIsReservedForTranscription else {
+                throw AvailabilityError.transcriptionInProgress
+            }
+            try await qvac.prepare()
         }
     }
 
@@ -70,6 +84,16 @@ actor LocalAIEngine {
         case .native: await native.cancelPreparation()
         case .qvac: await qvac.cancelPreparation()
         }
+    }
+
+    func suspendForTranscription() async {
+        guard backend == .qvac else { return }
+        qvacIsReservedForTranscription = true
+        await qvac.unload()
+    }
+
+    func resumeAfterTranscription() {
+        qvacIsReservedForTranscription = false
     }
 
     func unloadModel(_ modelID: String) async {
@@ -83,13 +107,16 @@ actor LocalAIEngine {
     ) async throws -> String {
         switch backend {
         case .native:
-            try await native.complete(
+            return try await native.complete(
                 systemPrompt: systemPrompt,
                 messages: messages,
                 maxTokens: maxTokens
             )
         case .qvac:
-            try await qvac.complete(
+            guard !qvacIsReservedForTranscription else {
+                throw AvailabilityError.transcriptionInProgress
+            }
+            return try await qvac.complete(
                 systemPrompt: systemPrompt,
                 messages: messages,
                 maxTokens: maxTokens
@@ -104,13 +131,16 @@ actor LocalAIEngine {
     ) async throws -> AsyncThrowingStream<String, Error> {
         switch backend {
         case .native:
-            try await native.stream(
+            return try await native.stream(
                 systemPrompt: systemPrompt,
                 messages: messages,
                 maxTokens: maxTokens
             )
         case .qvac:
-            try await qvac.stream(
+            guard !qvacIsReservedForTranscription else {
+                throw AvailabilityError.transcriptionInProgress
+            }
+            return try await qvac.stream(
                 systemPrompt: systemPrompt,
                 messages: messages,
                 maxTokens: maxTokens

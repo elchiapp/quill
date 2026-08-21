@@ -184,11 +184,9 @@ async function prepareTranscription (id) {
       modelSrc: WHISPER_SMALL_Q8_0,
       modelType: 'whispercpp-transcription',
       modelConfig: {
+        audio_format: 'f32le',
         detect_language: true,
-        no_timestamps: false,
-        token_timestamps: true,
-        split_on_word: true,
-        max_len: 80
+        no_timestamps: false
       },
       onProgress
     })
@@ -199,31 +197,20 @@ async function transcribeAudio (id, params) {
   if (!loaded.transcription) {
     throw new Error('QVAC transcription model is not loaded.')
   }
-  const heartbeat = setInterval(() => {
-    send({
-      id,
-      type: 'progress',
-      detail: 'QVAC is transcribing audio'
-    })
-  }, 5000)
-  try {
-    const segments = await transcribe({
-      modelId: loaded.transcription,
-      audioChunk: params.audioPath,
-      metadata: true
-    })
-    send({
-      id,
-      type: 'result',
-      segments: segments.map(segment => ({
-        startMs: segment.startMs,
-        endMs: segment.endMs,
-        text: segment.text
-      }))
-    })
-  } finally {
-    clearInterval(heartbeat)
-  }
+  const segments = await transcribe({
+    modelId: loaded.transcription,
+    audioChunk: params.audioPath,
+    metadata: true
+  })
+  send({
+    id,
+    type: 'result',
+    segments: segments.map(segment => ({
+      startMs: segment.startMs,
+      endMs: segment.endMs,
+      text: segment.text
+    }))
+  })
 }
 
 async function prepareDiarization (id) {

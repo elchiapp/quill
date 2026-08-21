@@ -4,7 +4,10 @@ import Foundation
 actor QVACTranscriptionEngine: TranscriptionEngine {
     nonisolated let name = "qvac-whisper"
     nonisolated let model = "whisper-small-q8_0"
-    nonisolated static let chunkDuration: TimeInterval = 5 * 60
+    // QVAC Whisper 0.17.1 can stop resolving a batch promise for longer
+    // inputs even though native compute has gone idle. One-minute batches are
+    // verified to complete and keep long recordings checkpointed visibly.
+    nonisolated static let chunkDuration: TimeInterval = 60
 
     private let runtime: QVACRuntime
     private let onPreparationProgress: (@Sendable (Double, String) -> Void)?
@@ -58,7 +61,7 @@ actor QVACTranscriptionEngine: TranscriptionEngine {
                 baseProgress,
                 "QVAC transcribing part \(chunk.index + 1) of \(chunks.count)"
             )
-            let converted = try await QVACAudioConverter.convertToM4A(
+            let converted = try await QVACAudioConverter.convertToPCM(
                 audio,
                 range: chunk
             )
@@ -98,28 +101,25 @@ actor QVACTranscriptionEngine: TranscriptionEngine {
         totalDuration: TimeInterval,
         totalChunks: Int
     ) async throws -> QVACBridgeResponse {
-        for attempt in 0..<2 {
-            do {
-                return try await runtime.request(
-                    "transcribe",
-                    params: QVACBridgeParams(audioPath: audio.path),
-                    timeout: .seconds(10 * 60),
-                    onEvent: { [onTranscriptionProgress] event in
-                        guard event.type == "progress" else { return }
-                        onTranscriptionProgress?(
-                            chunk.start / max(totalDuration, 1),
-                            "QVAC transcribing part \(chunk.index + 1) of \(totalChunks)"
-                        )
-                    }
-                )
-            } catch QVACRuntime.RuntimeError.requestTimedOut where attempt == 0 {
-                await runtime.restart()
-                prepared = false
-                preparedGeneration = nil
-                try await prepare()
-            }
+        do {
+            return try await runtime.request(
+                "transcribe",
+                params: QVACBridgeParams(audioPath: audio.path),
+                timeout: .seconds(75),
+                onEvent: { [onTranscriptionProgress] event in
+                    guard event.type == "progress" else { return }
+                    onTranscriptionProgress?(
+                        chunk.start / max(totalDuration, 1),
+                        "QVAC transcribing part \(chunk.index + 1) of \(totalChunks)"
+                    )
+                }
+            )
+        } catch QVACRuntime.RuntimeError.requestTimedOut {
+            await runtime.restart()
+            prepared = false
+            preparedGeneration = nil
+            throw QVACRuntime.RuntimeError.requestTimedOut("transcription")
         }
-        throw QVACRuntime.RuntimeError.requestTimedOut("transcription")
     }
 
     func release() async {
@@ -176,7 +176,7 @@ actor QVACSpeakerDiarizationEngine: SpeakerDiarization {
 
     func diarize(_ audio: URL) async throws -> [DetectedSpeakerTurn] {
         guard prepared else { throw QVACRuntime.RuntimeError.bridgeUnavailable }
-        let converted = try await QVACAudioConverter.convertToM4A(audio)
+        let converted = try await QVACAudioConverter.convertToPCM(audio)
         defer { try? FileManager.default.removeItem(at: converted) }
         let response = try await runtime.request(
             "diarize",
@@ -200,15 +200,19 @@ actor QVACSpeakerDiarizationEngine: SpeakerDiarization {
     }
 }
 
-private enum QVACAudioConverter {
+enum QVACAudioConverter {
     enum ConversionError: LocalizedError {
         case unsupported(String)
+        case failed(String)
 
         var errorDescription: String? {
             switch self {
             case .unsupported(let file):
                 "QVAC could not convert " + file
                     + " to a supported audio format."
+            case .failed(let file):
+                "QVAC could not normalize " + file
+                    + " to 16 kHz mono audio."
             }
         }
     }
@@ -218,22 +222,22 @@ private enum QVACAudioConverter {
         return max(0, try await asset.load(.duration).seconds)
     }
 
-    static func convertToM4A(
+    static func convertToPCM(
         _ source: URL,
         range: QVACAudioChunkPlan.Chunk? = nil
     ) async throws -> URL {
         let destination = FileManager.default.temporaryDirectory
             .appendingPathComponent("dropsift-qvac-" + UUID().uuidString)
-            .appendingPathExtension("m4a")
+            .appendingPathExtension("raw")
         let asset = AVURLAsset(url: source)
-        guard let exporter = AVAssetExportSession(
-            asset: asset,
-            presetName: AVAssetExportPresetAppleM4A
-        ) else {
+        guard let track = try await asset.loadTracks(
+            withMediaType: .audio
+        ).first else {
             throw ConversionError.unsupported(source.lastPathComponent)
         }
+        let reader = try AVAssetReader(asset: asset)
         if let range {
-            exporter.timeRange = CMTimeRange(
+            reader.timeRange = CMTimeRange(
                 start: CMTime(seconds: range.start, preferredTimescale: 1_000),
                 duration: CMTime(
                     seconds: range.duration,
@@ -241,10 +245,65 @@ private enum QVACAudioConverter {
                 )
             )
         }
+
+        let output = AVAssetReaderTrackOutput(
+            track: track,
+            outputSettings: [
+                AVFormatIDKey: kAudioFormatLinearPCM,
+                AVSampleRateKey: 16_000,
+                AVNumberOfChannelsKey: 1,
+                AVLinearPCMBitDepthKey: 32,
+                AVLinearPCMIsBigEndianKey: false,
+                AVLinearPCMIsFloatKey: true,
+                AVLinearPCMIsNonInterleaved: false,
+            ]
+        )
+        output.alwaysCopiesSampleData = false
+        guard reader.canAdd(output) else {
+            throw ConversionError.unsupported(source.lastPathComponent)
+        }
+        reader.add(output)
+
         do {
-            try await exporter.export(to: destination, as: .m4a)
+            FileManager.default.createFile(
+                atPath: destination.path,
+                contents: nil
+            )
+            let file = try FileHandle(forWritingTo: destination)
+            defer { try? file.close() }
+            guard reader.startReading() else {
+                throw reader.error
+                    ?? ConversionError.failed(source.lastPathComponent)
+            }
+            while let sample = output.copyNextSampleBuffer() {
+                guard let buffer = CMSampleBufferGetDataBuffer(sample) else {
+                    continue
+                }
+                let length = CMBlockBufferGetDataLength(buffer)
+                var data = Data(count: length)
+                let status = data.withUnsafeMutableBytes { bytes in
+                    guard let address = bytes.baseAddress else {
+                        return kCMBlockBufferBadCustomBlockSourceErr
+                    }
+                    return CMBlockBufferCopyDataBytes(
+                        buffer,
+                        atOffset: 0,
+                        dataLength: length,
+                        destination: address
+                    )
+                }
+                guard status == kCMBlockBufferNoErr else {
+                    throw ConversionError.failed(source.lastPathComponent)
+                }
+                try file.write(contentsOf: data)
+            }
+            guard reader.status == .completed else {
+                throw reader.error
+                    ?? ConversionError.failed(source.lastPathComponent)
+            }
             return destination
         } catch {
+            reader.cancelReading()
             try? FileManager.default.removeItem(at: destination)
             throw error
         }
