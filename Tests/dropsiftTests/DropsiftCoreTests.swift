@@ -236,6 +236,13 @@ func mainWindowExpandsAnUndersizedRestoredFrame() {
 }
 
 @Test
+func mainWindowKeepsContentBelowTheToolbar() {
+    #expect(
+        !DropsiftWindowController.styleMask.contains(.fullSizeContentView)
+    )
+}
+
+@Test
 func liveRecordingNeverShowsTwoCompetingNotesPanels() {
     #expect(
         RecordingDetailLayoutPolicy.showsSavedNotes(

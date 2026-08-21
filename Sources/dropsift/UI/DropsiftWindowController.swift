@@ -3,6 +3,13 @@ import SwiftUI
 
 @MainActor
 final class DropsiftWindowController: NSWindowController {
+    nonisolated static let styleMask: NSWindow.StyleMask = [
+        .titled,
+        .closable,
+        .miniaturizable,
+        .resizable,
+    ]
+
     init(model: AppModel) {
         let rootView = DropsiftRootView(model: model)
         let hostingController = NSHostingController(rootView: rootView)
@@ -14,12 +21,15 @@ final class DropsiftWindowController: NSWindowController {
                 origin: .zero,
                 size: preferredFrame.size
             ),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            styleMask: Self.styleMask,
             backing: .buffered,
             defer: false
         )
         window.title = "Dropsift"
-        window.titlebarAppearsTransparent = true
+        // Keep content below the unified toolbar. A full-size transparent
+        // title bar can intermittently drop SwiftUI's safe-area inset when
+        // child toolbars (such as Timeline search) are recomposed.
+        window.titlebarAppearsTransparent = false
         window.titleVisibility = .hidden
         window.minSize = NSSize(
             width: min(1_400, visibleFrame.width),
