@@ -199,20 +199,31 @@ async function transcribeAudio (id, params) {
   if (!loaded.transcription) {
     throw new Error('QVAC transcription model is not loaded.')
   }
-  const segments = await transcribe({
-    modelId: loaded.transcription,
-    audioChunk: params.audioPath,
-    metadata: true
-  })
-  send({
-    id,
-    type: 'result',
-    segments: segments.map(segment => ({
-      startMs: segment.startMs,
-      endMs: segment.endMs,
-      text: segment.text
-    }))
-  })
+  const heartbeat = setInterval(() => {
+    send({
+      id,
+      type: 'progress',
+      detail: 'QVAC is transcribing audio'
+    })
+  }, 5000)
+  try {
+    const segments = await transcribe({
+      modelId: loaded.transcription,
+      audioChunk: params.audioPath,
+      metadata: true
+    })
+    send({
+      id,
+      type: 'result',
+      segments: segments.map(segment => ({
+        startMs: segment.startMs,
+        endMs: segment.endMs,
+        text: segment.text
+      }))
+    })
+  } finally {
+    clearInterval(heartbeat)
+  }
 }
 
 async function prepareDiarization (id) {

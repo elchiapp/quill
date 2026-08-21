@@ -982,6 +982,19 @@ func passiveRecordingLibraryRefreshDoesNotRegenerateTitles() throws {
 }
 
 @Test
+func qvacLongAudioIsSplitIntoBoundedTranscriptionParts() throws {
+    let chunks = QVACAudioChunkPlan.make(
+        duration: 12 * 60 + 17,
+        maximumDuration: 5 * 60
+    )
+
+    #expect(chunks.count == 3)
+    #expect(chunks[0] == .init(index: 0, start: 0, duration: 300))
+    #expect(chunks[1] == .init(index: 1, start: 300, duration: 300))
+    #expect(chunks[2] == .init(index: 2, start: 600, duration: 137))
+}
+
+@Test
 func activeRecordingTitleCanBeSavedBeforeTheManifestExists() throws {
     let directory = FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString, isDirectory: true)

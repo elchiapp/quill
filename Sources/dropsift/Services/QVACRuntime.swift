@@ -77,6 +77,7 @@ actor QVACRuntime {
         case bridgeExited(Int32)
         case invalidResponse
         case requestFailed(String)
+        case requestTimedOut(String)
 
         var errorDescription: String? {
             switch self {
@@ -89,6 +90,8 @@ actor QVACRuntime {
                 "QVAC returned an unreadable response."
             case .requestFailed(let message):
                 message
+            case .requestTimedOut(let operation):
+                "QVAC \(operation) stopped responding. Dropsift will restart it and retry."
             }
         }
     }
@@ -108,8 +111,67 @@ actor QVACRuntime {
     private var input: FileHandle?
     private var outputBuffer = ""
     private var pending: [String: PendingRequest] = [:]
+    private var operationIsActive = false
+    private var operationWaiters: [CheckedContinuation<Void, Never>] = []
+    private var processGeneration = 0
 
     func request(
+        _ method: String,
+        params: QVACBridgeParams = QVACBridgeParams(),
+        onEvent: EventHandler? = nil
+    ) async throws -> QVACBridgeResponse {
+        await acquireOperation()
+        do {
+            try Task.checkCancellation()
+            let response = try await performRequest(
+                method,
+                params: params,
+                onEvent: onEvent
+            )
+            releaseOperation()
+            return response
+        } catch {
+            releaseOperation()
+            throw error
+        }
+    }
+
+    func request(
+        _ method: String,
+        params: QVACBridgeParams = QVACBridgeParams(),
+        timeout: Duration,
+        onEvent: EventHandler? = nil
+    ) async throws -> QVACBridgeResponse {
+        try await withThrowingTaskGroup(of: QVACBridgeResponse.self) { group in
+            group.addTask { [weak self] in
+                guard let self else { throw CancellationError() }
+                return try await self.request(
+                    method,
+                    params: params,
+                    onEvent: onEvent
+                )
+            }
+            group.addTask {
+                try await Task.sleep(for: timeout)
+                throw RuntimeError.requestTimedOut(method)
+            }
+            defer { group.cancelAll() }
+            guard let response = try await group.next() else {
+                throw CancellationError()
+            }
+            return response
+        }
+    }
+
+    func restart() async {
+        await stopProcess()
+    }
+
+    func currentGeneration() -> Int {
+        processGeneration
+    }
+
+    private func performRequest(
         _ method: String,
         params: QVACBridgeParams = QVACBridgeParams(),
         onEvent: EventHandler? = nil
@@ -142,7 +204,7 @@ actor QVACRuntime {
             await withTaskGroup(of: Void.self) { group in
                 group.addTask { [weak self] in
                     guard let self else { return }
-                    _ = try? await self.request("shutdown")
+                    _ = try? await self.performRequest("shutdown")
                 }
                 group.addTask {
                     try? await Task.sleep(for: .seconds(5))
@@ -152,6 +214,24 @@ actor QVACRuntime {
             }
         }
         await stopProcess()
+    }
+
+    private func acquireOperation() async {
+        guard operationIsActive else {
+            operationIsActive = true
+            return
+        }
+        await withCheckedContinuation { continuation in
+            operationWaiters.append(continuation)
+        }
+    }
+
+    private func releaseOperation() {
+        guard !operationWaiters.isEmpty else {
+            operationIsActive = false
+            return
+        }
+        operationWaiters.removeFirst().resume()
     }
 
     private func startIfNeeded() throws {
@@ -198,6 +278,7 @@ actor QVACRuntime {
         }
         process = task
         input = standardInput.fileHandleForWriting
+        processGeneration += 1
     }
 
     private func consume(_ data: Data) {

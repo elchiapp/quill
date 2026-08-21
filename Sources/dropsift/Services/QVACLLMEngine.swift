@@ -6,6 +6,7 @@ actor QVACLLMEngine {
     private let runtime: QVACRuntime
     private var plan: BuiltInModelPlan
     private var ready = false
+    private var readyGeneration: Int?
     private var preparation: (
         id: UUID,
         plan: BuiltInModelPlan,
@@ -37,17 +38,24 @@ actor QVACLLMEngine {
         preparation?.task.cancel()
         preparation = nil
         if ready {
-            _ = try? await runtime.request("unloadLLM")
+            let generation = await runtime.currentGeneration()
+            if readyGeneration == generation {
+                _ = try? await runtime.request("unloadLLM")
+            }
         }
         ready = false
+        readyGeneration = nil
         emit(.notDownloaded)
     }
 
     func prepare() async throws {
-        guard !ready else {
+        let generation = await runtime.currentGeneration()
+        if ready, readyGeneration == generation {
             emit(.ready)
             return
         }
+        ready = false
+        readyGeneration = nil
         let selectedPlan = plan
         if let preparation, preparation.plan == selectedPlan {
             try await finish(
@@ -104,6 +112,7 @@ actor QVACLLMEngine {
                 throw CancellationError()
             }
             ready = true
+            readyGeneration = await runtime.currentGeneration()
             preparation = nil
             emit(.ready)
         } catch {
@@ -130,9 +139,13 @@ actor QVACLLMEngine {
         preparation?.task.cancel()
         preparation = nil
         if ready {
-            _ = try? await runtime.request("unloadLLM")
+            let generation = await runtime.currentGeneration()
+            if readyGeneration == generation {
+                _ = try? await runtime.request("unloadLLM")
+            }
         }
         ready = false
+        readyGeneration = nil
         emit(.notDownloaded)
     }
 

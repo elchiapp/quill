@@ -5,15 +5,20 @@ actor QVACImageExtractor {
 
     private let runtime: QVACRuntime
     private var prepared = false
+    private var preparedGeneration: Int?
 
     init(runtime: QVACRuntime = .shared) {
         self.runtime = runtime
     }
 
     func extract(from image: URL) async throws -> [KnowledgeBlock] {
-        if !prepared {
+        let generation = await runtime.currentGeneration()
+        if !prepared || preparedGeneration != generation {
+            prepared = false
+            preparedGeneration = nil
             _ = try await runtime.request("prepareOCR")
             prepared = true
+            preparedGeneration = await runtime.currentGeneration()
         }
         let response = try await runtime.request(
             "extractImageText",
@@ -37,5 +42,6 @@ actor QVACImageExtractor {
             _ = try? await runtime.request("unloadOCR")
         }
         prepared = false
+        preparedGeneration = nil
     }
 }

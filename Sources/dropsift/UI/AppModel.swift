@@ -2718,6 +2718,9 @@ final class AppModel: ObservableObject {
             transcriptionStatus = queued > 0
                 ? "Transcribing \(session) · \(queued) queued"
                 : "Transcribing \(session)"
+        case .transcribingProgress(let session, let detail, let progress):
+            let percent = Int((progress * 100).rounded())
+            transcriptionStatus = "\(detail) · \(percent)% · \(session)"
         case .diarizing(let session, let queued):
             transcriptionStatus = queued > 0
                 ? "Detecting speakers in \(session) · \(queued) queued"

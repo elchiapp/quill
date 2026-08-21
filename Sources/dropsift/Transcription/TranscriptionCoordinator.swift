@@ -18,6 +18,7 @@ actor TranscriptionCoordinator {
         case idle
         case preparingModel(session: String, detail: String, progress: Double)
         case transcribing(session: String, queued: Int)
+        case transcribingProgress(session: String, detail: String, progress: Double)
         case diarizing(session: String, queued: Int)
         case completed(session: String)
         case failed(session: String)
@@ -293,15 +294,26 @@ actor TranscriptionCoordinator {
         self.engine = nil
         engineBackend = nil
         if backend == .qvac {
-            let engine = QVACTranscriptionEngine { [weak self] progress, detail in
-                Task {
-                    await self?.publish(.preparingModel(
-                        session: session,
-                        detail: detail,
-                        progress: progress
-                    ))
+            let engine = QVACTranscriptionEngine(
+                onPreparationProgress: { [weak self] progress, detail in
+                    Task {
+                        await self?.publish(.preparingModel(
+                            session: session,
+                            detail: detail,
+                            progress: progress
+                        ))
+                    }
+                },
+                onTranscriptionProgress: { [weak self] progress, detail in
+                    Task {
+                        await self?.publish(.transcribingProgress(
+                            session: session,
+                            detail: detail,
+                            progress: progress
+                        ))
+                    }
                 }
-            }
+            )
             try await engine.prepare()
             self.engine = engine
             engineBackend = backend
