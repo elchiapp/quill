@@ -5,7 +5,7 @@ import {
   QWEN3_5_9B_MULTIMODAL_Q4_K_M,
   QWEN3_6_27B_MULTIMODAL_Q4_K_XL,
   QWEN3_6_35B_A3B_MULTIMODAL_Q4_K_M,
-  WHISPER_SMALL_Q8_0,
+  PARAKEET_TDT_0_6B_V3_Q8_0,
   PARAKEET_SORTFORMER_4SPK_V2_1_Q8_0,
   OCR_LATIN,
   close,
@@ -179,14 +179,15 @@ async function prepareTranscription (id) {
   await prepareModel(
     'transcription',
     id,
-    'Downloading QVAC multilingual speech model',
+    'Downloading QVAC Parakeet speech model',
     onProgress => loadModel({
-      modelSrc: WHISPER_SMALL_Q8_0,
-      modelType: 'whispercpp-transcription',
+      modelSrc: PARAKEET_TDT_0_6B_V3_Q8_0,
+      modelType: 'parakeet-transcription',
       modelConfig: {
-        audio_format: 'f32le',
-        detect_language: true,
-        no_timestamps: false
+        useGPU: true,
+        maxThreads: 8,
+        timestampsEnabled: true,
+        streaming: false
       },
       onProgress
     })
@@ -197,19 +198,21 @@ async function transcribeAudio (id, params) {
   if (!loaded.transcription) {
     throw new Error('QVAC transcription model is not loaded.')
   }
-  const segments = await transcribe({
+  const text = await transcribe({
     modelId: loaded.transcription,
-    audioChunk: params.audioPath,
-    metadata: true
+    audioChunk: params.audioPath
   })
+  const normalized = text.trim()
   send({
     id,
     type: 'result',
-    segments: segments.map(segment => ({
-      startMs: segment.startMs,
-      endMs: segment.endMs,
-      text: segment.text
-    }))
+    segments: normalized
+      ? [{
+          startMs: 0,
+          endMs: params.audioDurationMs ?? 0,
+          text: normalized
+        }]
+      : []
   })
 }
 
@@ -221,6 +224,12 @@ async function prepareDiarization (id) {
     onProgress => loadModel({
       modelSrc: PARAKEET_SORTFORMER_4SPK_V2_1_Q8_0,
       modelType: 'parakeet-transcription',
+      modelConfig: {
+        useGPU: true,
+        maxThreads: 8,
+        timestampsEnabled: true,
+        streaming: false
+      },
       onProgress
     })
   )

@@ -2,11 +2,10 @@ import AVFoundation
 import Foundation
 
 actor QVACTranscriptionEngine: TranscriptionEngine {
-    nonisolated let name = "qvac-whisper"
-    nonisolated let model = "whisper-small-q8_0"
-    // QVAC Whisper 0.17.1 can stop resolving a batch promise for longer
-    // inputs even though native compute has gone idle. One-minute batches are
-    // verified to complete and keep long recordings checkpointed visibly.
+    nonisolated let name = "qvac-parakeet"
+    nonisolated let model = "parakeet-tdt-0.6b-v3-q8_0-metal"
+    // QVAC's public Parakeet API currently returns text without word timing
+    // metadata. One-minute batches preserve useful, bounded source anchors.
     nonisolated static let chunkDuration: TimeInterval = 60
 
     private let runtime: QVACRuntime
@@ -30,20 +29,20 @@ actor QVACTranscriptionEngine: TranscriptionEngine {
         guard !prepared || preparedGeneration != generation else { return }
         prepared = false
         preparedGeneration = nil
-        onPreparationProgress?(0, "Preparing QVAC multilingual speech model")
+        onPreparationProgress?(0, "Preparing QVAC Parakeet speech model")
         _ = try await runtime.request(
             "prepareTranscription",
             onEvent: { [onPreparationProgress] event in
                 guard event.type == "progress" else { return }
                 onPreparationProgress?(
                     (event.percentage ?? 0) / 100,
-                    event.detail ?? "Preparing QVAC speech model"
+                    event.detail ?? "Preparing QVAC Parakeet model"
                 )
             }
         )
         prepared = true
         preparedGeneration = await runtime.currentGeneration()
-        onPreparationProgress?(1, "QVAC multilingual speech model ready")
+        onPreparationProgress?(1, "QVAC Parakeet model ready")
     }
 
     func transcribe(_ audio: URL) async throws -> [TranscriptSegment] {
@@ -104,7 +103,10 @@ actor QVACTranscriptionEngine: TranscriptionEngine {
         do {
             return try await runtime.request(
                 "transcribe",
-                params: QVACBridgeParams(audioPath: audio.path),
+                params: QVACBridgeParams(
+                    audioPath: audio.path,
+                    audioDurationMs: Int((chunk.duration * 1_000).rounded())
+                ),
                 timeout: .seconds(75),
                 onEvent: { [onTranscriptionProgress] event in
                     guard event.type == "progress" else { return }
@@ -252,9 +254,9 @@ enum QVACAudioConverter {
                 AVFormatIDKey: kAudioFormatLinearPCM,
                 AVSampleRateKey: 16_000,
                 AVNumberOfChannelsKey: 1,
-                AVLinearPCMBitDepthKey: 32,
+                AVLinearPCMBitDepthKey: 16,
                 AVLinearPCMIsBigEndianKey: false,
-                AVLinearPCMIsFloatKey: true,
+                AVLinearPCMIsFloatKey: false,
                 AVLinearPCMIsNonInterleaved: false,
             ]
         )

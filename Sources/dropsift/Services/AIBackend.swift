@@ -18,7 +18,7 @@ enum AIBackend: String, CaseIterable, Identifiable, Sendable {
         case .native:
             "MLX language model, FluidAudio transcription, and Apple Vision"
         case .qvac:
-            "llama.cpp, multilingual Whisper, Sortformer, and OCR through QVAC"
+            "llama.cpp, Parakeet TDT on Metal, Sortformer, and OCR through QVAC"
         }
     }
 }

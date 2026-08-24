@@ -13,6 +13,7 @@ struct QVACBridgeParams: Codable, Sendable {
     var messages: [QVACBridgeMessage]?
     var maxTokens: Int?
     var audioPath: String?
+    var audioDurationMs: Int?
     var imagePath: String?
 
     init(
@@ -22,6 +23,7 @@ struct QVACBridgeParams: Codable, Sendable {
         messages: [QVACBridgeMessage]? = nil,
         maxTokens: Int? = nil,
         audioPath: String? = nil,
+        audioDurationMs: Int? = nil,
         imagePath: String? = nil
     ) {
         self.modelSize = modelSize
@@ -30,6 +32,7 @@ struct QVACBridgeParams: Codable, Sendable {
         self.messages = messages
         self.maxTokens = maxTokens
         self.audioPath = audioPath
+        self.audioDurationMs = audioDurationMs
         self.imagePath = imagePath
     }
 }
@@ -245,6 +248,11 @@ actor QVACRuntime {
         task.currentDirectoryURL = layout.root
         var environment = ProcessInfo.processInfo.environment
         environment["QVAC_CONFIG_PATH"] = configURL.path
+        if let isolatedHome = environment[
+            "DROPSIFT_QVAC_HOME_OVERRIDE"
+        ], !isolatedHome.isEmpty {
+            environment["HOME"] = isolatedHome
+        }
         task.environment = environment
 
         let standardInput = Pipe()

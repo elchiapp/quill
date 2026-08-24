@@ -182,8 +182,8 @@ hot-swappable **AI backend** control:
 - **Apple native** runs current Qwen3.5/Qwen3.6 models with MLX Swift,
   multilingual Parakeet transcription with FluidAudio, offline VBx speaker
   diarization, and Apple Vision OCR.
-- **QVAC** runs Qwen through QVAC's llama.cpp plugin, multilingual Whisper
-  transcription with timestamps, Sortformer speaker diarization, and QVAC OCR.
+- **QVAC** runs Qwen through QVAC's llama.cpp plugin, multilingual Parakeet
+  TDT transcription through Metal, Sortformer speaker diarization, and QVAC OCR.
   Dropsift starts and stops its packaged Bare/QVAC child runtime itself; no
   terminal command, localhost server, or separately installed QVAC app is
   required.

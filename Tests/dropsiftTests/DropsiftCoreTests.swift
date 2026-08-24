@@ -1002,7 +1002,15 @@ func qvacLongAudioIsSplitIntoBoundedTranscriptionParts() throws {
 }
 
 @Test
-func qvacAudioNormalizationProducesRaw16KMonoFloat32() async throws {
+func qvacTranscriptionUsesParakeetTDT() {
+    let engine = QVACTranscriptionEngine()
+
+    #expect(engine.name == "qvac-parakeet")
+    #expect(engine.model == "parakeet-tdt-0.6b-v3-q8_0-metal")
+}
+
+@Test
+func qvacAudioNormalizationProducesRaw16KMonoPCM16() async throws {
     let root = FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString, isDirectory: true)
     let source = root.appendingPathComponent("source.caf")
@@ -1037,7 +1045,7 @@ func qvacAudioNormalizationProducesRaw16KMonoFloat32() async throws {
     let size = try #require(
         FileManager.default.attributesOfItem(atPath: raw.path)[.size] as? NSNumber
     ).intValue
-    let expectedSize = 2 * 16_000 * MemoryLayout<Float>.size
+    let expectedSize = 2 * 16_000 * MemoryLayout<Int16>.size
 
     #expect(raw.pathExtension == "raw")
     #expect(abs(size - expectedSize) <= 256)
