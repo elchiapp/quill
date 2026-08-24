@@ -1401,3 +1401,21 @@ func transcriptRegenerationRejectsAMissingAudioTrack() throws {
         try TranscriptionRegeneration.markPending(in: root)
     }
 }
+
+@Test
+func transcriptNotificationsUseNativeAppStyleCopy() {
+    let completed = TranscriptionNotificationCopy.completed(
+        recordingTitle: "Product review",
+        regenerated: true
+    )
+    #expect(completed.title == "Transcript regenerated")
+    #expect(completed.body == "Product review")
+    #expect(!completed.title.contains("Dropsift —"))
+
+    let failed = TranscriptionNotificationCopy.failed(
+        recordingTitle: "Product review",
+        regenerated: true
+    )
+    #expect(failed.title == "Transcript regeneration failed")
+    #expect(failed.body == "Product review. Open Dropsift for details.")
+}

@@ -163,6 +163,10 @@ The recording detail view groups **Regenerate transcript**, **Regenerate title
 & description**, and **Regenerate summary** in one menu. Re-transcription is
 non-destructive: the existing transcript remains available until the complete
 replacement is written, and a pending marker resumes the job after a restart.
+While it runs, the toolbar shows a labeled **Processing transcript** indicator
+with the detailed stage on hover. Completion and failure use native Dropsift
+notifications; a successful manual run reports **Transcript regenerated** with
+the recording title.
 
 The engine sits behind a small protocol; a Whisper engine (WhisperKit
 large-v3-turbo) is planned as the fallback / re-transcription option.

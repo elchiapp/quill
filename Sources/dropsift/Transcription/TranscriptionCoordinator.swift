@@ -25,6 +25,7 @@ actor TranscriptionCoordinator {
     }
 
     private var queue: [URL] = []
+    private var regenerationSessions = Set<URL>()
     private var draining = false
     private var activeSession: URL?
     private var engine: TranscriptionEngine?
@@ -82,6 +83,7 @@ actor TranscriptionCoordinator {
         }
         try TranscriptionRegeneration.markPending(in: sessionDir)
         let target = sessionDir.standardizedFileURL
+        regenerationSessions.insert(target)
         let isAlreadyScheduled = activeSession?.standardizedFileURL == target
             || queue.contains { $0.standardizedFileURL == target }
         guard !isAlreadyScheduled else { return }
@@ -131,6 +133,13 @@ actor TranscriptionCoordinator {
                     )
             }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
+        for dir in pending where fm.fileExists(
+            atPath: dir.appendingPathComponent("transcript.json").path
+        ) && fm.fileExists(
+            atPath: dir.appendingPathComponent(".transcription-pending").path
+        ) {
+            regenerationSessions.insert(dir.standardizedFileURL)
+        }
         for dir in pending where !queue.contains(dir)
             && activeSession?.standardizedFileURL != dir.standardizedFileURL {
             queue.append(dir)
@@ -159,6 +168,8 @@ actor TranscriptionCoordinator {
         }
         while !queue.isEmpty {
             let dir = queue.removeFirst()
+            let target = dir.standardizedFileURL
+            let isRegeneration = regenerationSessions.contains(target)
             activeSession = dir
             publish(.transcribing(session: dir.lastPathComponent, queued: queue.count))
             do {
@@ -167,14 +178,23 @@ actor TranscriptionCoordinator {
                     try? FileManager.default.removeItem(
                         at: dir.appendingPathComponent(".transcription-pending")
                     )
-                    publishCompletedCheckpoint(dir)
+                    regenerationSessions.remove(target)
+                    publishCompletedCheckpoint(
+                        dir,
+                        regenerated: isRegeneration,
+                        shouldNotify: true
+                    )
                 case .completedAndRetry:
                     log(
                         dir,
                         "published checkpoint transcript; recording manifest "
                             + "changed, so retrying with all tracks"
                     )
-                    publishCompletedCheckpoint(dir)
+                    publishCompletedCheckpoint(
+                        dir,
+                        regenerated: isRegeneration,
+                        shouldNotify: false
+                    )
                     queue.removeAll {
                         $0.standardizedFileURL == dir.standardizedFileURL
                     }
@@ -183,10 +203,11 @@ actor TranscriptionCoordinator {
             } catch {
                 log(dir, "transcription failed: \(error)")
                 lastFailure = dir.lastPathComponent
-                notifyUser(
-                    title: "Dropsift — transcription failed",
-                    body: "\(dir.lastPathComponent) — see transcribe.log"
+                let message = TranscriptionNotificationCopy.failed(
+                    recordingTitle: notificationTitle(for: dir),
+                    regenerated: isRegeneration
                 )
+                notifyUser(title: message.title, body: message.body)
             }
             activeSession = nil
         }
@@ -401,10 +422,24 @@ actor TranscriptionCoordinator {
         }
     }
 
-    private func publishCompletedCheckpoint(_ dir: URL) {
-        notifyUser(title: "Dropsift — transcript ready", body: dir.lastPathComponent)
+    private func publishCompletedCheckpoint(
+        _ dir: URL,
+        regenerated: Bool,
+        shouldNotify: Bool
+    ) {
+        if shouldNotify {
+            let message = TranscriptionNotificationCopy.completed(
+                recordingTitle: notificationTitle(for: dir),
+                regenerated: regenerated
+            )
+            notifyUser(title: message.title, body: message.body)
+        }
         runHook(for: dir)
         publish(.completed(session: dir.lastPathComponent))
+    }
+
+    private func notificationTitle(for dir: URL) -> String {
+        RecordingItem.load(from: dir)?.title ?? "Recording \(dir.lastPathComponent)"
     }
 
     private func preparedEngine(

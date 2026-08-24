@@ -20,8 +20,25 @@ struct DropsiftRootView: View {
         .toolbar {
             ToolbarItemGroup {
                 if let status = model.transcriptionStatus {
-                    Label(status, systemImage: "waveform.badge.magnifyingglass")
-                        .foregroundStyle(.secondary)
+                    HStack(spacing: 6) {
+                        if model.transcriptionProcessingID != nil {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Image(systemName: "waveform.badge.magnifyingglass")
+                        }
+                        Text(
+                            model.transcriptionProcessingID == nil
+                                ? "Transcript status"
+                                : "Processing transcript"
+                        )
+                        .font(.caption)
+                    }
+                    .foregroundStyle(.secondary)
+                    .help(status)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Background transcription")
+                    .accessibilityValue(status)
                 }
 
                 if let state = model.ingestionState {

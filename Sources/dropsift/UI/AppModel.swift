@@ -601,7 +601,7 @@ final class AppModel: ObservableObject {
     private func handleRecordingStartFailure(_ error: Error) {
         resetAudioLevels()
         appError = "Couldn’t start recording: \(error)"
-        notifyUser(title: "Dropsift — recording failed", body: "\(error)")
+        notifyUser(title: "Recording failed", body: error.localizedDescription)
     }
 
     func reloadRecordings(selecting recordingID: String? = nil) {

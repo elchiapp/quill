@@ -1,9 +1,52 @@
 import Foundation
 import UserNotifications
 
-/// Best-effort user-visible notification. osascript keeps us free of
-/// UserNotifications entitlement requirements (which need an app bundle).
+struct UserNotificationMessage: Equatable {
+    let title: String
+    let body: String
+}
+
+enum TranscriptionNotificationCopy {
+    static func completed(
+        recordingTitle: String,
+        regenerated: Bool
+    ) -> UserNotificationMessage {
+        UserNotificationMessage(
+            title: regenerated ? "Transcript regenerated" : "Transcript ready",
+            body: recordingTitle
+        )
+    }
+
+    static func failed(
+        recordingTitle: String,
+        regenerated: Bool
+    ) -> UserNotificationMessage {
+        UserNotificationMessage(
+            title: regenerated
+                ? "Transcript regeneration failed"
+                : "Transcription failed",
+            body: "\(recordingTitle). Open Dropsift for details."
+        )
+    }
+}
+
+/// Use a native app notification when running from Dropsift.app. The CLI
+/// fallback retains best-effort notifications for terminal-only use.
 func notifyUser(title: String, body: String) {
+    if Bundle.main.bundleURL.pathExtension == "app" {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+        let request = UNNotificationRequest(
+            identifier: "dropsift-\(UUID().uuidString)",
+            content: content,
+            trigger: nil
+        )
+        UNUserNotificationCenter.current().add(request)
+        return
+    }
+
     func quoted(_ s: String) -> String {
         "\"" + s.replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"") + "\""
