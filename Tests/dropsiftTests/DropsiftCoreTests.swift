@@ -1010,6 +1010,11 @@ func qvacTranscriptionUsesParakeetTDT() {
 }
 
 @Test
+func qvacDiarizationHasABoundedRecoveryTimeout() {
+    #expect(QVACSpeakerDiarizationEngine.operationTimeout == .seconds(300))
+}
+
+@Test
 func qvacAudioNormalizationProducesRaw16KMonoPCM16() async throws {
     let root = FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString, isDirectory: true)

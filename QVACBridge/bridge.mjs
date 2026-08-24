@@ -12,7 +12,6 @@ import {
   plugins
 } from '@qvac/bare-sdk'
 import { llmPlugin } from '@qvac/bare-sdk/llamacpp-completion/plugin'
-import { whisperPlugin } from '@qvac/bare-sdk/whispercpp-transcription/plugin'
 import { parakeetPlugin } from '@qvac/bare-sdk/parakeet-transcription/plugin'
 import { ocrPlugin } from '@qvac/bare-sdk/ggml-ocr/plugin'
 
@@ -26,7 +25,6 @@ const {
   unloadModel
 } = plugins([
   llmPlugin,
-  whisperPlugin,
   parakeetPlugin,
   ocrPlugin
 ])

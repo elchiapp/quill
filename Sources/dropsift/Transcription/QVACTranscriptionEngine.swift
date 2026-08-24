@@ -162,28 +162,43 @@ enum QVACAudioChunkPlan {
 actor QVACSpeakerDiarizationEngine: SpeakerDiarization {
     nonisolated let name = "qvac-sortformer"
     nonisolated let model = "parakeet-sortformer-4spk-v2.1-q8_0"
+    nonisolated static let operationTimeout: Duration = .seconds(300)
 
     private let runtime: QVACRuntime
     private var prepared = false
+    private var preparedGeneration: Int?
 
     init(runtime: QVACRuntime = .shared) {
         self.runtime = runtime
     }
 
     func prepare() async throws {
-        guard !prepared else { return }
+        let generation = await runtime.currentGeneration()
+        guard !prepared || preparedGeneration != generation else { return }
+        prepared = false
+        preparedGeneration = nil
         _ = try await runtime.request("prepareDiarization")
         prepared = true
+        preparedGeneration = await runtime.currentGeneration()
     }
 
     func diarize(_ audio: URL) async throws -> [DetectedSpeakerTurn] {
-        guard prepared else { throw QVACRuntime.RuntimeError.bridgeUnavailable }
+        try await prepare()
         let converted = try await QVACAudioConverter.convertToPCM(audio)
         defer { try? FileManager.default.removeItem(at: converted) }
-        let response = try await runtime.request(
-            "diarize",
-            params: QVACBridgeParams(audioPath: converted.path)
-        )
+        let response: QVACBridgeResponse
+        do {
+            response = try await runtime.request(
+                "diarize",
+                params: QVACBridgeParams(audioPath: converted.path),
+                timeout: Self.operationTimeout
+            )
+        } catch QVACRuntime.RuntimeError.requestTimedOut {
+            await runtime.restart()
+            prepared = false
+            preparedGeneration = nil
+            throw QVACRuntime.RuntimeError.requestTimedOut("diarization")
+        }
         return (response.turns ?? []).map { turn in
             DetectedSpeakerTurn(
                 speaker: turn.speaker,
@@ -199,6 +214,7 @@ actor QVACSpeakerDiarizationEngine: SpeakerDiarization {
             _ = try? await runtime.request("unloadDiarization")
         }
         prepared = false
+        preparedGeneration = nil
     }
 }
 
