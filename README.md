@@ -159,6 +159,11 @@ on next launch (the filesystem is the queue: a session with `meta.json` but no
 `transcript.json` is pending). Failures append to the session's
 `transcribe.log` and never block later jobs.
 
+The recording detail view groups **Regenerate transcript**, **Regenerate title
+& description**, and **Regenerate summary** in one menu. Re-transcription is
+non-destructive: the existing transcript remains available until the complete
+replacement is written, and a pending marker resumes the job after a restart.
+
 The engine sits behind a small protocol; a Whisper engine (WhisperKit
 large-v3-turbo) is planned as the fallback / re-transcription option.
 

@@ -178,6 +178,7 @@ final class AppModel: ObservableObject {
     )
     @Published private(set) var splittingRecordingID: String?
     @Published var transcriptionStatus: String?
+    @Published private(set) var transcriptionProcessingID: String?
     @Published var appError: String?
     @Published var deletionRequest: DeletionRequest?
 
@@ -1206,6 +1207,17 @@ final class AppModel: ObservableObject {
         requestedSummarySourceIDs.removeAll { $0 == sourceID }
         requestedSummarySourceIDs.insert(sourceID, at: 0)
         scanForSemanticCandidates()
+    }
+
+    func regenerateTranscript(for recording: RecordingItem) {
+        Task { [weak self, transcription] in
+            do {
+                try await transcription.regenerate(recording.directory)
+            } catch {
+                self?.appError = "Couldn’t regenerate this transcript: "
+                    + error.localizedDescription
+            }
+        }
     }
 
     func requestDeleteThread(_ thread: ChatThread) {
@@ -2723,6 +2735,7 @@ final class AppModel: ObservableObject {
         switch status {
         case .idle:
             transcriptionStatus = nil
+            transcriptionProcessingID = nil
             reloadRecordings()
             if aiBackend == .qvac {
                 Task { [weak self] in
@@ -2732,31 +2745,37 @@ final class AppModel: ObservableObject {
                 }
             }
         case .preparingModel(let session, let detail, let progress):
+            transcriptionProcessingID = session
             let percent = Int((progress * 100).rounded())
             transcriptionStatus = "\(detail) · \(percent)% · \(session)"
         case .transcribing(let session, let queued):
+            transcriptionProcessingID = session
             transcriptionStatus = queued > 0
                 ? "Transcribing \(session) · \(queued) queued"
                 : "Transcribing \(session)"
         case .transcribingProgress(let session, let detail, let progress):
+            transcriptionProcessingID = session
             let percent = Int((progress * 100).rounded())
             transcriptionStatus = "\(detail) · \(percent)% · \(session)"
         case .diarizing(let session, let queued):
+            transcriptionProcessingID = session
             transcriptionStatus = queued > 0
                 ? "Detecting speakers in \(session) · \(queued) queued"
                 : "Detecting speakers in \(session)"
         case .completed(let session):
+            transcriptionProcessingID = nil
             transcriptionStatus = "Transcript ready · \(session)"
             reloadRecordings()
-            scheduleSummaryAfterTranscription(recordingID: session)
+            scheduleProcessingAfterTranscription(recordingID: session)
         case .failed(let session):
+            transcriptionProcessingID = nil
             transcriptionStatus = "Transcription failed · \(session)"
             reloadRecordings()
         }
         onTranscriptionStateChange?(transcriptionStatus)
     }
 
-    private func scheduleSummaryAfterTranscription(recordingID: String) {
+    private func scheduleProcessingAfterTranscription(recordingID: String) {
         let sourceID = "recording:\(recordingID)"
         if summaryGenerationItemID == sourceID {
             semanticAnalysisTask?.cancel()
@@ -2764,6 +2783,14 @@ final class AppModel: ObservableObject {
         automaticSummarySourceIDs = Self.summaryQueueAfterTranscription(
             automaticSummarySourceIDs,
             recordingID: recordingID
+        )
+        automaticPresentationSourceIDs = Self.mergedSourceIDs(
+            automaticPresentationSourceIDs,
+            [sourceID]
+        )
+        automaticSemanticSourceIDs = Self.mergedSourceIDs(
+            automaticSemanticSourceIDs,
+            [sourceID]
         )
         persistAutomaticProcessingQueues()
         scanForSemanticCandidates()

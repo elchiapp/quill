@@ -1340,3 +1340,64 @@ func everyCompletedTranscriptionQueuesTheLatestRecordingSummary() {
         ) == ["recording:meeting"]
     )
 }
+
+@Test
+func transcriptRegenerationPreservesTheCurrentTranscriptUntilReplacement() throws {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(
+        at: root,
+        withIntermediateDirectories: true
+    )
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    try RecordingManifest(
+        started: nil,
+        ended: nil,
+        durationSeconds: 1,
+        files: ["mic": "mic.caf"],
+        startOffsetMs: nil,
+        tracks: nil,
+        imported: nil,
+        resumeCount: nil
+    ).write(to: root)
+    try Data([0, 1, 2]).write(to: root.appendingPathComponent("mic.caf"))
+    let existingTranscript = Data("existing transcript".utf8)
+    let transcriptURL = root.appendingPathComponent("transcript.json")
+    try existingTranscript.write(to: transcriptURL)
+
+    try TranscriptionRegeneration.markPending(in: root)
+
+    #expect(try Data(contentsOf: transcriptURL) == existingTranscript)
+    #expect(
+        FileManager.default.fileExists(
+            atPath: root.appendingPathComponent(".transcription-pending").path
+        )
+    )
+}
+
+@Test
+func transcriptRegenerationRejectsAMissingAudioTrack() throws {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(
+        at: root,
+        withIntermediateDirectories: true
+    )
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    try RecordingManifest(
+        started: nil,
+        ended: nil,
+        durationSeconds: 1,
+        files: ["mic": "missing.caf"],
+        startOffsetMs: nil,
+        tracks: nil,
+        imported: nil,
+        resumeCount: nil
+    ).write(to: root)
+
+    #expect(throws: TranscriptionRegeneration.Error.self) {
+        try TranscriptionRegeneration.markPending(in: root)
+    }
+}

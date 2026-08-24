@@ -73,6 +73,26 @@ actor TranscriptionCoordinator {
         drainIfIdle()
     }
 
+    /// Re-run transcription without deleting the current transcript. The
+    /// pending marker makes the request crash-resumable; the existing JSON and
+    /// Markdown remain readable until a complete replacement is written.
+    func regenerate(_ sessionDir: URL) throws {
+        guard Config.transcriptionEnabled() else {
+            throw TranscriptionRegeneration.Error.transcriptionDisabled
+        }
+        try TranscriptionRegeneration.markPending(in: sessionDir)
+        let target = sessionDir.standardizedFileURL
+        let isAlreadyScheduled = activeSession?.standardizedFileURL == target
+            || queue.contains { $0.standardizedFileURL == target }
+        guard !isAlreadyScheduled else { return }
+        log(
+            sessionDir,
+            "regeneration requested; preserving current transcript until replacement is ready"
+        )
+        queue.append(sessionDir)
+        drainIfIdle()
+    }
+
     /// Splitting rewrites existing audio and transcript files, so unlike
     /// append-only Resume it still requires exclusive access to the directory.
     func prepareForExclusiveMutation(_ sessionDir: URL) -> Bool {
@@ -508,6 +528,36 @@ actor TranscriptionCoordinator {
 
     private func publish(_ status: Status) {
         statusHandler?(status)
+    }
+}
+
+enum TranscriptionRegeneration {
+    enum Error: LocalizedError {
+        case transcriptionDisabled
+        case noAudio
+
+        var errorDescription: String? {
+            switch self {
+            case .transcriptionDisabled:
+                "Transcription is disabled in Dropsift’s configuration."
+            case .noAudio:
+                "This recording has no available audio tracks to transcribe."
+            }
+        }
+    }
+
+    static func markPending(in sessionDir: URL) throws {
+        let manifest = try SessionMeta.read(from: sessionDir)
+        let hasAudio = manifest.tracks.contains { track in
+            FileManager.default.fileExists(
+                atPath: sessionDir.appendingPathComponent(track.file).path
+            )
+        }
+        guard hasAudio else { throw Error.noAudio }
+        try Data().write(
+            to: sessionDir.appendingPathComponent(".transcription-pending"),
+            options: .atomic
+        )
     }
 }
 

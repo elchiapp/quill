@@ -160,19 +160,7 @@ struct RecordingDetailView: View {
                     }
                     .buttonStyle(.borderedProminent)
 
-                    Button {
-                        model.regeneratePresentation(
-                            for: .recording(recording)
-                        )
-                    } label: {
-                        Label("Regenerate title", systemImage: "sparkles")
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(
-                        model.metadataGenerationItemID
-                            == "recording:\(recording.id)"
-                    )
-                    .help("Generate a new title and brief description using the local model")
+                    regenerationMenu
 
                     Menu {
                         Button("Open microphone track") { model.openAudio(recording.micURL) }
@@ -197,24 +185,6 @@ struct RecordingDetailView: View {
                 }
 
                 HStack(spacing: 8) {
-                    Button {
-                        model.regenerateSummary(for: recording)
-                    } label: {
-                        Label(
-                            recording.summary == nil
-                                ? "Generate summary"
-                                : "Regenerate summary",
-                            systemImage: "text.page.badge.magnifyingglass"
-                        )
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(
-                        recording.transcript == nil
-                            || model.summaryGenerationItemID
-                                == "recording:\(recording.id)"
-                    )
-                    .help("Summarize participants, topics, decisions, and action items locally")
-
                     if !speakerIDs.isEmpty {
                         Button {
                             showingSpeakerEditor = true
@@ -291,6 +261,63 @@ struct RecordingDetailView: View {
             }
         }
         .padding(24)
+    }
+
+    private var regenerationMenu: some View {
+        let sourceID = "recording:\(recording.id)"
+        let transcriptIsProcessing = model.transcriptionProcessingID
+            == recording.id
+        return Menu {
+            Button {
+                model.regenerateTranscript(for: recording)
+            } label: {
+                Label(
+                    "Regenerate transcript",
+                    systemImage: "arrow.triangle.2.circlepath"
+                )
+            }
+            .disabled(
+                transcriptIsProcessing
+                    || model.splittingRecordingID == recording.id
+                    || (recording.micURL == nil && recording.systemURL == nil)
+            )
+
+            Divider()
+
+            Button {
+                model.regeneratePresentation(for: .recording(recording))
+            } label: {
+                Label("Regenerate title & description", systemImage: "sparkles")
+            }
+            .disabled(
+                transcriptIsProcessing
+                    || model.metadataGenerationItemID == sourceID
+            )
+
+            Button {
+                model.regenerateSummary(for: recording)
+            } label: {
+                Label(
+                    recording.summary == nil
+                        ? "Generate summary"
+                        : "Regenerate summary",
+                    systemImage: "text.page.badge.magnifyingglass"
+                )
+            }
+            .disabled(
+                transcriptIsProcessing
+                    || recording.transcript == nil
+                    || model.summaryGenerationItemID == sourceID
+            )
+        } label: {
+            Label(
+                transcriptIsProcessing ? "Regenerating…" : "Regenerate",
+                systemImage: "arrow.clockwise"
+            )
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("Regenerate this recording’s transcript, title, or summary")
     }
 
     @ViewBuilder
