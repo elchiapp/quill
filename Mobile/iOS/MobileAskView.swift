@@ -106,7 +106,7 @@ struct MobileAskView: View {
                 .fontWeight(.semibold)
             }
         }
-        .onAppear { composerFocused = true }
+        .onAppear { composerFocused = false }
         .onDisappear { composerFocused = false }
         .onChange(of: model.selectedTab) { _, tab in
             if tab != .ask { composerFocused = false }
