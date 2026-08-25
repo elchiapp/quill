@@ -721,7 +721,10 @@ enum ItemDetailLayoutPolicy {
     }
 
     static func overlaysSavedNotes(width: CGFloat) -> Bool {
-        width < 760
+        // The decision is made before an inspector takes its own 340–460 pt.
+        // Overlay at medium widths too, otherwise the remaining item content
+        // becomes narrower than its usable minimum after the split.
+        width < 1_100
     }
 
     static func showsSavedNotes(
