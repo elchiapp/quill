@@ -40,6 +40,7 @@ struct MobileAskView: View {
                         }
                         .padding()
                     }
+                    .scrollDismissesKeyboard(.interactively)
                     .onChange(of: model.chatMessages.count) {
                         if let last = model.chatMessages.last {
                             withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
@@ -79,9 +80,42 @@ struct MobileAskView: View {
             .padding()
             .background(.bar)
         }
+        .scrollDismissesKeyboard(.interactively)
         .navigationTitle("Ask Dropsift")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    leaveAsk()
+                } label: {
+                    Label("Timeline", systemImage: "chevron.left")
+                }
+                .accessibilityHint("Dismisses the keyboard and opens Timeline")
+            }
+
+            ToolbarItemGroup(placement: .keyboard) {
+                Button {
+                    leaveAsk()
+                } label: {
+                    Label("Timeline", systemImage: "chevron.left")
+                }
+                Spacer()
+                Button("Done") {
+                    composerFocused = false
+                }
+                .fontWeight(.semibold)
+            }
+        }
         .onAppear { composerFocused = true }
+        .onDisappear { composerFocused = false }
+        .onChange(of: model.selectedTab) { _, tab in
+            if tab != .ask { composerFocused = false }
+        }
+    }
+
+    private func leaveAsk() {
+        composerFocused = false
+        model.selectedTab = .timeline
     }
 
     private var modelPicker: some View {

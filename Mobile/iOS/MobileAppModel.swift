@@ -51,6 +51,10 @@ final class MobileAppModel: ObservableObject {
 
     init() {
         if ProcessInfo.processInfo.environment[
+            "DROPSIFT_PREVIEW_ASK"
+        ] == "1" {
+            selectedTab = .ask
+        } else if ProcessInfo.processInfo.environment[
             "DROPSIFT_PREVIEW_TIMELINE"
         ] == "1" {
             selectedTab = .timeline
