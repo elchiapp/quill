@@ -109,6 +109,7 @@ enum KnowledgeLibrary {
 
     static func saveContent(_ content: String, for item: KnowledgeItem) throws {
         try ContentPresentationStore.invalidate(in: item.directory)
+        try RecordingSummaryStore.invalidate(in: item.directory)
         try Data(content.utf8).write(
             to: item.directory.appendingPathComponent("content.md"),
             options: .atomic
@@ -121,6 +122,7 @@ enum KnowledgeLibrary {
 
     static func saveAdditionalNotes(_ notes: String, for item: KnowledgeItem) throws {
         try ContentPresentationStore.invalidate(in: item.directory)
+        try RecordingSummaryStore.invalidate(in: item.directory)
         try Data(notes.utf8).write(
             to: item.directory.appendingPathComponent("notes.md"),
             options: .atomic

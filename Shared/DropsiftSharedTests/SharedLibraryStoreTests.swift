@@ -179,6 +179,39 @@ func sharedTimelinePrefersSyncedDescriptionAndPreservesAITitle() throws {
 }
 
 @Test
+func sharedKnowledgeLoadsItsPortableSummary() throws {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = SharedLibraryStore(root: root)
+    let note = try store.createNote(
+        title: "Launch brief",
+        content: "The launch brief covers positioning, timing, and ownership."
+    )
+    let summary = RecordingSummary(
+        overview: "A concise launch brief covering the release position and plan.",
+        participantCount: 0,
+        participants: [],
+        topics: ["Positioning", "Launch timing"],
+        decisions: [],
+        actionItems: [],
+        sourceRevision: "knowledge-summary-revision",
+        model: "Qwen3.5 4B"
+    )
+    try RecordingSummaryStore.save(summary, to: note.directory)
+
+    let loaded = try #require(store.loadKnowledgeItems().first)
+    #expect(loaded.summary?.overview == summary.overview)
+    #expect(loaded.summary?.topics == summary.topics)
+
+    try store.updateKnowledge(
+        id: note.id,
+        content: "The launch plan changed after the summary was generated."
+    )
+    #expect(store.loadKnowledgeItems().first?.summary == nil)
+}
+
+@Test
 func sharedLibraryRoundTripsNoteAndSearchesIt() throws {
     let root = FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString, isDirectory: true)

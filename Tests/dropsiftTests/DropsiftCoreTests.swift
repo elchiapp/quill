@@ -268,19 +268,21 @@ func desktopNavigationCompactsBeforeContentBecomesCrowded() {
     #expect(!DesktopLayoutPolicy.usesCompactNavigation(width: 1_240))
     #expect(
         RecordingDetailSection.allCases == [
-            .transcript,
             .summary,
+            .transcript,
             .insights,
         ]
     )
     #expect(
         KnowledgeDetailSection.sections(for: .note) == [
+            .summary,
             .note,
             .insights,
         ]
     )
     #expect(
         KnowledgeDetailSection.sections(for: .document) == [
+            .summary,
             .preview,
             .extractedText,
             .insights,
@@ -288,6 +290,7 @@ func desktopNavigationCompactsBeforeContentBecomesCrowded() {
     )
     #expect(
         KnowledgeDetailSection.sections(for: .image) == [
+            .summary,
             .preview,
             .extractedText,
             .insights,

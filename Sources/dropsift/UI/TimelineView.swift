@@ -10,10 +10,10 @@ struct TimelineView: View {
     var body: some View {
         HSplitView {
             timelineList
-                .frame(minWidth: 280, idealWidth: 300, maxWidth: 320)
+                .frame(minWidth: 260, idealWidth: 360, maxWidth: 640)
                 .frame(maxHeight: .infinity)
             detail
-                .frame(minWidth: 500, maxWidth: .infinity, maxHeight: .infinity)
+                .frame(minWidth: 420, maxWidth: .infinity, maxHeight: .infinity)
                 .layoutPriority(1)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -176,6 +176,12 @@ struct TimelineView: View {
                     endSelecting()
                 } label: {
                     Label("Generate Titles & Descriptions", systemImage: "sparkles")
+                }
+                Button {
+                    selectedItems.forEach(model.regenerateSummary)
+                    endSelecting()
+                } label: {
+                    Label("Generate Summaries", systemImage: "text.page")
                 }
                 Button {
                     selectedItems.forEach {

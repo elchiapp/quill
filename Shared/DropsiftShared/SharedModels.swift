@@ -83,6 +83,10 @@ public struct SharedKnowledgeItem: Identifiable, Sendable, Equatable {
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 
+    public var summary: RecordingSummary? {
+        RecordingSummaryStore.load(from: directory)
+    }
+
     public var assetURL: URL? {
         metadata.assetFilename.map { directory.appendingPathComponent($0) }
     }

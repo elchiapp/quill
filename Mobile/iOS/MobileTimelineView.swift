@@ -478,6 +478,8 @@ private struct MobileKnowledgeDetail: View {
                         .foregroundStyle(.secondary)
                 }
 
+                summaryCard
+
                 preview
 
                 MobileSemanticInsightsView(
@@ -532,6 +534,35 @@ private struct MobileKnowledgeDetail: View {
             if title == oldTitle {
                 title = newTitle
             }
+        }
+    }
+
+    @ViewBuilder
+    private var summaryCard: some View {
+        if let summary = item.summary {
+            VStack(alignment: .leading, spacing: 12) {
+                Label("Summary", systemImage: "text.page")
+                    .font(.headline)
+                Text(summary.overview)
+                MobileSummarySection(title: "Topics", values: summary.topics)
+                MobileSummarySection(
+                    title: "Conclusions & decisions",
+                    values: summary.decisions
+                )
+                MobileSummarySection(
+                    title: "Action items",
+                    values: summary.actionItems
+                )
+                Text("Generated locally on Mac with \(summary.model)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding()
+            .background(
+                .secondary.opacity(0.07),
+                in: RoundedRectangle(cornerRadius: 14)
+            )
         }
     }
 

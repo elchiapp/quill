@@ -641,3 +641,75 @@ public enum RecordingSummaryGenerator {
         }
     }
 }
+
+/// Builds the same portable summary document for every Timeline item. Meeting
+/// summaries retain their participant fields; notes, documents, and images
+/// simply leave those fields empty while sharing overview/topics/outcomes.
+public enum ContentSummaryGenerator {
+    public static func systemPrompt(kind: String) -> String {
+        if kind.localizedCaseInsensitiveContains("recording")
+            || kind.localizedCaseInsensitiveContains("meeting") {
+            return RecordingSummaryGenerator.systemPrompt
+        }
+        return """
+        Summarize a private knowledge-base item faithfully and concisely.
+        Return exactly one JSON object with this schema:
+        {"overview":"two to four sentences","participants":[],"topics":["topic"],"decisions":["conclusion or decision"],"action_items":["action with owner and due date when stated"]}
+
+        Requirements:
+        - Explain what the item is and what it is about, including its main point.
+        - Keep topics, conclusions, decisions, and action items short and specific.
+        - Use an empty array when a category is not supported by the content.
+        - Do not invent people, dates, facts, visual details, or outcomes.
+        - Do not include Markdown or any text outside the JSON object.
+        """
+    }
+
+    public static func userPrompt(
+        title: String,
+        kind: String,
+        text: String,
+        detectedSpeakers: [String],
+        characterLimit: Int
+    ) -> String {
+        if kind.localizedCaseInsensitiveContains("recording")
+            || kind.localizedCaseInsensitiveContains("meeting") {
+            return RecordingSummaryGenerator.userPrompt(
+                text: text,
+                detectedSpeakers: detectedSpeakers,
+                characterLimit: characterLimit
+            )
+        }
+        let limit = max(8_000, characterLimit)
+        let content: String
+        if text.count <= limit {
+            content = text
+        } else {
+            let headCount = limit * 3 / 4
+            content = String(text.prefix(headCount))
+                + "\n\n[…middle omitted because the item exceeded the model budget…]\n\n"
+                + String(text.suffix(limit - headCount))
+        }
+        return """
+        ITEM TYPE: \(kind)
+        CURRENT TITLE: \(title)
+
+        ITEM CONTENT, EXTRACTED TEXT, IMAGE DESCRIPTION, AND NOTES:
+        \(content)
+        """
+    }
+
+    public static func parse(
+        _ response: String,
+        detectedSpeakers: [String],
+        sourceRevision: String,
+        model: String
+    ) -> RecordingSummary? {
+        RecordingSummaryGenerator.parse(
+            response,
+            detectedSpeakers: detectedSpeakers,
+            sourceRevision: sourceRevision,
+            model: model
+        )
+    }
+}

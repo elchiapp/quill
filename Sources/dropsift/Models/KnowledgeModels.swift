@@ -72,6 +72,10 @@ struct KnowledgeItem: Identifiable, Sendable {
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 
+    var summary: RecordingSummary? {
+        RecordingSummaryStore.load(from: directory)
+    }
+
     var assetURL: URL? {
         metadata.assetFilename.map { directory.appendingPathComponent($0) }
     }

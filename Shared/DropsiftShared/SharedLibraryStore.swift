@@ -176,6 +176,7 @@ public struct SharedLibraryStore: Sendable {
         }
         if let content {
             try ContentPresentationStore.invalidate(in: directory)
+            try RecordingSummaryStore.invalidate(in: directory)
             try Data(content.utf8).write(
                 to: directory.appendingPathComponent("content.md"),
                 options: .atomic
@@ -183,6 +184,7 @@ public struct SharedLibraryStore: Sendable {
         }
         if let additionalNotes {
             try ContentPresentationStore.invalidate(in: directory)
+            try RecordingSummaryStore.invalidate(in: directory)
             try Data(additionalNotes.utf8).write(
                 to: directory.appendingPathComponent("notes.md"),
                 options: .atomic

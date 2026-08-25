@@ -2,8 +2,8 @@ import DropsiftShared
 import SwiftUI
 
 enum RecordingDetailSection: String, CaseIterable, Identifiable {
-    case transcript
     case summary
+    case transcript
     case insights
 
     var id: String { rawValue }
@@ -43,6 +43,9 @@ struct RecordingDetailView: View {
         _title = State(initialValue: recording.title)
         _notes = State(initialValue: recording.notes)
         _speakerNames = State(initialValue: recording.speakerNames)
+        _selectedSection = State(
+            initialValue: recording.summary == nil ? .transcript : .summary
+        )
         _showingNotesPanel = State(
             initialValue: ItemDetailLayoutPolicy.notesStartExpanded(
                 recording.notes
@@ -106,6 +109,13 @@ struct RecordingDetailView: View {
         .onChange(of: recording.speakerNames) { oldNames, newNames in
             if speakerNames == oldNames {
                 speakerNames = newNames
+            }
+        }
+        .onChange(of: recording.summary?.sourceRevision) { oldRevision, newRevision in
+            if oldRevision == nil, newRevision != nil {
+                selectedSection = .summary
+            } else if newRevision == nil, selectedSection == .summary {
+                selectedSection = .transcript
             }
         }
         .sheet(isPresented: $showingSpeakerEditor) {
@@ -422,6 +432,8 @@ struct RecordingDetailView: View {
                     )
                 }
                 .buttonStyle(.plain)
+                .disabled(!sectionIsAvailable(section))
+                .opacity(sectionIsAvailable(section) ? 1 : 0.42)
             }
             Spacer()
         }
@@ -445,6 +457,10 @@ struct RecordingDetailView: View {
     private var insightCount: Int {
         model.semanticReview(for: "recording:\(recording.id)")?
             .candidates.count ?? 0
+    }
+
+    private func sectionIsAvailable(_ section: RecordingDetailSection) -> Bool {
+        section != .summary || recording.summary != nil
     }
 
     private var insightsContent: some View {
@@ -735,7 +751,7 @@ enum ItemDetailLayoutPolicy {
     }
 }
 
-private struct SummaryListSection: View {
+struct SummaryListSection: View {
     let title: String
     let values: [String]
     let emptyText: String

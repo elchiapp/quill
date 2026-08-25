@@ -1201,7 +1201,11 @@ final class AppModel: ObservableObject {
     }
 
     func regenerateSummary(for recording: RecordingItem) {
-        let sourceID = "recording:\(recording.id)"
+        regenerateSummary(for: .recording(recording))
+    }
+
+    func regenerateSummary(for item: TimelineItem) {
+        let sourceID = item.id
         automaticSummarySourceIDs.removeAll { $0 == sourceID }
         persistAutomaticProcessingQueues()
         requestedSummarySourceIDs.removeAll { $0 == sourceID }
@@ -1987,10 +1991,7 @@ final class AppModel: ObservableObject {
         }
         let manuallyRequestedSummary = requestedSummarySourceIDs
             .compactMap { requestedID in
-                sources.first {
-                    $0.sourceID == requestedID
-                        && $0.sourceID.hasPrefix("recording:")
-                }
+                sources.first { $0.sourceID == requestedID }
             }
             .first
         if let manuallyRequestedSummary {
@@ -2054,7 +2055,6 @@ final class AppModel: ObservableObject {
             ? automaticSummarySourceIDs.compactMap { requestedID in
                 sources.first { source in
                     source.sourceID == requestedID
-                        && source.sourceID.hasPrefix("recording:")
                         && !source.text.trimmingCharacters(
                             in: .whitespacesAndNewlines
                         ).isEmpty
@@ -2161,11 +2161,15 @@ final class AppModel: ObservableObject {
             if needsSummary, !Task.isCancelled {
                 do {
                     let response = try await engine.complete(
-                        systemPrompt: RecordingSummaryGenerator.systemPrompt,
+                        systemPrompt: ContentSummaryGenerator.systemPrompt(
+                            kind: source.presentationKind
+                        ),
                         messages: [
                             ChatMessage(
                                 role: .user,
-                                content: RecordingSummaryGenerator.userPrompt(
+                                content: ContentSummaryGenerator.userPrompt(
+                                    title: source.title,
+                                    kind: source.presentationKind,
                                     text: source.text,
                                     detectedSpeakers: source.speakerLabels,
                                     characterLimit: min(
@@ -2181,7 +2185,7 @@ final class AppModel: ObservableObject {
                         maxTokens: 1_536
                     )
                     try Task.checkCancellation()
-                    guard let summary = RecordingSummaryGenerator.parse(
+                    guard let summary = ContentSummaryGenerator.parse(
                         response,
                         detectedSpeakers: source.speakerLabels,
                         sourceRevision: source.presentationRevision,
@@ -2196,7 +2200,7 @@ final class AppModel: ObservableObject {
                     summarySaved = true
                 } catch {
                     if summaryWasRequested, !(error is CancellationError) {
-                        appError = "Couldn’t generate this recording’s summary: "
+                        appError = "Couldn’t generate this item’s summary: "
                             + error.localizedDescription
                     }
                 }
@@ -2410,7 +2414,7 @@ final class AppModel: ObservableObject {
         )
         automaticSummarySourceIDs = Self.mergedSourceIDs(
             storedSummaryIDs,
-            Array(newIDs.filter { $0.hasPrefix("recording:") })
+            Array(newIDs)
         )
         knownPresentationSourceIDs.formUnion(currentIDs)
         persistAutomaticProcessingQueues()
@@ -2434,7 +2438,7 @@ final class AppModel: ObservableObject {
         automaticSummarySourceIDs = Self.mergedSourceIDs(
             automaticSummarySourceIDs,
             timelineItems.map(\.id).filter {
-                newIDs.contains($0) && $0.hasPrefix("recording:")
+                newIDs.contains($0)
             }
         )
         knownPresentationSourceIDs.formUnion(currentIDs)
@@ -2462,7 +2466,6 @@ final class AppModel: ObservableObject {
     ) {
         let completedIDs = Set<String>(sources.compactMap {
             source -> String? in
-            guard source.sourceID.hasPrefix("recording:") else { return nil }
             return RecordingSummaryStore.isCurrent(
                 in: source.directory,
                 revision: source.presentationRevision

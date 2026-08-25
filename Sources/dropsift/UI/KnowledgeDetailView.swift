@@ -3,6 +3,7 @@ import PDFKit
 import SwiftUI
 
 enum KnowledgeDetailSection: String, CaseIterable, Identifiable {
+    case summary
     case note
     case preview
     case extractedText
@@ -12,6 +13,7 @@ enum KnowledgeDetailSection: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .summary: "Summary"
         case .note: "Note"
         case .preview: "Preview"
         case .extractedText: "Extracted text"
@@ -21,6 +23,7 @@ enum KnowledgeDetailSection: String, CaseIterable, Identifiable {
 
     var systemImage: String {
         switch self {
+        case .summary: "text.page"
         case .note: "note.text"
         case .preview: "doc.richtext"
         case .extractedText: "text.viewfinder"
@@ -31,14 +34,15 @@ enum KnowledgeDetailSection: String, CaseIterable, Identifiable {
     static func sections(for kind: KnowledgeItemKind) -> [Self] {
         switch kind {
         case .note:
-            [.note, .insights]
+            [.summary, .note, .insights]
         case .document, .image:
-            [.preview, .extractedText, .insights]
+            [.summary, .preview, .extractedText, .insights]
         }
     }
 
-    static func initial(for kind: KnowledgeItemKind) -> Self {
-        kind == .note ? .note : .preview
+    static func initial(for item: KnowledgeItem) -> Self {
+        if item.summary != nil { return .summary }
+        return item.kind == .note ? .note : .preview
     }
 }
 
@@ -59,7 +63,7 @@ struct KnowledgeDetailView: View {
         _content = State(initialValue: item.content)
         _notes = State(initialValue: item.additionalNotes)
         _selectedSection = State(
-            initialValue: KnowledgeDetailSection.initial(for: item.kind)
+            initialValue: KnowledgeDetailSection.initial(for: item)
         )
         _showingNotesPanel = State(
             initialValue: item.kind != .note
@@ -123,6 +127,13 @@ struct KnowledgeDetailView: View {
         .onChange(of: item.additionalNotes) { oldNotes, newNotes in
             if notes == oldNotes { notes = newNotes }
         }
+        .onChange(of: item.summary?.sourceRevision) { oldRevision, newRevision in
+            if oldRevision == nil, newRevision != nil {
+                selectedSection = .summary
+            } else if newRevision == nil, selectedSection == .summary {
+                selectedSection = item.kind == .note ? .note : .preview
+            }
+        }
     }
 
     private var detailContent: some View {
@@ -150,6 +161,15 @@ struct KnowledgeDetailView: View {
                     ProgressView()
                         .controlSize(.small)
                     Text("Generating title and description locally…")
+                }
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            } else if model.summaryGenerationItemID
+                == "knowledge:\(item.id.uuidString)" {
+                HStack(spacing: 7) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Generating summary locally…")
                 }
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
@@ -245,6 +265,19 @@ struct KnowledgeDetailView: View {
             )
 
             Button {
+                model.regenerateSummary(for: .knowledge(item))
+            } label: {
+                Label(
+                    item.summary == nil ? "Generate summary" : "Regenerate summary",
+                    systemImage: "text.page.badge.magnifyingglass"
+                )
+            }
+            .disabled(
+                model.summaryGenerationItemID
+                    == "knowledge:\(item.id.uuidString)"
+            )
+
+            Button {
                 NSWorkspace.shared.activateFileViewerSelecting([
                     item.directory
                 ])
@@ -303,6 +336,8 @@ struct KnowledgeDetailView: View {
                     )
                 }
                 .buttonStyle(.plain)
+                .disabled(!sectionIsAvailable(section))
+                .opacity(sectionIsAvailable(section) ? 1 : 0.42)
             }
             Spacer()
         }
@@ -314,6 +349,8 @@ struct KnowledgeDetailView: View {
     @ViewBuilder
     private var selectedSectionContent: some View {
         switch selectedSection {
+        case .summary:
+            summaryContent
         case .note:
             MarkdownNoteEditor(text: $content)
                 .onChange(of: content) {
@@ -325,6 +362,69 @@ struct KnowledgeDetailView: View {
             extractedText
         case .insights:
             insightsContent
+        }
+    }
+
+    private func sectionIsAvailable(_ section: KnowledgeDetailSection) -> Bool {
+        section != .summary || item.summary != nil
+    }
+
+    @ViewBuilder
+    private var summaryContent: some View {
+        let sourceID = "knowledge:\(item.id.uuidString)"
+        if model.summaryGenerationItemID == sourceID {
+            VStack(spacing: 12) {
+                ProgressView()
+                Text("Building item summary…")
+                    .font(.headline)
+                Text("Describing what this \(item.kind.displayName.lowercased()) is about locally.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let summary = item.summary {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    HStack {
+                        Label("Item summary", systemImage: "text.page")
+                            .font(.headline)
+                        Spacer()
+                        Text("Local AI · \(summary.model)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Text(summary.overview)
+                        .lineSpacing(4)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    SummaryListSection(
+                        title: "Topics",
+                        values: summary.topics,
+                        emptyText: "No topics identified"
+                    )
+                    SummaryListSection(
+                        title: "Conclusions & decisions",
+                        values: summary.decisions,
+                        emptyText: "No explicit conclusions or decisions"
+                    )
+                    SummaryListSection(
+                        title: "Action items",
+                        values: summary.actionItems,
+                        emptyText: "No explicit action items"
+                    )
+                }
+                .padding(26)
+                .frame(maxWidth: 920)
+                .frame(maxWidth: .infinity)
+            }
+        } else {
+            ContentUnavailableView {
+                Label("No summary yet", systemImage: "text.page")
+            } description: {
+                Text("Generate a local summary from this item's content and notes.")
+            }
         }
     }
 
