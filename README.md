@@ -91,6 +91,14 @@ text and rich-document formats are converted locally, and images are OCRed
 with Apple's Vision framework. Imported audio enters the same on-device
 transcription and diarization queue as a new recording.
 
+Recording details keep the transcript as the default workspace. Summary and
+extracted tasks/entities live in dedicated **Summary** and **Insights** tabs,
+while saved notes use a full-height inspector that starts collapsed when empty.
+The header keeps Ask and Resume/Stop visible; regeneration, speaker naming,
+audio files, Finder, and deletion are grouped under **Actions**. Timeline search
+stays inside the Timeline column, and narrow windows collapse navigation to an
+icon rail before compressing content.
+
 Dropsift generates concise titles locally from note headings, extracted
 document/image text, recording notes, and transcripts. Generated titles can
 improve as more content arrives; once you type a title yourself, Dropsift keeps

@@ -18,11 +18,6 @@ struct TimelineView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: .textBackgroundColor))
-        .toolbar {
-            ToolbarItem {
-                timelineSearchField
-            }
-        }
         .onChange(of: model.filteredTimelineItems.map(\.id)) { _, visibleIDs in
             selection.formIntersection(Set(visibleIDs))
         }
@@ -67,6 +62,10 @@ struct TimelineView: View {
                 }
             }
             .padding(14)
+
+            timelineSearchField
+                .padding(.horizontal, 12)
+                .padding(.bottom, 12)
 
             Divider()
 
@@ -113,6 +112,7 @@ struct TimelineView: View {
                             }
                             TimelineRow(
                                 item: item,
+                                status: rowStatus(for: item),
                                 isSelected: isSelecting
                                     ? selection.contains(item.id)
                                     : model.selectedTimelineItemID == item.id
@@ -293,7 +293,7 @@ struct TimelineView: View {
 
             TextField("Search timeline", text: $model.timelineSearch)
                 .textFieldStyle(.plain)
-                .frame(width: 220)
+                .frame(maxWidth: .infinity)
                 .onExitCommand {
                     model.timelineSearch = ""
                 }
@@ -319,6 +319,8 @@ struct TimelineView: View {
             RoundedRectangle(cornerRadius: 9)
                 .stroke(Color.primary.opacity(0.09))
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Search timeline")
     }
 
     private var hasTimelineSearch: Bool {
@@ -354,6 +356,17 @@ struct TimelineView: View {
         .fixedSize()
     }
 
+    private func rowStatus(for item: TimelineItem) -> String? {
+        guard case .recording(let recording) = item else { return nil }
+        if model.recordingSessionID == recording.id, model.isRecording {
+            return "Recording"
+        }
+        if model.transcriptionProcessingID == recording.id {
+            return "Processing"
+        }
+        return nil
+    }
+
     @ViewBuilder
     private var detail: some View {
         if let item = model.selectedTimelineItem {
@@ -377,37 +390,40 @@ struct TimelineView: View {
 
 private struct TimelineRow: View {
     let item: TimelineItem
+    let status: String?
     let isSelected: Bool
 
     var body: some View {
         HStack(alignment: .top, spacing: 11) {
             Image(systemName: item.kind.systemImage)
-                .font(.body.weight(.semibold))
+                .font(.callout.weight(.semibold))
                 .foregroundStyle(color)
-                .frame(width: 34, height: 34)
-                .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 9))
+                .frame(width: 30, height: 30)
+                .background(color.opacity(0.11), in: RoundedRectangle(cornerRadius: 8))
 
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline) {
                     Text(item.title)
                         .font(.body.weight(.medium))
                         .lineLimit(1)
                     Spacer()
+                    if let status {
+                        Text(status)
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(status == "Recording" ? .red : .orange)
+                    }
                     Text(item.date, style: .date)
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }
-                Text(item.kind.singularName)
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(color)
                 Text(item.listDescription)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                    .lineLimit(1)
             }
         }
         .padding(.horizontal, 9)
-        .padding(.vertical, 6)
+        .padding(.vertical, 7)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             isSelected ? Color.accentColor.opacity(0.18) : Color.clear,

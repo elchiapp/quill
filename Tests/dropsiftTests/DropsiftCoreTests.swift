@@ -256,6 +256,21 @@ func liveRecordingNeverShowsTwoCompetingNotesPanels() {
             isAnyRecordingActive: true
         )
     )
+    #expect(!RecordingDetailLayoutPolicy.notesStartExpanded("  \n"))
+    #expect(RecordingDetailLayoutPolicy.notesStartExpanded("Follow up"))
+}
+
+@Test
+func desktopNavigationCompactsBeforeContentBecomesCrowded() {
+    #expect(DesktopLayoutPolicy.usesCompactNavigation(width: 1_239))
+    #expect(!DesktopLayoutPolicy.usesCompactNavigation(width: 1_240))
+    #expect(
+        RecordingDetailSection.allCases == [
+            .transcript,
+            .summary,
+            .insights,
+        ]
+    )
 }
 
 @Test

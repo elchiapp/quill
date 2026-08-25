@@ -6,59 +6,42 @@ import SwiftUI
 struct DropsiftRootView: View {
     @ObservedObject var model: AppModel
     @State private var showingLiveNotesPanel = true
+    @State private var showingActivity = false
 
     var body: some View {
-        HStack(spacing: 0) {
-            sidebar
-                .frame(width: 220)
-                .background(Color(nsColor: .controlBackgroundColor))
-            Divider()
-            detail
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        GeometryReader { geometry in
+            let compactNavigation = DesktopLayoutPolicy.usesCompactNavigation(
+                width: geometry.size.width
+            )
+            HStack(spacing: 0) {
+                sidebar(compact: compactNavigation)
+                    .frame(width: compactNavigation ? 72 : 190)
+                    .background(Color(nsColor: .controlBackgroundColor))
+                Divider()
+                detail
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         }
         .frame(minWidth: minimumWindowWidth, minHeight: 680)
         .toolbar {
             ToolbarItemGroup {
-                if let status = model.transcriptionStatus {
-                    HStack(spacing: 6) {
-                        if model.transcriptionProcessingID != nil {
+                if hasBackgroundActivity {
+                    Button {
+                        showingActivity.toggle()
+                    } label: {
+                        HStack(spacing: 6) {
                             ProgressView()
                                 .controlSize(.small)
-                        } else {
-                            Image(systemName: "waveform.badge.magnifyingglass")
+                            Text("Activity")
+                                .font(.caption)
                         }
-                        Text(
-                            model.transcriptionProcessingID == nil
-                                ? "Transcript status"
-                                : "Processing transcript"
-                        )
-                        .font(.caption)
                     }
-                    .foregroundStyle(.secondary)
-                    .help(status)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("Background transcription")
-                    .accessibilityValue(status)
-                }
-
-                if let state = model.ingestionState {
-                    HStack(spacing: 7) {
-                        ProgressView(value: state.progress)
-                            .frame(width: 80)
-                        Text(state.currentName)
-                            .lineLimit(1)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .help("Show background activity")
+                    .popover(isPresented: $showingActivity, arrowEdge: .top) {
+                        BackgroundActivityView(model: model)
                     }
-                    .foregroundStyle(.secondary)
-                }
-
-                if let label = model.semanticProcessingLabel {
-                    HStack(spacing: 7) {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text(label)
-                            .lineLimit(1)
-                    }
-                    .foregroundStyle(.secondary)
                 }
 
                 if isShowingRecordingUI {
@@ -87,13 +70,6 @@ struct DropsiftRootView: View {
                     .buttonStyle(.borderedProminent)
                     .tint(.red)
                 }
-
-                Button {
-                    model.showingSettings = true
-                } label: {
-                    Image(systemName: "gearshape")
-                }
-                .help("Dropsift settings")
             }
         }
         .sheet(isPresented: $model.showingSettings) {
@@ -130,70 +106,120 @@ struct DropsiftRootView: View {
         }
     }
 
-    private var sidebar: some View {
+    private func sidebar(compact: Bool) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
                 Image(systemName: "line.3.horizontal.decrease.circle")
                     .font(.title2)
                     .foregroundStyle(.tint)
-                Text("Dropsift")
-                    .font(.title2.weight(.semibold))
-                Spacer()
+                if !compact {
+                    Text("Dropsift")
+                        .font(.title2.weight(.semibold))
+                    Spacer()
+                }
             }
-            .padding(.horizontal, 16)
+            .frame(maxWidth: .infinity, alignment: compact ? .center : .leading)
+            .padding(.horizontal, compact ? 8 : 14)
             .padding(.top, 14)
             .padding(.bottom, 8)
 
             List(selection: $model.section) {
                 Section {
-                    Label("Capture", systemImage: "plus.app")
+                    navigationLabel("Capture", systemImage: "plus.app", compact: compact)
                         .tag(AppModel.Section.capture)
-                    Label("Timeline", systemImage: "clock.arrow.circlepath")
+                    navigationLabel(
+                        "Timeline",
+                        systemImage: "clock.arrow.circlepath",
+                        compact: compact
+                    )
                         .tag(AppModel.Section.timeline)
-                    Label("Ask Dropsift", systemImage: "sparkles")
+                    navigationLabel("Ask Dropsift", systemImage: "sparkles", compact: compact)
                         .tag(AppModel.Section.chats)
                 }
 
-                Section("Organize") {
-                    Label("Tasks", systemImage: "checklist")
+                Section {
+                    navigationLabel("Tasks", systemImage: "checklist", compact: compact)
                         .tag(AppModel.Section.tasks)
-                    Label("People", systemImage: "person.2")
+                    navigationLabel("People", systemImage: "person.2", compact: compact)
                         .tag(AppModel.Section.people)
-                    Label("Places", systemImage: "mappin.and.ellipse")
+                    navigationLabel(
+                        "Places",
+                        systemImage: "mappin.and.ellipse",
+                        compact: compact
+                    )
                         .tag(AppModel.Section.places)
-                    Label("Events", systemImage: "calendar")
+                    navigationLabel("Events", systemImage: "calendar", compact: compact)
                         .tag(AppModel.Section.events)
-                    Label("Organizations", systemImage: "building.2")
+                    navigationLabel(
+                        "Organizations",
+                        systemImage: "building.2",
+                        compact: compact
+                    )
                         .tag(AppModel.Section.organizations)
-                    Label("Projects", systemImage: "folder")
+                    navigationLabel("Projects", systemImage: "folder", compact: compact)
                         .tag(AppModel.Section.projects)
-                    Label("Topics", systemImage: "tag")
+                    navigationLabel("Topics", systemImage: "tag", compact: compact)
                         .tag(AppModel.Section.topics)
+                } header: {
+                    if !compact { Text("Organize") }
                 }
             }
             .listStyle(.sidebar)
 
-            VStack(alignment: .leading, spacing: 8) {
-                Label(model.storageLabel, systemImage: "icloud")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
+            VStack(alignment: compact ? .center : .leading, spacing: 9) {
+                if !compact {
+                    Label(model.storageLabel, systemImage: "icloud")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 Button {
                     model.showingSettings = true
                 } label: {
-                    HStack(spacing: 7) {
-                        Circle()
-                            .fill(aiStatusColor)
-                            .frame(width: 7, height: 7)
-                        Text(aiStatusLabel)
-                            .lineLimit(1)
-                        Spacer()
+                    if compact {
+                        Image(systemName: "gearshape")
+                            .font(.title3)
+                            .frame(width: 34, height: 28)
+                    } else {
+                        HStack(spacing: 9) {
+                            Image(systemName: "gearshape")
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Settings")
+                                    .font(.callout.weight(.medium))
+                                HStack(spacing: 6) {
+                                    Circle()
+                                        .fill(aiStatusColor)
+                                        .frame(width: 7, height: 7)
+                                    Text(aiStatusLabel)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                            }
+                            Spacer()
+                        }
                     }
-                    .font(.caption)
                 }
                 .buttonStyle(.plain)
+                .help(compact ? "Dropsift settings · \(aiStatusLabel)" : "Dropsift settings")
             }
-            .padding(14)
+            .padding(compact ? 10 : 14)
+        }
+    }
+
+    @ViewBuilder
+    private func navigationLabel(
+        _ title: String,
+        systemImage: String,
+        compact: Bool
+    ) -> some View {
+        if compact {
+            Image(systemName: systemImage)
+                .font(.title3)
+                .frame(maxWidth: .infinity)
+                .help(title)
+                .accessibilityLabel(title)
+        } else {
+            Label(title, systemImage: systemImage)
         }
     }
 
@@ -237,7 +263,13 @@ struct DropsiftRootView: View {
     }
 
     private var minimumWindowWidth: CGFloat {
-        1_400
+        980
+    }
+
+    private var hasBackgroundActivity: Bool {
+        model.transcriptionStatus != nil
+            || model.ingestionState != nil
+            || model.semanticProcessingLabel != nil
     }
 
     @ViewBuilder
@@ -329,6 +361,73 @@ struct DropsiftRootView: View {
         return percentage < 10
             ? String(format: "%.1f%%", percentage)
             : String(format: "%.0f%%", percentage)
+    }
+}
+
+enum DesktopLayoutPolicy {
+    static func usesCompactNavigation(width: CGFloat) -> Bool {
+        width < 1_240
+    }
+}
+
+private struct BackgroundActivityView: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Background activity")
+                .font(.headline)
+
+            if let status = model.transcriptionStatus {
+                activityRow(
+                    title: model.transcriptionProcessingID == nil
+                        ? "Transcript"
+                        : "Processing transcript",
+                    detail: status,
+                    progress: nil
+                )
+            }
+            if let state = model.ingestionState {
+                activityRow(
+                    title: "Adding files",
+                    detail: state.currentName,
+                    progress: state.progress
+                )
+            }
+            if let label = model.semanticProcessingLabel {
+                activityRow(
+                    title: "Local AI",
+                    detail: label,
+                    progress: nil
+                )
+            }
+        }
+        .padding(18)
+        .frame(width: 340, alignment: .leading)
+    }
+
+    private func activityRow(
+        title: String,
+        detail: String,
+        progress: Double?
+    ) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            if let progress {
+                ProgressView(value: progress)
+                    .frame(width: 42)
+            } else {
+                ProgressView()
+                    .controlSize(.small)
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.callout.weight(.medium))
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 }
 private struct ChatsColumn: View {

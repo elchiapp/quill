@@ -1,6 +1,30 @@
 import DropsiftShared
 import SwiftUI
 
+enum RecordingDetailSection: String, CaseIterable, Identifiable {
+    case transcript
+    case summary
+    case insights
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .transcript: "Transcript"
+        case .summary: "Summary"
+        case .insights: "Insights"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .transcript: "text.alignleft"
+        case .summary: "text.page"
+        case .insights: "wand.and.stars"
+        }
+    }
+}
+
 struct RecordingDetailView: View {
     @ObservedObject var model: AppModel
     let recording: RecordingItem
@@ -10,7 +34,7 @@ struct RecordingDetailView: View {
     @State private var speakerNames: [String: String]
     @State private var showingNotesPanel = true
     @State private var showingSpeakerEditor = false
-    @State private var showingSummary = true
+    @State private var selectedSection = RecordingDetailSection.transcript
     @State private var splitSegment: TranscriptDocument.Segment?
 
     init(model: AppModel, recording: RecordingItem) {
@@ -19,36 +43,18 @@ struct RecordingDetailView: View {
         _title = State(initialValue: recording.title)
         _notes = State(initialValue: recording.notes)
         _speakerNames = State(initialValue: recording.speakerNames)
+        _showingNotesPanel = State(
+            initialValue: RecordingDetailLayoutPolicy.notesStartExpanded(
+                recording.notes
+            )
+        )
     }
 
     var body: some View {
-        Group {
-            if RecordingDetailLayoutPolicy.showsSavedNotes(
-                requested: showingNotesPanel,
-                isAnyRecordingActive: model.isRecording
-                    || ProcessInfo.processInfo.environment[
-                        "DROPSIFT_PREVIEW_RECORDING_PANEL"
-                    ] == "1"
-            ) {
-                HSplitView {
-                    recordingContent
-                        .frame(
-                            minWidth: 460,
-                            maxWidth: .infinity,
-                            maxHeight: .infinity
-                        )
-
-                    savedNotes
-                        .frame(
-                            minWidth: 340,
-                            idealWidth: 380,
-                            maxWidth: 420,
-                            maxHeight: .infinity
-                        )
-                }
-            } else {
-                recordingContent
-            }
+        recordingContent
+        .inspector(isPresented: savedNotesPresented) {
+            savedNotes
+                .inspectorColumnWidth(min: 340, ideal: 380, max: 460)
         }
         .background(Color(nsColor: .textBackgroundColor))
         .onChange(of: recording.title) { oldTitle, newTitle in
@@ -102,26 +108,36 @@ struct RecordingDetailView: View {
         model.isRecording && model.recordingSessionID == recording.id
     }
 
+    private var savedNotesPresented: Binding<Bool> {
+        Binding(
+            get: {
+                RecordingDetailLayoutPolicy.showsSavedNotes(
+                    requested: showingNotesPanel,
+                    isAnyRecordingActive: model.isRecording
+                        || ProcessInfo.processInfo.environment[
+                            "DROPSIFT_PREVIEW_RECORDING_PANEL"
+                        ] == "1"
+                )
+            },
+            set: { showingNotesPanel = $0 }
+        )
+    }
+
     private var recordingContent: some View {
         VStack(spacing: 0) {
             header
-            summaryPanel
-            ItemSemanticInsightsView(
-                model: model,
-                sourceID: "recording:\(recording.id)"
-            )
-            .padding(.horizontal, 24)
-            .padding(.bottom, 16)
             Divider()
-            transcript
+            sectionPicker
+            Divider()
+            selectedSectionContent
         }
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             TextField("Meeting title", text: $title)
                 .textFieldStyle(.plain)
-                .font(.title.weight(.semibold))
+                .font(.title2.weight(.semibold))
                 .onSubmit {
                     model.renameSelectedRecording(to: title)
                 }
@@ -151,244 +167,352 @@ struct RecordingDetailView: View {
             .font(.caption)
             .foregroundStyle(.secondary)
 
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 8) {
-                    Button {
-                        model.createThread(scope: .recording(recording.id))
-                    } label: {
-                        Label("Ask about this recording", systemImage: "sparkles")
-                    }
-                    .buttonStyle(.borderedProminent)
-
-                    regenerationMenu
-
-                    Menu {
-                        Button("Open microphone track") { model.openAudio(recording.micURL) }
-                            .disabled(recording.micURL == nil)
-                        Button("Open system-audio track") { model.openAudio(recording.systemURL) }
-                            .disabled(recording.systemURL == nil)
-                        Divider()
-                        Button("Show in Finder") {
-                            NSWorkspace.shared.activateFileViewerSelecting([recording.directory])
-                        }
-                        Divider()
-                        Button(role: .destructive) {
-                            model.requestDeleteRecording(recording)
-                        } label: {
-                            Label("Move Recording to Trash", systemImage: "trash")
-                        }
-                    } label: {
-                        Label("Audio & files", systemImage: "waveform")
-                    }
-                    .menuStyle(.borderlessButton)
-                    .fixedSize()
+            HStack(spacing: 8) {
+                Button {
+                    model.createThread(scope: .recording(recording.id))
+                } label: {
+                    Label("Ask about this recording", systemImage: "sparkles")
                 }
+                .buttonStyle(.borderedProminent)
 
-                HStack(spacing: 8) {
-                    if !speakerIDs.isEmpty {
-                        Button {
-                            showingSpeakerEditor = true
-                        } label: {
-                            Label("Name speakers", systemImage: "person.2")
-                        }
-                        .buttonStyle(.bordered)
-                        .help("Assign names to transcript speakers")
-                    }
+                recordingControl
+                actionsMenu
 
-                    if isActiveRecording {
-                        Button {
-                            model.stopRecording()
-                        } label: {
-                            Label(
-                                "Stop \(model.recordingElapsed)",
-                                systemImage: "stop.circle.fill"
-                            )
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
-                        .tint(.red)
-                        .help("Stop recording")
-                    } else if model.isPreparingRecording {
-                        HStack(spacing: 6) {
-                            ProgressView()
-                                .controlSize(.small)
-                            Text("Preparing recorder…")
-                        }
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                    } else if model.splittingRecordingID == recording.id {
-                        HStack(spacing: 6) {
-                            ProgressView()
-                                .controlSize(.small)
-                            Text("Splitting recording…")
-                        }
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                    } else {
-                        Button {
-                            model.resumeRecording(recording)
-                        } label: {
-                            Label("Resume", systemImage: "record.circle")
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(model.isRecording)
-                        .help("Continue recording into this item")
-                    }
+                Spacer()
 
-                    Spacer()
-
-                    if !model.isRecording {
-                        Button {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                showingNotesPanel.toggle()
-                            }
-                        } label: {
-                            Label(
-                                showingNotesPanel ? "Hide notes" : "Show notes",
-                                systemImage: showingNotesPanel
-                                    ? "rectangle.righthalf.inset.filled"
-                                    : "note.text"
-                            )
+                if !model.isRecording {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            showingNotesPanel.toggle()
                         }
-                        .buttonStyle(.borderless)
-                        .help(
-                            showingNotesPanel
-                                ? "Collapse recording notes"
-                                : "Show recording notes"
+                    } label: {
+                        Label(
+                            showingNotesPanel ? "Hide notes" : "Notes",
+                            systemImage: showingNotesPanel
+                                ? "rectangle.righthalf.inset.filled"
+                                : "note.text"
                         )
                     }
+                    .buttonStyle(.borderless)
+                    .help(
+                        showingNotesPanel
+                            ? "Collapse recording notes"
+                            : "Show recording notes"
+                    )
                 }
             }
         }
-        .padding(24)
-    }
-
-    private var regenerationMenu: some View {
-        let sourceID = "recording:\(recording.id)"
-        let transcriptIsProcessing = model.transcriptionProcessingID
-            == recording.id
-        return Menu {
-            Button {
-                model.regenerateTranscript(for: recording)
-            } label: {
-                Label(
-                    "Regenerate transcript",
-                    systemImage: "arrow.triangle.2.circlepath"
-                )
-            }
-            .disabled(
-                transcriptIsProcessing
-                    || model.splittingRecordingID == recording.id
-                    || (recording.micURL == nil && recording.systemURL == nil)
-            )
-
-            Divider()
-
-            Button {
-                model.regeneratePresentation(for: .recording(recording))
-            } label: {
-                Label("Regenerate title & description", systemImage: "sparkles")
-            }
-            .disabled(
-                transcriptIsProcessing
-                    || model.metadataGenerationItemID == sourceID
-            )
-
-            Button {
-                model.regenerateSummary(for: recording)
-            } label: {
-                Label(
-                    recording.summary == nil
-                        ? "Generate summary"
-                        : "Regenerate summary",
-                    systemImage: "text.page.badge.magnifyingglass"
-                )
-            }
-            .disabled(
-                transcriptIsProcessing
-                    || recording.transcript == nil
-                    || model.summaryGenerationItemID == sourceID
-            )
-        } label: {
-            Label(
-                transcriptIsProcessing ? "Regenerating…" : "Regenerate",
-                systemImage: "arrow.clockwise"
-            )
-        }
-        .menuStyle(.borderlessButton)
-        .fixedSize()
-        .help("Regenerate this recording’s transcript, title, or summary")
+        .padding(.horizontal, 22)
+        .padding(.vertical, 18)
     }
 
     @ViewBuilder
-    private var summaryPanel: some View {
-        let sourceID = "recording:\(recording.id)"
-        if model.summaryGenerationItemID == sourceID {
-            HStack(spacing: 9) {
+    private var recordingControl: some View {
+        if isActiveRecording {
+            Button {
+                model.stopRecording()
+            } label: {
+                Label(
+                    "Stop \(model.recordingElapsed)",
+                    systemImage: "stop.circle.fill"
+                )
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.red)
+            .help("Stop recording")
+        } else if model.isPreparingRecording {
+            HStack(spacing: 6) {
                 ProgressView()
                     .controlSize(.small)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Building meeting summary…")
-                        .font(.headline)
-                    Text("Analyzing participants, topics, decisions, and action items locally.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
+                Text("Preparing…")
             }
-            .padding(16)
-            .background(Color.accentColor.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
-            .padding(.horizontal, 24)
-            .padding(.bottom, 16)
+            .font(.callout)
+            .foregroundStyle(.secondary)
+        } else if model.splittingRecordingID == recording.id {
+            HStack(spacing: 6) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Splitting…")
+            }
+            .font(.callout)
+            .foregroundStyle(.secondary)
+        } else {
+            Button {
+                model.resumeRecording(recording)
+            } label: {
+                Label("Resume", systemImage: "record.circle")
+            }
+            .buttonStyle(.bordered)
+            .disabled(model.isRecording)
+            .help("Continue recording into this item")
+        }
+    }
+
+    private var actionsMenu: some View {
+        Menu {
+            Menu {
+                regenerationActions
+            } label: {
+                Label("Regenerate", systemImage: "arrow.clockwise")
+            }
+
+            if !speakerIDs.isEmpty {
+                Button {
+                    showingSpeakerEditor = true
+                } label: {
+                    Label("Name speakers", systemImage: "person.2")
+                }
+            }
+
+            Divider()
+
+            Button("Open microphone track") {
+                model.openAudio(recording.micURL)
+            }
+            .disabled(recording.micURL == nil)
+            Button("Open system-audio track") {
+                model.openAudio(recording.systemURL)
+            }
+            .disabled(recording.systemURL == nil)
+            Button {
+                NSWorkspace.shared.activateFileViewerSelecting([
+                    recording.directory
+                ])
+            } label: {
+                Label("Show in Finder", systemImage: "folder")
+            }
+
+            Divider()
+
+            Button(role: .destructive) {
+                model.requestDeleteRecording(recording)
+            } label: {
+                Label("Move Recording to Trash", systemImage: "trash")
+            }
+        } label: {
+            Label("Actions", systemImage: "ellipsis.circle")
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("Recording actions")
+    }
+
+    @ViewBuilder
+    private var regenerationActions: some View {
+        let sourceID = "recording:\(recording.id)"
+        let transcriptIsProcessing = model.transcriptionProcessingID
+            == recording.id
+        Button {
+            model.regenerateTranscript(for: recording)
+        } label: {
+            Label(
+                "Transcript",
+                systemImage: "arrow.triangle.2.circlepath"
+            )
+        }
+        .disabled(
+            transcriptIsProcessing
+                || model.splittingRecordingID == recording.id
+                || (recording.micURL == nil && recording.systemURL == nil)
+        )
+
+        Button {
+            model.regeneratePresentation(for: .recording(recording))
+        } label: {
+            Label("Title & description", systemImage: "sparkles")
+        }
+        .disabled(
+            transcriptIsProcessing
+                || model.metadataGenerationItemID == sourceID
+        )
+
+        Button {
+            model.regenerateSummary(for: recording)
+        } label: {
+            Label(
+                "Summary",
+                systemImage: "text.page.badge.magnifyingglass"
+            )
+        }
+        .disabled(
+            transcriptIsProcessing
+                || recording.transcript == nil
+                || model.summaryGenerationItemID == sourceID
+        )
+    }
+
+    private var sectionPicker: some View {
+        HStack(spacing: 6) {
+            ForEach(RecordingDetailSection.allCases) { section in
+                Button {
+                    selectedSection = section
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: section.systemImage)
+                        Text(section.title)
+                        if section == .insights, insightCount > 0 {
+                            Text("\(insightCount)")
+                                .font(.caption2.weight(.semibold))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.secondary.opacity(0.14), in: Capsule())
+                        }
+                    }
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(
+                        selectedSection == section ? Color.accentColor : Color.secondary
+                    )
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 7)
+                    .background(
+                        selectedSection == section
+                            ? Color.accentColor.opacity(0.11)
+                            : Color.clear,
+                        in: RoundedRectangle(cornerRadius: 8)
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 8)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.55))
+    }
+
+    @ViewBuilder
+    private var selectedSectionContent: some View {
+        switch selectedSection {
+        case .transcript:
+            transcript
+        case .summary:
+            summaryContent
+        case .insights:
+            insightsContent
+        }
+    }
+
+    private var insightCount: Int {
+        model.semanticReview(for: "recording:\(recording.id)")?
+            .candidates.count ?? 0
+    }
+
+    private var insightsContent: some View {
+        ScrollView {
+            ItemSemanticInsightsView(
+                model: model,
+                sourceID: "recording:\(recording.id)"
+            )
+            .padding(24)
+            .frame(maxWidth: 920)
+            .frame(maxWidth: .infinity)
+        }
+    }
+
+    @ViewBuilder
+    private var summaryContent: some View {
+        let sourceID = "recording:\(recording.id)"
+        if model.summaryGenerationItemID == sourceID {
+            VStack(spacing: 12) {
+                ProgressView()
+                Text("Building meeting summary…")
+                    .font(.headline)
+                Text("Analyzing participants, topics, decisions, and action items locally.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let summary = recording.summary {
-            DisclosureGroup(isExpanded: $showingSummary) {
-                VStack(alignment: .leading, spacing: 14) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    HStack {
+                        Label("Meeting summary", systemImage: "text.page")
+                            .font(.headline)
+                        Spacer()
+                        Text("Local AI · \(summary.model)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
                     Text(summary.overview)
+                        .font(.body)
+                        .lineSpacing(4)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
-                    HStack(alignment: .top, spacing: 24) {
-                        SummaryListSection(
-                            title: "Participants (\(summary.participantCount))",
-                            values: summary.participants,
-                            emptyText: "No names identified"
-                        )
-                        SummaryListSection(
-                            title: "Topics",
-                            values: summary.topics,
-                            emptyText: "No topics identified"
-                        )
+                    ViewThatFits(in: .horizontal) {
+                        HStack(alignment: .top, spacing: 28) {
+                            participantsSection(summary)
+                            topicsSection(summary)
+                        }
+                        VStack(alignment: .leading, spacing: 20) {
+                            participantsSection(summary)
+                            topicsSection(summary)
+                        }
                     }
 
-                    HStack(alignment: .top, spacing: 24) {
-                        SummaryListSection(
-                            title: "Decisions",
-                            values: summary.decisions,
-                            emptyText: "No explicit decisions"
-                        )
-                        SummaryListSection(
-                            title: "Action items",
-                            values: summary.actionItems,
-                            emptyText: "No explicit action items"
-                        )
+                    ViewThatFits(in: .horizontal) {
+                        HStack(alignment: .top, spacing: 28) {
+                            decisionsSection(summary)
+                            actionItemsSection(summary)
+                        }
+                        VStack(alignment: .leading, spacing: 20) {
+                            decisionsSection(summary)
+                            actionItemsSection(summary)
+                        }
                     }
                 }
-                .padding(.top, 12)
-            } label: {
-                HStack {
-                    Label("Meeting summary", systemImage: "text.page")
-                        .font(.headline)
-                    Spacer()
-                    Text("Local AI · \(summary.model)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+                .padding(26)
+                .frame(maxWidth: 920)
+                .frame(maxWidth: .infinity)
             }
-            .padding(16)
-            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
-            .padding(.horizontal, 24)
-            .padding(.bottom, 16)
+        } else {
+            ContentUnavailableView {
+                Label("No summary yet", systemImage: "text.page")
+            } description: {
+                Text("Generate a concise overview, participants, decisions, and action items locally.")
+            } actions: {
+                Button("Generate summary") {
+                    model.regenerateSummary(for: recording)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(recording.transcript == nil)
+            }
         }
+    }
+
+    private func participantsSection(
+        _ summary: RecordingSummary
+    ) -> some View {
+        SummaryListSection(
+            title: "Participants (\(summary.participantCount))",
+            values: summary.participants,
+            emptyText: "No names identified"
+        )
+    }
+
+    private func topicsSection(_ summary: RecordingSummary) -> some View {
+        SummaryListSection(
+            title: "Topics",
+            values: summary.topics,
+            emptyText: "No topics identified"
+        )
+    }
+
+    private func decisionsSection(_ summary: RecordingSummary) -> some View {
+        SummaryListSection(
+            title: "Decisions",
+            values: summary.decisions,
+            emptyText: "No explicit decisions"
+        )
+    }
+
+    private func actionItemsSection(_ summary: RecordingSummary) -> some View {
+        SummaryListSection(
+            title: "Action items",
+            values: summary.actionItems,
+            emptyText: "No explicit action items"
+        )
     }
 
     private var savedNotes: some View {
@@ -542,6 +666,10 @@ struct RecordingDetailView: View {
 }
 
 enum RecordingDetailLayoutPolicy {
+    static func notesStartExpanded(_ notes: String) -> Bool {
+        !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     static func showsSavedNotes(
         requested: Bool,
         isAnyRecordingActive: Bool
