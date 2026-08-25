@@ -51,6 +51,17 @@ final class MobileAppModel: ObservableObject {
     private var processingWatchInbox = false
 
     init() {
+        #if DEBUG
+        if ProcessInfo.processInfo.environment[
+            "DROPSIFT_PREVIEW_TIMELINE_SAMPLE"
+        ] == "1" {
+            _ = try? SharedLibraryStore(root: locator.rootURL).createNote(
+                title: "Timeline navigation test",
+                content: "Open this item to verify Timeline navigation."
+            )
+            selectedTab = .timeline
+        }
+        #endif
         if ProcessInfo.processInfo.environment[
             "DROPSIFT_PREVIEW_ASK"
         ] == "1" {

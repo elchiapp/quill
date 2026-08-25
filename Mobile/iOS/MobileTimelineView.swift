@@ -42,18 +42,7 @@ struct MobileTimelineView: View {
                     } else if model.filteredTimeline.isEmpty {
                         emptyTimeline
                     } else {
-                        List(selection: $selection) {
-                            ForEach(model.filteredTimeline) { item in
-                                NavigationLink(value: item.id) {
-                                    MobileTimelineRow(item: item)
-                                }
-                                .tag(item.id)
-                            }
-                        }
-                        .listStyle(.plain)
-                        .refreshable {
-                            await model.reloadAndWait()
-                        }
+                        timelineList
                     }
                 }
             }
@@ -152,6 +141,39 @@ struct MobileTimelineView: View {
         ) { result in
             if case .success(let urls) = result, let url = urls.first {
                 model.connectLibrary(url)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var timelineList: some View {
+        if isEditing {
+            List(selection: $selection) {
+                ForEach(model.filteredTimeline) { item in
+                    MobileTimelineRow(item: item)
+                        .tag(item.id)
+                }
+            }
+            .listStyle(.plain)
+            .refreshable {
+                await model.reloadAndWait()
+            }
+        } else {
+            List {
+                ForEach(model.filteredTimeline) { item in
+                    Button {
+                        path = [item.id]
+                    } label: {
+                        MobileTimelineRow(item: item)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Opens item details")
+                }
+            }
+            .listStyle(.plain)
+            .refreshable {
+                await model.reloadAndWait()
             }
         }
     }
