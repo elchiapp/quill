@@ -32,51 +32,105 @@ public struct SharedLibraryStore: Sendable {
         }
     }
 
-    public func loadSnapshot() -> SharedLibrarySnapshot {
+    public func loadSnapshot(
+        refreshGeneratedTitles: Bool = true
+    ) -> SharedLibrarySnapshot {
         let semanticStore = SharedSemanticStore(root: root)
         return SharedLibrarySnapshot(
-            knowledgeItems: loadKnowledgeItems(),
-            recordings: loadRecordings(),
+            knowledgeItems: loadKnowledgeItems(
+                refreshGeneratedTitles: refreshGeneratedTitles
+            ),
+            recordings: loadRecordings(
+                refreshGeneratedTitles: refreshGeneratedTitles
+            ),
             tasks: semanticStore.loadTasks(),
             entities: semanticStore.loadEntities()
         )
     }
 
-    public func loadKnowledgeItems() -> [SharedKnowledgeItem] {
+    public func loadKnowledgeItems(
+        refreshGeneratedTitles: Bool = true
+    ) -> [SharedKnowledgeItem] {
         guard let entries = try? FileManager.default.contentsOfDirectory(
             at: itemsRoot,
             includingPropertiesForKeys: [.isDirectoryKey],
             options: [.skipsHiddenFiles]
         ) else { return [] }
-        for directory in entries {
-            try? refreshKnowledgeTitle(in: directory)
+        if refreshGeneratedTitles {
+            for directory in entries {
+                try? refreshKnowledgeTitle(in: directory)
+            }
         }
         return entries
             .compactMap(loadKnowledgeItem)
             .sorted { $0.createdAt > $1.createdAt }
     }
 
-    public func loadRecordings() -> [SharedRecordingItem] {
+    public func loadRecordings(
+        refreshGeneratedTitles: Bool = true
+    ) -> [SharedRecordingItem] {
         guard let entries = try? FileManager.default.contentsOfDirectory(
             at: recordingsRoot,
             includingPropertiesForKeys: [.isDirectoryKey],
             options: [.skipsHiddenFiles]
         ) else { return [] }
-        for directory in entries {
-            guard let recording = loadRecording(directory) else { continue }
-            let hasContent = !recording.notes
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .isEmpty || !(recording.transcript?.segments.isEmpty ?? true)
-            if hasContent {
-                _ = try? refreshRecordingTitle(
-                    in: directory,
-                    transcript: recording.transcript
-                )
+        if refreshGeneratedTitles {
+            for directory in entries {
+                guard let recording = loadRecording(directory) else { continue }
+                let hasContent = !recording.notes
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .isEmpty || !(recording.transcript?.segments.isEmpty ?? true)
+                if hasContent {
+                    _ = try? refreshRecordingTitle(
+                        in: directory,
+                        transcript: recording.transcript
+                    )
+                }
             }
         }
         return entries
             .compactMap(loadRecording)
             .sorted { $0.startedAt > $1.startedAt }
+    }
+
+    /// Ask iCloud Drive for the small files required to build the timeline,
+    /// while deliberately leaving large audio and original assets on demand.
+    /// Returns the number of ubiquitous metadata files still downloading.
+    @discardableResult
+    public func requestMetadataDownloads() -> Int {
+        let fileManager = FileManager.default
+        let roots = [itemsRoot, recordingsRoot, threadsRoot, root.appendingPathComponent(
+            "Semantics",
+            isDirectory: true
+        )]
+        let allowedExtensions = Set(["json", "md", "txt"])
+        let keys: Set<URLResourceKey> = [
+            .isRegularFileKey,
+            .isUbiquitousItemKey,
+            .ubiquitousItemDownloadingStatusKey,
+        ]
+        var pending = 0
+
+        for directory in roots {
+            guard let enumerator = fileManager.enumerator(
+                at: directory,
+                includingPropertiesForKeys: Array(keys),
+                options: [.skipsHiddenFiles, .skipsPackageDescendants]
+            ) else { continue }
+            for case let fileURL as URL in enumerator {
+                guard allowedExtensions.contains(
+                    fileURL.pathExtension.lowercased()
+                ) else { continue }
+                let values = try? fileURL.resourceValues(forKeys: keys)
+                guard values?.isRegularFile != false else { continue }
+                if values?.isUbiquitousItem == true,
+                   values?.ubiquitousItemDownloadingStatus != .current {
+                    pending += 1
+                    try? fileManager.startDownloadingUbiquitousItem(at: fileURL)
+                }
+            }
+        }
+        return pending
     }
 
     public func createNote(

@@ -212,6 +212,24 @@ func sharedKnowledgeLoadsItsPortableSummary() throws {
 }
 
 @Test
+func metadataFirstSyncDoesNotTreatLocalFilesAsPendingDownloads() throws {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = SharedLibraryStore(root: root)
+    _ = try store.createNote(
+        title: "Local metadata",
+        content: "This content is already available locally."
+    )
+
+    #expect(store.requestMetadataDownloads() == 0)
+    #expect(
+        store.loadSnapshot(refreshGeneratedTitles: false)
+            .knowledgeItems.count == 1
+    )
+}
+
+@Test
 func sharedLibraryRoundTripsNoteAndSearchesIt() throws {
     let root = FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString, isDirectory: true)

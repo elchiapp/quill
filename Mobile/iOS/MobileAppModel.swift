@@ -45,6 +45,7 @@ final class MobileAppModel: ObservableObject {
     private var cancellables: Set<AnyCancellable> = []
     private var refreshTask: Task<Void, Never>?
     private var libraryReloadTask: Task<Void, Never>?
+    private var libraryReloadRequested = false
     private var semanticAnalysisTask: Task<Void, Never>?
     private var requestedSemanticSourceIDs: [String] = []
     private var processingWatchInbox = false
@@ -171,6 +172,7 @@ final class MobileAppModel: ObservableObject {
         refreshTask = nil
         libraryReloadTask?.cancel()
         libraryReloadTask = nil
+        libraryReloadRequested = false
         semanticAnalysisTask?.cancel()
         semanticAnalysisTask = nil
         semanticProcessingLabel = nil
@@ -178,32 +180,59 @@ final class MobileAppModel: ObservableObject {
     }
 
     func reload() {
-        libraryReloadTask?.cancel()
+        guard libraryReloadTask == nil else {
+            libraryReloadRequested = true
+            return
+        }
         let root = locator.rootURL
         let isShared = locator.isConnectedToSharedFolder
-        librarySyncState = .syncing(shared: isShared)
+        if snapshot.timeline.isEmpty {
+            librarySyncState = .syncing(shared: isShared)
+        }
         let task = Task { [weak self] in
             let result = await Task.detached(priority: .utility) {
-                () -> Result<SharedLibrarySnapshot, any Error> in
+                () -> Result<(SharedLibrarySnapshot, Int), any Error> in
                 do {
                     guard try root.checkResourceIsReachable() else {
                         throw CocoaError(.fileNoSuchFile)
                     }
+                    let store = SharedLibraryStore(root: root)
+                    let pendingMetadata = isShared
+                        ? store.requestMetadataDownloads()
+                        : 0
                     return .success(
-                        SharedLibraryStore(root: root).loadSnapshot()
+                        (
+                            store.loadSnapshot(refreshGeneratedTitles: false),
+                            pendingMetadata
+                        )
                     )
                 } catch {
                     return .failure(error)
                 }
             }.value
-            guard let self, !Task.isCancelled else { return }
+            guard let self else { return }
+            guard !Task.isCancelled else {
+                libraryReloadTask = nil
+                return
+            }
+            guard locator.rootURL.standardizedFileURL
+                == root.standardizedFileURL else {
+                libraryReloadTask = nil
+                libraryReloadRequested = false
+                reload()
+                return
+            }
             switch result {
-            case .success(let loaded):
+            case .success(let (loaded, pendingMetadata)):
                 snapshot = loaded
                 let itemCount = loaded.timeline.count
-                librarySyncState = isShared
-                    ? .synced(itemCount: itemCount, at: Date())
-                    : .local(itemCount: itemCount, at: Date())
+                if isShared, pendingMetadata > 0 {
+                    librarySyncState = .syncing(shared: true)
+                } else {
+                    librarySyncState = isShared
+                        ? .synced(itemCount: itemCount, at: Date())
+                        : .local(itemCount: itemCount, at: Date())
+                }
                 semanticReviews = SharedSemanticStore(root: root)
                     .loadPendingReviews()
                 scanForSemanticCandidates()
@@ -211,13 +240,19 @@ final class MobileAppModel: ObservableObject {
                 librarySyncState = .failed(error.localizedDescription)
             }
             libraryReloadTask = nil
+            if libraryReloadRequested {
+                libraryReloadRequested = false
+                reload()
+            }
         }
         libraryReloadTask = task
     }
 
     func reloadAndWait() async {
         reload()
-        await libraryReloadTask?.value
+        while let task = libraryReloadTask {
+            await task.value
+        }
     }
 
     func connectLibrary(_ url: URL) {
