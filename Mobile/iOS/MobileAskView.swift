@@ -61,10 +61,10 @@ struct MobileAskView: View {
                 .textFieldStyle(.roundedBorder)
                 .focused($composerFocused)
                 .submitLabel(.send)
-                .onSubmit { model.ask() }
+                .onSubmit { sendMessage() }
 
                 Button {
-                    model.ask()
+                    sendMessage()
                 } label: {
                     Image(systemName: "arrow.up")
                         .font(.headline)
@@ -116,6 +116,11 @@ struct MobileAskView: View {
     private func leaveAsk() {
         composerFocused = false
         model.selectedTab = .timeline
+    }
+
+    private func sendMessage() {
+        composerFocused = false
+        model.ask()
     }
 
     private var modelPicker: some View {
