@@ -3,6 +3,7 @@ import DropsiftShared
 import PDFKit
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 struct MobileTimelineView: View {
     @ObservedObject var model: MobileAppModel
@@ -10,26 +11,50 @@ struct MobileTimelineView: View {
     @State private var path: [String] = []
     @State private var selection = Set<String>()
     @State private var confirmingBatchDelete = false
+    @State private var showingLibraryPicker = false
 
     var body: some View {
         NavigationStack(path: $path) {
-            Group {
-                if model.filteredTimeline.isEmpty {
-                    ContentUnavailableView {
-                        Label("Nothing here", systemImage: "clock.arrow.circlepath")
-                    } description: {
-                        Text("Capture something or adjust the active filters.")
-                    }
-                } else {
-                    List(selection: $selection) {
-                        ForEach(model.filteredTimeline) { item in
-                            NavigationLink(value: item.id) {
-                                MobileTimelineRow(item: item)
+            VStack(spacing: 0) {
+                if shouldShowSyncBanner {
+                    syncBanner
+                    Divider()
+                }
+
+                Group {
+                    if model.librarySyncState.isSyncing,
+                       model.timeline.isEmpty {
+                        VStack(spacing: 12) {
+                            ProgressView()
+                            Text(
+                                model.locator.isConnectedToSharedFolder
+                                    ? "Syncing iCloud Drive…"
+                                    : "Loading your local library…"
+                            )
+                            .font(.headline)
+                            Text("Your timeline will appear here as items become available.")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                        }
+                        .padding()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if model.filteredTimeline.isEmpty {
+                        emptyTimeline
+                    } else {
+                        List(selection: $selection) {
+                            ForEach(model.filteredTimeline) { item in
+                                NavigationLink(value: item.id) {
+                                    MobileTimelineRow(item: item)
+                                }
+                                .tag(item.id)
                             }
-                            .tag(item.id)
+                        }
+                        .listStyle(.plain)
+                        .refreshable {
+                            await model.reloadAndWait()
                         }
                     }
-                    .listStyle(.plain)
                 }
             }
             .navigationTitle("Timeline")
@@ -40,6 +65,9 @@ struct MobileTimelineView: View {
                         filterMenu
                     }
                     EditButton()
+                }
+                ToolbarItem(placement: .topBarLeading) {
+                    syncIndicator
                 }
                 if isEditing {
                     ToolbarItemGroup(placement: .bottomBar) {
@@ -117,6 +145,145 @@ struct MobileTimelineView: View {
         } message: {
             Text("The selected items and their files will be permanently deleted.")
         }
+        .fileImporter(
+            isPresented: $showingLibraryPicker,
+            allowedContentTypes: [.folder],
+            allowsMultipleSelection: false
+        ) { result in
+            if case .success(let urls) = result, let url = urls.first {
+                model.connectLibrary(url)
+            }
+        }
+    }
+
+    private var shouldShowSyncBanner: Bool {
+        switch model.librarySyncState {
+        case .disconnected, .failed:
+            true
+        case .syncing:
+            !model.timeline.isEmpty
+        case .synced, .local:
+            false
+        }
+    }
+
+    private var syncIndicator: some View {
+        Group {
+            if model.librarySyncState.isSyncing {
+                ProgressView()
+            } else {
+                Image(systemName: model.librarySyncState.systemImage)
+                    .foregroundStyle(syncIndicatorColor)
+            }
+        }
+        .accessibilityLabel(model.librarySyncState.accessibilityLabel)
+    }
+
+    private var syncIndicatorColor: Color {
+        switch model.librarySyncState {
+        case .synced: .green
+        case .disconnected, .failed: .orange
+        case .syncing, .local: .secondary
+        }
+    }
+
+    @ViewBuilder
+    private var syncBanner: some View {
+        switch model.librarySyncState {
+        case .disconnected:
+            HStack(spacing: 10) {
+                Image(systemName: "icloud.slash")
+                    .foregroundStyle(.orange)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Not connected to iCloud")
+                        .font(.subheadline.weight(.semibold))
+                    Text("Choose your Dropsift or Quill folder to load the shared timeline.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Connect") { showingLibraryPicker = true }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+            }
+            .padding(12)
+            .background(.orange.opacity(0.08))
+        case .syncing(let shared):
+            HStack(spacing: 10) {
+                ProgressView()
+                    .controlSize(.small)
+                Text(shared ? "Syncing iCloud Drive…" : "Loading local library…")
+                    .font(.subheadline.weight(.medium))
+                Spacer()
+            }
+            .padding(12)
+            .background(.blue.opacity(0.08))
+        case .failed(let message):
+            HStack(spacing: 10) {
+                Image(systemName: "exclamationmark.icloud")
+                    .foregroundStyle(.orange)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Couldn’t sync the library")
+                        .font(.subheadline.weight(.semibold))
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                Spacer()
+                Button("Retry") { model.reload() }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+            }
+            .padding(12)
+            .background(.orange.opacity(0.08))
+        case .synced, .local:
+            EmptyView()
+        }
+    }
+
+    private var emptyTimeline: some View {
+        ContentUnavailableView {
+            Label(emptyTimelineTitle, systemImage: emptyTimelineIcon)
+        } description: {
+            Text(emptyTimelineDescription)
+        } actions: {
+            if !model.locator.isConnectedToSharedFolder {
+                Button("Connect iCloud folder") {
+                    showingLibraryPicker = true
+                }
+                .buttonStyle(.borderedProminent)
+            } else {
+                Button("Check again") { model.reload() }
+                    .buttonStyle(.bordered)
+            }
+        }
+    }
+
+    private var emptyTimelineTitle: String {
+        if !model.locator.isConnectedToSharedFolder {
+            return "Connect your shared library"
+        }
+        if !model.timeline.isEmpty {
+            return "No matching items"
+        }
+        return "No synced items yet"
+    }
+
+    private var emptyTimelineIcon: String {
+        model.locator.isConnectedToSharedFolder
+            ? "checkmark.icloud"
+            : "icloud.slash"
+    }
+
+    private var emptyTimelineDescription: String {
+        if !model.locator.isConnectedToSharedFolder {
+            return "Choose the Dropsift folder in iCloud Drive—or your existing Quill folder—to see the same timeline as your Mac."
+        }
+        if !model.timeline.isEmpty {
+            return "No timeline items match the current search and filters."
+        }
+        return "iCloud Drive is connected and up to date, but this folder does not contain any Dropsift items yet."
     }
 
     private var isEditing: Bool {

@@ -35,6 +35,7 @@ final class MobileAppModel: ObservableObject {
     @Published private(set) var semanticReviews: [SharedSemanticReview] = []
     @Published private(set) var semanticProcessingLabel: String?
     @Published private(set) var semanticProcessingSourceID: String?
+    @Published private(set) var librarySyncState: MobileLibrarySyncState = .disconnected
 
     let locator = MobileLibraryLocator()
     let recorder = VoiceRecorder()
@@ -43,15 +44,24 @@ final class MobileAppModel: ObservableObject {
     private static let selectedAnswerModelKey = "Dropsift.selectedMobileAnswerModel"
     private var cancellables: Set<AnyCancellable> = []
     private var refreshTask: Task<Void, Never>?
+    private var libraryReloadTask: Task<Void, Never>?
     private var semanticAnalysisTask: Task<Void, Never>?
     private var requestedSemanticSourceIDs: [String] = []
     private var processingWatchInbox = false
 
     init() {
+        if ProcessInfo.processInfo.environment[
+            "DROPSIFT_PREVIEW_TIMELINE"
+        ] == "1" {
+            selectedTab = .timeline
+        }
         selectedAnswerModel = UserDefaults.standard
             .string(forKey: Self.selectedAnswerModelKey)
             .flatMap(MobileAnswerModel.init(rawValue:))
             ?? .automatic
+        librarySyncState = locator.isConnectedToSharedFolder
+            ? .syncing(shared: true)
+            : .syncing(shared: false)
         recorder.objectWillChange
             .sink { [weak self] _ in
                 self?.objectWillChange.send()
@@ -155,6 +165,8 @@ final class MobileAppModel: ObservableObject {
     func stop() {
         refreshTask?.cancel()
         refreshTask = nil
+        libraryReloadTask?.cancel()
+        libraryReloadTask = nil
         semanticAnalysisTask?.cancel()
         semanticAnalysisTask = nil
         semanticProcessingLabel = nil
@@ -162,20 +174,46 @@ final class MobileAppModel: ObservableObject {
     }
 
     func reload() {
+        libraryReloadTask?.cancel()
         let root = locator.rootURL
-        Task { [weak self] in
-            let loaded = await Task.detached(priority: .utility) {
-                SharedLibraryStore(root: root).loadSnapshot()
+        let isShared = locator.isConnectedToSharedFolder
+        librarySyncState = .syncing(shared: isShared)
+        let task = Task { [weak self] in
+            let result = await Task.detached(priority: .utility) {
+                () -> Result<SharedLibrarySnapshot, any Error> in
+                do {
+                    guard try root.checkResourceIsReachable() else {
+                        throw CocoaError(.fileNoSuchFile)
+                    }
+                    return .success(
+                        SharedLibraryStore(root: root).loadSnapshot()
+                    )
+                } catch {
+                    return .failure(error)
+                }
             }.value
-            guard let self else { return }
-            snapshot = loaded
-            semanticReviews = SharedSemanticStore(root: root)
-                .loadPendingReviews()
-            scanForSemanticCandidates()
-            // A recording can be briefly absent while another process writes
-            // its transcript or metadata. A refresh must never turn that
-            // transient state into a navigation decision.
+            guard let self, !Task.isCancelled else { return }
+            switch result {
+            case .success(let loaded):
+                snapshot = loaded
+                let itemCount = loaded.timeline.count
+                librarySyncState = isShared
+                    ? .synced(itemCount: itemCount, at: Date())
+                    : .local(itemCount: itemCount, at: Date())
+                semanticReviews = SharedSemanticStore(root: root)
+                    .loadPendingReviews()
+                scanForSemanticCandidates()
+            case .failure(let error):
+                librarySyncState = .failed(error.localizedDescription)
+            }
+            libraryReloadTask = nil
         }
+        libraryReloadTask = task
+    }
+
+    func reloadAndWait() async {
+        reload()
+        await libraryReloadTask?.value
     }
 
     func connectLibrary(_ url: URL) {

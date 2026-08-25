@@ -70,6 +70,11 @@ security-scoped bookmark and restores it on future launches. Captures remain
 local and usable if the folder is not connected; connecting later merges them
 without overwriting existing entries.
 
+Timeline distinguishes a disconnected local library from an active iCloud
+reload, a completed sync, and a sync error. Its navigation-bar indicator and
+inline banner expose the current state; empty libraries offer the correct
+Connect or Retry action, and populated timelines support pull-to-refresh.
+
 ## Watch delivery lifecycle
 
 1. The Watch asynchronously activates a record-only audio session and records

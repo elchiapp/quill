@@ -63,3 +63,41 @@ enum MobileImportState: Equatable {
         }
     }
 }
+
+enum MobileLibrarySyncState: Equatable {
+    case disconnected
+    case syncing(shared: Bool)
+    case synced(itemCount: Int, at: Date)
+    case local(itemCount: Int, at: Date)
+    case failed(String)
+
+    var isSyncing: Bool {
+        if case .syncing = self { return true }
+        return false
+    }
+
+    var systemImage: String {
+        switch self {
+        case .disconnected: "icloud.slash"
+        case .syncing: "icloud.and.arrow.down"
+        case .synced: "checkmark.icloud"
+        case .local: "iphone"
+        case .failed: "exclamationmark.icloud"
+        }
+    }
+
+    var accessibilityLabel: String {
+        switch self {
+        case .disconnected:
+            "Not connected to iCloud"
+        case .syncing(let shared):
+            shared ? "Syncing iCloud Drive" : "Loading local library"
+        case .synced(let itemCount, let date):
+            "iCloud synced, \(itemCount) items, \(date.formatted(date: .omitted, time: .shortened))"
+        case .local(let itemCount, _):
+            "Local library, \(itemCount) items"
+        case .failed(let message):
+            "Library sync failed: \(message)"
+        }
+    }
+}
