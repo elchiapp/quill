@@ -51,10 +51,46 @@ struct RecordingDetailView: View {
     }
 
     var body: some View {
-        recordingContent
-        .inspector(isPresented: savedNotesPresented) {
-            savedNotes
-                .inspectorColumnWidth(min: 340, ideal: 380, max: 460)
+        GeometryReader { geometry in
+            let overlaysNotes = RecordingDetailLayoutPolicy.overlaysSavedNotes(
+                width: geometry.size.width
+            )
+            recordingContent
+                .inspector(
+                    isPresented: inspectorNotesPresented(
+                        overlaysNotes: overlaysNotes
+                    )
+                ) {
+                    savedNotes
+                        .inspectorColumnWidth(
+                            min: 340,
+                            ideal: 380,
+                            max: 460
+                        )
+                }
+                .overlay(alignment: .trailing) {
+                    if overlaysNotes, savedNotesPresented.wrappedValue {
+                        savedNotes
+                            .frame(
+                                width: min(
+                                    420,
+                                    max(340, geometry.size.width * 0.78)
+                                )
+                            )
+                            .background(
+                                Color(nsColor: .controlBackgroundColor)
+                            )
+                            .shadow(color: .black.opacity(0.18), radius: 18)
+                            .transition(
+                                .move(edge: .trailing).combined(with: .opacity)
+                            )
+                            .zIndex(2)
+                    }
+                }
+                .animation(
+                    .easeInOut(duration: 0.2),
+                    value: savedNotesPresented.wrappedValue
+                )
         }
         .background(Color(nsColor: .textBackgroundColor))
         .onChange(of: recording.title) { oldTitle, newTitle in
@@ -120,6 +156,20 @@ struct RecordingDetailView: View {
                 )
             },
             set: { showingNotesPanel = $0 }
+        )
+    }
+
+    private func inspectorNotesPresented(
+        overlaysNotes: Bool
+    ) -> Binding<Bool> {
+        Binding(
+            get: {
+                !overlaysNotes && savedNotesPresented.wrappedValue
+            },
+            set: { presented in
+                guard !overlaysNotes else { return }
+                showingNotesPanel = presented
+            }
         )
     }
 
@@ -668,6 +718,10 @@ struct RecordingDetailView: View {
 enum RecordingDetailLayoutPolicy {
     static func notesStartExpanded(_ notes: String) -> Bool {
         !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    static func overlaysSavedNotes(width: CGFloat) -> Bool {
+        width < 760
     }
 
     static func showsSavedNotes(

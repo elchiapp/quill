@@ -258,6 +258,8 @@ func liveRecordingNeverShowsTwoCompetingNotesPanels() {
     )
     #expect(!RecordingDetailLayoutPolicy.notesStartExpanded("  \n"))
     #expect(RecordingDetailLayoutPolicy.notesStartExpanded("Follow up"))
+    #expect(RecordingDetailLayoutPolicy.overlaysSavedNotes(width: 759))
+    #expect(!RecordingDetailLayoutPolicy.overlaysSavedNotes(width: 760))
 }
 
 @Test
