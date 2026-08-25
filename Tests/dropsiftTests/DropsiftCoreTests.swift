@@ -245,21 +245,21 @@ func mainWindowKeepsContentBelowTheToolbar() {
 @Test
 func liveRecordingNeverShowsTwoCompetingNotesPanels() {
     #expect(
-        RecordingDetailLayoutPolicy.showsSavedNotes(
+        ItemDetailLayoutPolicy.showsSavedNotes(
             requested: true,
             isAnyRecordingActive: false
         )
     )
     #expect(
-        !RecordingDetailLayoutPolicy.showsSavedNotes(
+        !ItemDetailLayoutPolicy.showsSavedNotes(
             requested: true,
             isAnyRecordingActive: true
         )
     )
-    #expect(!RecordingDetailLayoutPolicy.notesStartExpanded("  \n"))
-    #expect(RecordingDetailLayoutPolicy.notesStartExpanded("Follow up"))
-    #expect(RecordingDetailLayoutPolicy.overlaysSavedNotes(width: 759))
-    #expect(!RecordingDetailLayoutPolicy.overlaysSavedNotes(width: 760))
+    #expect(!ItemDetailLayoutPolicy.notesStartExpanded("  \n"))
+    #expect(ItemDetailLayoutPolicy.notesStartExpanded("Follow up"))
+    #expect(ItemDetailLayoutPolicy.overlaysSavedNotes(width: 759))
+    #expect(!ItemDetailLayoutPolicy.overlaysSavedNotes(width: 760))
 }
 
 @Test
@@ -270,6 +270,26 @@ func desktopNavigationCompactsBeforeContentBecomesCrowded() {
         RecordingDetailSection.allCases == [
             .transcript,
             .summary,
+            .insights,
+        ]
+    )
+    #expect(
+        KnowledgeDetailSection.sections(for: .note) == [
+            .note,
+            .insights,
+        ]
+    )
+    #expect(
+        KnowledgeDetailSection.sections(for: .document) == [
+            .preview,
+            .extractedText,
+            .insights,
+        ]
+    )
+    #expect(
+        KnowledgeDetailSection.sections(for: .image) == [
+            .preview,
+            .extractedText,
             .insights,
         ]
     )

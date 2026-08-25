@@ -44,7 +44,7 @@ struct RecordingDetailView: View {
         _notes = State(initialValue: recording.notes)
         _speakerNames = State(initialValue: recording.speakerNames)
         _showingNotesPanel = State(
-            initialValue: RecordingDetailLayoutPolicy.notesStartExpanded(
+            initialValue: ItemDetailLayoutPolicy.notesStartExpanded(
                 recording.notes
             )
         )
@@ -52,7 +52,7 @@ struct RecordingDetailView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let overlaysNotes = RecordingDetailLayoutPolicy.overlaysSavedNotes(
+            let overlaysNotes = ItemDetailLayoutPolicy.overlaysSavedNotes(
                 width: geometry.size.width
             )
             recordingContent
@@ -147,7 +147,7 @@ struct RecordingDetailView: View {
     private var savedNotesPresented: Binding<Bool> {
         Binding(
             get: {
-                RecordingDetailLayoutPolicy.showsSavedNotes(
+                ItemDetailLayoutPolicy.showsSavedNotes(
                     requested: showingNotesPanel,
                     isAnyRecordingActive: model.isRecording
                         || ProcessInfo.processInfo.environment[
@@ -715,7 +715,7 @@ struct RecordingDetailView: View {
     }
 }
 
-enum RecordingDetailLayoutPolicy {
+enum ItemDetailLayoutPolicy {
     static func notesStartExpanded(_ notes: String) -> Bool {
         !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }

@@ -99,6 +99,11 @@ audio files, Finder, and deletion are grouped under **Actions**. Timeline search
 stays inside the Timeline column, and narrow windows collapse navigation to an
 icon rail before compressing content.
 
+Documents and images use the same hierarchy with **Preview**, **Extracted
+text**, and **Insights** tabs plus the adaptive notes inspector. Notes use a
+focused **Note** editor with a separate **Insights** tab and intentionally omit
+the redundant additional-notes drawer.
+
 Dropsift generates concise titles locally from note headings, extracted
 document/image text, recording notes, and transcripts. Generated titles can
 improve as more content arrives; once you type a title yourself, Dropsift keeps
