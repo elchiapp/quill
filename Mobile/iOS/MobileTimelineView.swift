@@ -787,8 +787,13 @@ private struct MobileRecordingDetail: View {
             .disabled(!model.canResume(recording.id))
 
             if playback.isPreparing {
-                ProgressView()
-                    .controlSize(.small)
+                HStack(spacing: 6) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text(playback.preparationLabel ?? "Preparing audio…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
     }
@@ -940,6 +945,7 @@ private struct MobileSpeakerNamesEditor: View {
 private final class MobileRecordingPlayer: NSObject, ObservableObject {
     @Published private(set) var isPlaying = false
     @Published private(set) var isPreparing = false
+    @Published private(set) var preparationLabel: String?
     @Published private(set) var errorMessage: String?
 
     private var player: AVPlayer?
@@ -965,10 +971,15 @@ private final class MobileRecordingPlayer: NSObject, ObservableObject {
 
         stop()
         isPreparing = true
+        preparationLabel = "Checking audio…"
         preparationTask = Task { [weak self] in
             guard let self else { return }
             do {
-                let item = try await Self.makePlayerItem(for: recording)
+                let item = try await Self.makePlayerItem(
+                    for: recording
+                ) { [weak self] label in
+                    self?.preparationLabel = label
+                }
                 try Task.checkCancellation()
                 let session = AVAudioSession.sharedInstance()
                 try session.setCategory(.playback, mode: .spokenAudio)
@@ -976,8 +987,10 @@ private final class MobileRecordingPlayer: NSObject, ObservableObject {
                 install(item, signature: signature)
             } catch is CancellationError {
                 isPreparing = false
+                preparationLabel = nil
             } catch {
                 isPreparing = false
+                preparationLabel = nil
                 errorMessage =
                     "Couldn’t play this recording: \(error.localizedDescription)"
                 try? AVAudioSession.sharedInstance().setActive(
@@ -996,6 +1009,7 @@ private final class MobileRecordingPlayer: NSObject, ObservableObject {
         loadedSignature = nil
         isPlaying = false
         isPreparing = false
+        preparationLabel = nil
         removeObservers()
         try? AVAudioSession.sharedInstance().setActive(
             false,
@@ -1008,6 +1022,7 @@ private final class MobileRecordingPlayer: NSObject, ObservableObject {
         self.player = player
         loadedSignature = signature
         isPreparing = false
+        preparationLabel = nil
         errorMessage = nil
 
         endObserver = NotificationCenter.default.addObserver(
@@ -1051,7 +1066,8 @@ private final class MobileRecordingPlayer: NSObject, ObservableObject {
     }
 
     private static func makePlayerItem(
-        for recording: SharedRecordingItem
+        for recording: SharedRecordingItem,
+        onProgress: @escaping @MainActor (String) -> Void
     ) async throws -> AVPlayerItem {
         let tracks: [SharedRecordingAudioTrack]
         if !recording.audioTracks.isEmpty {
@@ -1068,34 +1084,107 @@ private final class MobileRecordingPlayer: NSObject, ObservableObject {
             throw PlaybackError.noAudio
         }
 
+        // Start every cloud-backed track together. The validation/insertion
+        // loop below can stay deterministic while mic and system audio
+        // download in parallel.
+        let fileManager = FileManager.default
+        for track in tracks {
+            let values = try? track.url.resourceValues(forKeys: [
+                .isUbiquitousItemKey,
+                .ubiquitousItemDownloadingStatusKey,
+            ])
+            if values?.isUbiquitousItem == true,
+               values?.ubiquitousItemDownloadingStatus != .current {
+                try? fileManager.startDownloadingUbiquitousItem(at: track.url)
+            }
+        }
+
         let composition = AVMutableComposition()
         var insertedAudio = false
-        for track in tracks {
-            let asset = AVURLAsset(url: track.url)
-            let duration = try await asset.load(.duration)
-            guard duration.isValid, duration > .zero,
-                  let sourceTrack = try await asset.loadTracks(
-                      withMediaType: .audio
-                  ).first,
-                  let destinationTrack = composition.addMutableTrack(
-                      withMediaType: .audio,
-                      preferredTrackID: kCMPersistentTrackID_Invalid
-                  )
-            else { continue }
-            try destinationTrack.insertTimeRange(
-                CMTimeRange(start: .zero, duration: duration),
-                of: sourceTrack,
-                at: CMTime(
-                    value: Int64(max(track.offsetMs, 0)),
-                    timescale: 1_000
+        var lastFailure: Error?
+        for (index, track) in tracks.enumerated() {
+            do {
+                try await ensureAudioIsLocal(
+                    track.url,
+                    trackNumber: index + 1,
+                    trackCount: tracks.count,
+                    onProgress: onProgress
                 )
-            )
-            insertedAudio = true
+                onProgress("Preparing track \(index + 1) of \(tracks.count)…")
+                let asset = AVURLAsset(url: track.url)
+                let duration = try await asset.load(.duration)
+                guard duration.isValid, duration > .zero,
+                      let sourceTrack = try await asset.loadTracks(
+                          withMediaType: .audio
+                      ).first,
+                      let destinationTrack = composition.addMutableTrack(
+                          withMediaType: .audio,
+                          preferredTrackID: kCMPersistentTrackID_Invalid
+                      )
+                else { continue }
+                try destinationTrack.insertTimeRange(
+                    CMTimeRange(start: .zero, duration: duration),
+                    of: sourceTrack,
+                    at: CMTime(
+                        value: Int64(max(track.offsetMs, 0)),
+                        timescale: 1_000
+                    )
+                )
+                insertedAudio = true
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                lastFailure = error
+            }
         }
         guard insertedAudio else {
-            throw PlaybackError.noPlayableTrack
+            throw lastFailure ?? PlaybackError.noPlayableTrack
         }
         return AVPlayerItem(asset: composition)
+    }
+
+    private static func ensureAudioIsLocal(
+        _ url: URL,
+        trackNumber: Int,
+        trackCount: Int,
+        onProgress: @escaping @MainActor (String) -> Void
+    ) async throws {
+        let fileManager = FileManager.default
+        let keys: Set<URLResourceKey> = [
+            .isUbiquitousItemKey,
+            .ubiquitousItemDownloadingStatusKey,
+        ]
+        var values = try? url.resourceValues(forKeys: keys)
+        guard values?.isUbiquitousItem == true,
+              values?.ubiquitousItemDownloadingStatus != .current
+        else {
+            guard (try? url.checkResourceIsReachable()) == true else {
+                throw PlaybackError.audioUnavailable
+            }
+            return
+        }
+
+        do {
+            try fileManager.startDownloadingUbiquitousItem(at: url)
+        } catch {
+            throw PlaybackError.downloadFailed(error.localizedDescription)
+        }
+
+        let deadline = ContinuousClock.now + .seconds(180)
+        while ContinuousClock.now < deadline {
+            try Task.checkCancellation()
+            values = try? url.resourceValues(forKeys: keys)
+            if values?.ubiquitousItemDownloadingStatus == .current,
+               (try? url.checkResourceIsReachable()) == true {
+                return
+            }
+            let track = trackCount > 1
+                ? " track \(trackNumber) of \(trackCount)"
+                : ""
+            onProgress("Downloading\(track) from iCloud…")
+            try await Task.sleep(for: .milliseconds(500))
+        }
+        throw PlaybackError.downloadTimedOut
     }
 
     private static func signature(for recording: SharedRecordingItem) -> String {
@@ -1108,6 +1197,9 @@ private final class MobileRecordingPlayer: NSObject, ObservableObject {
     private enum PlaybackError: LocalizedError {
         case noAudio
         case noPlayableTrack
+        case audioUnavailable
+        case downloadFailed(String)
+        case downloadTimedOut
 
         var errorDescription: String? {
             switch self {
@@ -1115,6 +1207,12 @@ private final class MobileRecordingPlayer: NSObject, ObservableObject {
                 "This recording has no audio files."
             case .noPlayableTrack:
                 "Its audio files are not available on this iPhone yet."
+            case .audioUnavailable:
+                "The audio file is not available on this iPhone."
+            case .downloadFailed(let message):
+                "Couldn’t download its audio from iCloud: \(message)"
+            case .downloadTimedOut:
+                "Downloading its audio from iCloud timed out. Try Play again."
             }
         }
     }
