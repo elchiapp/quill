@@ -79,7 +79,7 @@ struct DropsiftRootView: View {
             ModelRecommendationView(model: model)
         }
         .alert(
-            "Dropsift",
+            "DropSift",
             isPresented: Binding(
                 get: { model.appError != nil },
                 set: { if !$0 { model.appError = nil } }
@@ -113,7 +113,7 @@ struct DropsiftRootView: View {
                     .font(.title2)
                     .foregroundStyle(.tint)
                 if !compact {
-                    Text("Dropsift")
+                    Text("DropSift")
                         .font(.title2.weight(.semibold))
                     Spacer()
                 }
@@ -133,7 +133,7 @@ struct DropsiftRootView: View {
                         compact: compact
                     )
                         .tag(AppModel.Section.timeline)
-                    navigationLabel("Ask Dropsift", systemImage: "sparkles", compact: compact)
+                    navigationLabel("Ask DropSift", systemImage: "sparkles", compact: compact)
                         .tag(AppModel.Section.chats)
                 }
 
@@ -200,7 +200,7 @@ struct DropsiftRootView: View {
                     }
                 }
                 .buttonStyle(.plain)
-                .help(compact ? "Dropsift settings · \(aiStatusLabel)" : "Dropsift settings")
+                .help(compact ? "DropSift settings · \(aiStatusLabel)" : "DropSift settings")
             }
             .padding(compact ? 10 : 14)
         }
@@ -310,7 +310,7 @@ struct DropsiftRootView: View {
                     ContentUnavailableView {
                         Label("Ask your knowledge", systemImage: "sparkles")
                     } description: {
-                        Text("Create a private local-AI conversation across everything in Dropsift.")
+                        Text("Create a private local-AI conversation across everything in DropSift.")
                     } actions: {
                         Button("New conversation") { model.createThread() }
                             .buttonStyle(.borderedProminent)
@@ -729,7 +729,7 @@ private struct LiveRecordingNotesView: View {
 
             MarkdownNoteEditor(
                 text: notes,
-                placeholder: "Take notes while Dropsift records…",
+                placeholder: "Take notes while DropSift records…",
                 accessibilityIdentifier: "live-recording-notes"
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)

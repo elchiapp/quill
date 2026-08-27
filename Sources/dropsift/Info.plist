@@ -5,15 +5,15 @@
     <key>CFBundleIdentifier</key>
     <string>com.elchiapp.dropsift</string>
     <key>CFBundleName</key>
-    <string>Dropsift</string>
+    <string>DropSift</string>
     <key>NSAppTransportSecurity</key>
     <dict>
         <key>NSAllowsLocalNetworking</key>
         <true/>
     </dict>
     <key>NSMicrophoneUsageDescription</key>
-    <string>Dropsift records your microphone during meetings so you can transcribe them later. Audio never leaves this Mac.</string>
+    <string>DropSift records your microphone during meetings so you can transcribe them later. Audio never leaves this Mac.</string>
     <key>NSAudioCaptureUsageDescription</key>
-    <string>Dropsift records system audio—the other side of your meetings—so you can transcribe it later. Audio never leaves this Mac.</string>
+    <string>DropSift records system audio—the other side of your meetings—so you can transcribe it later. Audio never leaves this Mac.</string>
 </dict>
 </plist>

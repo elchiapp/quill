@@ -25,7 +25,7 @@ final class DropsiftWindowController: NSWindowController {
             backing: .buffered,
             defer: false
         )
-        window.title = "Dropsift"
+        window.title = "DropSift"
         // Keep content below the unified toolbar. A full-size transparent
         // title bar can intermittently drop SwiftUI's safe-area inset when
         // child toolbars (such as Timeline search) are recomposed.

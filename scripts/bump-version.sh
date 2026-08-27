@@ -46,4 +46,4 @@ NEXT_BUILD="$TODAY$(/usr/bin/printf '%02d' "$NEXT_SEQUENCE")"
     "s/(CURRENT_PROJECT_VERSION = )[0-9]+;/\\1$NEXT_BUILD;/g; s/(MARKETING_VERSION = )[0-9]+\.[0-9]+\.[0-9]+;/\\1$NEXT_VERSION;/g" \
     "$PROJECT_ROOT/Mobile/DropsiftMobile.xcodeproj/project.pbxproj"
 
-print "Dropsift $NEXT_VERSION ($NEXT_BUILD)"
+print "DropSift $NEXT_VERSION ($NEXT_BUILD)"

@@ -5,7 +5,7 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleDisplayName</key>
-    <string>Dropsift</string>
+    <string>DropSift</string>
     <key>CFBundleExecutable</key>
     <string>dropsift</string>
     <key>CFBundleIconFile</key>
@@ -15,13 +15,13 @@
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>Dropsift</string>
+    <string>DropSift</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.39</string>
+    <string>1.0.40</string>
     <key>CFBundleVersion</key>
-    <string>2026082702</string>
+    <string>2026082801</string>
     <key>LSMinimumSystemVersion</key>
     <string>15.0</string>
     <key>NSHighResolutionCapable</key>
@@ -34,8 +34,8 @@
         <true/>
     </dict>
     <key>NSMicrophoneUsageDescription</key>
-    <string>Dropsift records your microphone during meetings so you can transcribe them locally. Audio never leaves this Mac.</string>
+    <string>DropSift records your microphone during meetings so you can transcribe them locally. Audio never leaves this Mac.</string>
     <key>NSAudioCaptureUsageDescription</key>
-    <string>Dropsift records system audio from meetings so it can transcribe the other side locally. Audio never leaves this Mac.</string>
+    <string>DropSift records system audio from meetings so it can transcribe the other side locally. Audio never leaves this Mac.</string>
 </dict>
 </plist>

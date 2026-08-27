@@ -85,7 +85,7 @@ actor QVACRuntime {
         var errorDescription: String? {
             switch self {
             case .bridgeUnavailable:
-                "The packaged QVAC runtime is missing. Reinstall this build of Dropsift."
+                "The packaged QVAC runtime is missing. Reinstall this build of DropSift."
             case .bridgeExited(let status):
                 "The QVAC engine stopped unexpectedly (status "
                     + String(status) + ")."
@@ -94,7 +94,7 @@ actor QVACRuntime {
             case .requestFailed(let message):
                 message
             case .requestTimedOut(let operation):
-                "QVAC \(operation) stopped responding. Dropsift will restart it and retry."
+                "QVAC \(operation) stopped responding. DropSift will restart it and retry."
             }
         }
     }

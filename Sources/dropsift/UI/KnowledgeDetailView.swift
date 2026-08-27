@@ -203,7 +203,7 @@ struct KnowledgeDetailView: View {
                 Button {
                     model.createThread()
                 } label: {
-                    Label("Ask Dropsift", systemImage: "sparkles")
+                    Label("Ask DropSift", systemImage: "sparkles")
                 }
                 .buttonStyle(.borderedProminent)
 

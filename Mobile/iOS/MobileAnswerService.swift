@@ -40,7 +40,7 @@ enum MobileAnswerService {
         model selection: MobileAnswerModel
     ) async throws -> String {
         guard !sources.isEmpty else {
-            return "I couldn’t find anything relevant in your Dropsift library."
+            return "I couldn’t find anything relevant in your DropSift library."
         }
 
         let model = resolvedModel(for: selection)
@@ -61,7 +61,7 @@ enum MobileAnswerService {
             let session = LanguageModelSession(
                 model: .default,
                 instructions: """
-                You are Dropsift, a private local knowledge assistant. Answer only from the
+                You are DropSift, a private local knowledge assistant. Answer only from the
                 supplied sources. Cite claims inline as [1], [2], and say when the sources
                 are insufficient. Keep the answer concise.
                 """

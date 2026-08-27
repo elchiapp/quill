@@ -100,7 +100,7 @@ final class MobileLibraryLocator: ObservableObject {
             for: .documentDirectory,
             in: .userDomainMask
         ).first ?? FileManager.default.temporaryDirectory
-        return base.appendingPathComponent("Dropsift Library", isDirectory: true)
+        return base.appendingPathComponent("DropSift Library", isDirectory: true)
     }
 
     private static func storageLabel(for url: URL) -> String {

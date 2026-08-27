@@ -1,6 +1,6 @@
-# Dropsift
+# DropSift
 
-A private, local-first memory workspace for macOS. Dropsift captures notes,
+A private, local-first memory workspace for macOS. DropSift captures notes,
 documents, images, existing audio, microphone audio, and system audio in one
 timeline. It extracts searchable text locally, transcribes and diarizes speech
 on-device, and lets you ask questions across the entire library through its
@@ -15,10 +15,10 @@ Build a signed, double-clickable app bundle and a distributable disk image:
 
 ```sh
 scripts/package-macos.sh
-open dist/Dropsift.dmg
+open dist/DropSift.dmg
 ```
 
-The generated artifacts are `dist/Dropsift.app.zip` and `dist/Dropsift.dmg`. By
+The generated artifacts are `dist/DropSift.app.zip` and `dist/DropSift.dmg`. By
 default, the app is ad-hoc signed for local use. Set `SIGN_IDENTITY` to a
 Developer ID or Apple Development signing identity when a persistent identity
 is required.
@@ -47,7 +47,7 @@ your paired iPhone, and press Run. The companion Watch app is embedded in the
 iPhone app and can also be installed from the Watch app on iPhone.
 
 On first launch, tap **Choose iCloud folder** and select the existing
-`iCloud Drive/Dropsift` folder (or the legacy `Quill` folder). The iPhone then
+`iCloud Drive/DropSift` folder. The iPhone then
 reads and writes the exact same `Items/` and `Recordings/` folders as the Mac.
 Any captures made before connecting are copied into the selected library.
 
@@ -72,16 +72,16 @@ TestFlight/archive instructions.
 
 ## How to use
 
-1. Open `Dropsift.app` on **Capture**. The uncluttered capture canvas provides
+1. Open `DropSift.app` on **Capture**. The uncluttered capture canvas provides
    five actions: **Add note**, **Add doc**, **Add image**, **Add recording**,
    and **Record**. Files can also be dropped directly onto the canvas.
 2. Use **Timeline** to browse everything by date. Its multi-select filter can
    show any combination of notes, documents, images, and recordings. Each type
    has its own preview, and every imported item can carry additional notes.
-3. Open **Ask Dropsift** to start a conversation across the full knowledge
-   base. Dropsift starts with the compact Qwen3.5 2B model and offers a stronger
+3. Open **Ask DropSift** to start a conversation across the full knowledge
+   base. DropSift starts with the compact Qwen3.5 2B model and offers a stronger
    model when the detected hardware can run one safely. On the first question,
-   Dropsift downloads the selected model; subsequent inference is offline.
+   DropSift downloads the selected model; subsequent inference is offline.
    Numbered source cards beneath an answer open the cited transcript timestamp,
    PDF page, or knowledge item.
 
@@ -104,9 +104,9 @@ text**, and **Insights** tabs plus the adaptive notes inspector. Notes use a
 focused **Note** editor with a separate **Insights** tab and intentionally omit
 the redundant additional-notes drawer.
 
-Dropsift generates concise titles locally from note headings, extracted
+DropSift generates concise titles locally from note headings, extracted
 document/image text, recording notes, and transcripts. Generated titles can
-improve as more content arrives; once you type a title yourself, Dropsift keeps
+improve as more content arrives; once you type a title yourself, DropSift keeps
 it unchanged.
 
 While recording, the main window shows a live notes editor above the current
@@ -114,20 +114,20 @@ detail view. Notes autosave into the recording's `notes.md` in iCloud Drive,
 so they survive a crash and remain visible with the finished recording. Tiny
 live waveforms show actual microphone and system-audio signal independently,
 making a silent or disconnected source immediately visible. The menu-bar
-Dropsift mark turns red and pulses gently until recording stops.
+DropSift mark turns red and pulses gently until recording stops.
 
-If speaker playback leaks into the microphone, Dropsift compares both
+If speaker playback leaks into the microphone, DropSift compares both
 transcripts by timing and fuzzy text similarity, removes high-confidence
 duplicates from the “You” track, and keeps the cleaner diarized system segment.
 The same non-destructive filter is applied when older recordings are opened.
 
-Dropsift watches locally for known conferencing apps using a microphone. When
+DropSift watches locally for known conferencing apps using a microphone. When
 it detects a likely Zoom, Teams, Webex, FaceTime, Slack, Discord, Skype, Lark,
 or browser meeting, it presents an actionable notification asking whether to
 record. It never starts recording without confirmation, and the heuristic can
 be disabled in Settings.
 
-The knowledge library lives in `iCloud Drive/Dropsift/` by default:
+The knowledge library lives in `iCloud Drive/DropSift/` by default:
 
 - `Items/<uuid>/` contains an imported asset or Markdown note, extracted text,
   metadata, and optional additional notes.
@@ -149,7 +149,7 @@ Each captured recording contains:
 | `transcribe.log` | transcription progress/errors for this session |
 
 Two tracks on purpose: speech models do better on clean single-source audio,
-and the microphone is a trusted `me` channel. Dropsift runs local speaker
+and the microphone is a trusted `me` channel. DropSift runs local speaker
 diarization on the system track, labeling remote voices as `speaker_1`,
 `speaker_2`, and so on. CAF on purpose: unlike m4a, it needs no finalization
 pass — if the process dies mid-meeting, everything already written is still
@@ -177,7 +177,7 @@ The recording detail view groups **Regenerate transcript**, **Regenerate title
 non-destructive: the existing transcript remains available until the complete
 replacement is written, and a pending marker resumes the job after a restart.
 While it runs, the toolbar shows a labeled **Processing transcript** indicator
-with the detailed stage on hover. Completion and failure use native Dropsift
+with the detailed stage on hover. Completion and failure use native DropSift
 notifications; a successful manual run reports **Transcript regenerated** with
 the recording title.
 
@@ -198,7 +198,7 @@ finishes with the fallback `them` label and records the failure in
 
 ## Local AI backends
 
-Inference is part of Dropsift itself. Desktop Settings has a persistent,
+Inference is part of DropSift itself. Desktop Settings has a persistent,
 hot-swappable **AI backend** control:
 
 - **Apple native** runs current Qwen3.5/Qwen3.6 models with MLX Swift,
@@ -206,7 +206,7 @@ hot-swappable **AI backend** control:
   diarization, and Apple Vision OCR.
 - **QVAC** runs Qwen through QVAC's llama.cpp plugin, multilingual Parakeet
   TDT transcription through Metal, Sortformer speaker diarization, and QVAC OCR.
-  Dropsift starts and stops its packaged Bare/QVAC child runtime itself; no
+  DropSift starts and stops its packaged Bare/QVAC child runtime itself; no
   terminal command, localhost server, or separately installed QVAC app is
   required.
 
@@ -215,11 +215,11 @@ job, while new chat and ingestion work switches immediately. This makes it safe
 to change providers while the background queue is finishing an earlier item.
 Models for each backend use separate caches and download on first use.
 
-The conservative language-model default is `Qwen3.5 2B` at 4-bit. Dropsift
+The conservative language-model default is `Qwen3.5 2B` at 4-bit. DropSift
 detects the chip, CPU count, and unified memory, then offers a stronger 4B, 9B,
 27B, or 35B-A3B model when appropriate.
 
-For every model, Dropsift:
+For every model, DropSift:
 
 - caps the selected runtime at 50% of total unified memory;
 - calculates the largest context window that fits that limit, up to the
@@ -232,17 +232,17 @@ For every model, Dropsift:
 There is no LM Studio, llama server, localhost API, Python runtime, terminal
 command, or separate application for either backend.
 
-Chat never uploads knowledge. Dropsift chunks and ranks transcript passages,
+Chat never uploads knowledge. DropSift chunks and ranks transcript passages,
 recording notes, document pages, OCR text, note content, and imported-item
 notes locally. It shows distinct retrieval, model-download/loading, and
 generation states, and passes only relevant excerpts to its in-process model.
 Structured source fragments are saved on each assistant message and link back
 to their source location.
 
-Existing Quill users are handled conservatively: if a Dropsift library,
-config, or model cache does not exist yet, the app reuses the corresponding
-Quill location. Recordings, threads, settings, and downloaded weights are not
-stranded by the rename.
+On launch, an older iCloud library is renamed in place to `DropSift`, preserving
+recordings, threads, and notes without duplicating their data. Existing config
+and model-cache locations remain compatible so settings and downloaded weights
+are not stranded by the product rename.
 
 ## Config
 
@@ -250,7 +250,7 @@ Optional, at `~/.config/dropsift/config.json`:
 
 ```json
 {
-  "recordings_dir": "~/Library/Mobile Documents/com~apple~CloudDocs/Dropsift/Recordings",
+  "recordings_dir": "~/Library/Mobile Documents/com~apple~CloudDocs/DropSift/Recordings",
   "transcription": { "enabled": true, "engine": "parakeet" },
   "diarization": { "enabled": true, "engine": "offline-vbx" },
   "on_stop": "my-hook"
@@ -306,7 +306,7 @@ dropsift install --uninstall
 - Parakeet v3 supports 25 European languages automatically. Mandarin,
   Japanese, Arabic, and other languages outside that set still need a future
   transcription engine.
-- iCloud Drive storage uses the visible `Dropsift` folder, not a hidden app
+- iCloud Drive storage uses the visible `DropSift` folder, not a hidden app
   container, so knowledge items and recordings remain directly accessible in
   Finder.
 - Meeting detection is deliberately a local heuristic. A browser using its

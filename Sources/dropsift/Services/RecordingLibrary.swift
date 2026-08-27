@@ -15,7 +15,7 @@ enum RecordingLibrary {
             case .missingAudio(let file):
                 "The audio track “\(file)” is missing."
             case .unsupportedAudio(let file):
-                "Dropsift couldn’t split the audio track “\(file)”."
+                "DropSift couldn’t split the audio track “\(file)”."
             }
         }
     }

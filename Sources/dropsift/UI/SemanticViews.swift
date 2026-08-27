@@ -114,7 +114,7 @@ struct TasksView: View {
                     } description: {
                         Text(
                             showCompleted
-                                ? "Create one, or let Dropsift find action items while it processes your knowledge."
+                                ? "Create one, or let DropSift find action items while it processes your knowledge."
                                 : "There are no open tasks."
                         )
                     } actions: {
@@ -579,7 +579,7 @@ struct SemanticEntitiesView: View {
                         )
                     } description: {
                         Text(
-                            "Dropsift will suggest meaningful \(kind.displayName.lowercased()) as it processes your recordings and files."
+                            "DropSift will suggest meaningful \(kind.displayName.lowercased()) as it processes your recordings and files."
                         )
                     } actions: {
                         Button("Add \(kind.singularName.lowercased())") {

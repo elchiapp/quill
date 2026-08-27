@@ -809,7 +809,7 @@ final class AppModel: ObservableObject {
 
     func chooseDocuments() {
         presentOpenPanel(
-            title: "Add documents to Dropsift",
+            title: "Add documents to DropSift",
             types: documentTypes
         ) { [weak self] urls in
             self?.importKnowledgeFiles(urls, requestedKind: .document)
@@ -818,7 +818,7 @@ final class AppModel: ObservableObject {
 
     func chooseImages() {
         presentOpenPanel(
-            title: "Add images to Dropsift",
+            title: "Add images to DropSift",
             types: [.image]
         ) { [weak self] urls in
             self?.importKnowledgeFiles(urls, requestedKind: .image)
@@ -827,7 +827,7 @@ final class AppModel: ObservableObject {
 
     func chooseAudioRecordings() {
         presentOpenPanel(
-            title: "Add audio recordings to Dropsift",
+            title: "Add audio recordings to DropSift",
             types: [.audio]
         ) { [weak self] urls in
             self?.importAudioFiles(urls)
@@ -1585,7 +1585,7 @@ final class AppModel: ObservableObject {
         guard newPlan.fitsMemoryBudget,
               deviceProfile.totalMemoryBytes >= model.minimumDeviceMemoryBytes
         else {
-            appError = "\(model.name) does not fit Dropsift’s 50% memory safety limit on this Mac."
+            appError = "\(model.name) does not fit DropSift’s 50% memory safety limit on this Mac."
             return
         }
 
@@ -2945,11 +2945,11 @@ final class AppModel: ObservableObject {
             """
         }.joined(separator: "\n\n---\n\n")
         let scopeDescription = scope.kind == .allRecordings
-            ? "the user’s complete Dropsift knowledge library"
-            : "the selected Dropsift recording"
+            ? "the user’s complete DropSift knowledge library"
+            : "the selected DropSift recording"
 
         return """
-        You are Dropsift, a private local knowledge assistant. Answer questions about \(scopeDescription).
+        You are DropSift, a private local knowledge assistant. Answer questions about \(scopeDescription).
         Use only the source excerpts below for claims about the user's knowledge. If the excerpts
         do not contain the answer, say that clearly. Cite grounded claims inline as [1], [2], and
         so on, matching the numbered excerpts. Be concise, synthesize across source types when

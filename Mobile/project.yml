@@ -13,8 +13,8 @@ settings:
     DEVELOPMENT_TEAM: MLH5T4W793
     SWIFT_VERSION: "6.0"
     ENABLE_USER_SCRIPT_SANDBOXING: YES
-    CURRENT_PROJECT_VERSION: 2026082702
-    MARKETING_VERSION: 1.0.39
+    CURRENT_PROJECT_VERSION: 2026082801
+    MARKETING_VERSION: 1.0.40
 packages:
   DropsiftShared:
     path: ../Shared
@@ -25,12 +25,12 @@ targets:
     info:
       path: iOS/Info.plist
       properties:
-        CFBundleDisplayName: Dropsift
+        CFBundleDisplayName: DropSift
         ITSAppUsesNonExemptEncryption: false
         LSSupportsOpeningDocumentsInPlace: true
-        NSMicrophoneUsageDescription: Dropsift records voice messages you choose to capture.
-        NSPhotoLibraryUsageDescription: Dropsift imports images you select into your knowledge library.
-        NSSpeechRecognitionUsageDescription: Dropsift transcribes your voice messages on this device.
+        NSMicrophoneUsageDescription: DropSift records voice messages you choose to capture.
+        NSPhotoLibraryUsageDescription: DropSift imports images you select into your knowledge library.
+        NSSpeechRecognitionUsageDescription: DropSift transcribes your voice messages on this device.
         UIBackgroundModes:
           - audio
         UILaunchScreen: {}
@@ -46,7 +46,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.elchiapp.dropsift.mobile
-        PRODUCT_NAME: Dropsift
+        PRODUCT_NAME: DropSift
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         SUPPORTS_MACCATALYST: NO
@@ -57,9 +57,9 @@ targets:
     info:
       path: Watch/Info.plist
       properties:
-        CFBundleDisplayName: Dropsift
+        CFBundleDisplayName: DropSift
         ITSAppUsesNonExemptEncryption: false
-        NSMicrophoneUsageDescription: Dropsift records voice messages you choose to capture.
+        NSMicrophoneUsageDescription: DropSift records voice messages you choose to capture.
         UIBackgroundModes:
           - audio
         UISupportedInterfaceOrientations:
@@ -72,7 +72,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.elchiapp.dropsift.mobile.watchkitapp
-        PRODUCT_NAME: Dropsift Watch
+        PRODUCT_NAME: DropSift Watch
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         SKIP_INSTALL: YES

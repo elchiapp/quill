@@ -7,7 +7,7 @@ struct SettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text("Dropsift settings")
+                Text("DropSift settings")
                     .font(.title2.weight(.semibold))
                 Spacer()
                 Button("Done") { dismiss() }
@@ -36,7 +36,7 @@ struct SettingsView: View {
                     Text("Meeting detection")
                         .font(.headline)
                     Text(
-                        "Watch locally for known meeting apps or browsers using microphone input, then ask before recording. Dropsift never starts automatically."
+                        "Watch locally for known meeting apps or browsers using microphone input, then ask before recording. DropSift never starts automatically."
                     )
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -137,7 +137,7 @@ struct SettingsView: View {
             Divider()
 
             HStack {
-                Text("Dropsift version")
+                Text("DropSift version")
                     .font(.caption.weight(.semibold))
                 Spacer()
                 Text(versionLabel)
@@ -166,7 +166,7 @@ struct SettingsView: View {
             Text(
                 "\(requestedModel.name)’s downloaded files (\(requestedModel.downloadLabel)) will be moved to the macOS Trash. "
                     + (requestedModel.id == model.selectedModelID
-                        ? "Dropsift will unload it first. "
+                        ? "DropSift will unload it first. "
                         : "")
                     + "Your recordings, notes, and conversations will not be affected."
             )
@@ -407,7 +407,7 @@ struct ModelRecommendationView: View {
             }
 
             Text(
-                "Dropsift starts conservatively with Qwen3.5 2B. Based on this Mac, the recommended option is \(recommendation.model.name)."
+                "DropSift starts conservatively with Qwen3.5 2B. Based on this Mac, the recommended option is \(recommendation.model.name)."
             )
 
             HStack(spacing: 12) {

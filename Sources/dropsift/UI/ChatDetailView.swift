@@ -108,7 +108,7 @@ struct ChatDetailView: View {
                     .foregroundStyle(.tint)
                 Text("Ask your knowledge")
                     .font(.title2.weight(.semibold))
-                Text("Dropsift searches recordings, notes, documents, and image text with its built-in local model.")
+                Text("DropSift searches recordings, notes, documents, and image text with its built-in local model.")
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 440)
@@ -176,7 +176,7 @@ struct ChatDetailView: View {
 
             HStack(alignment: .center, spacing: 10) {
                 TextField(
-                    "Ask a question about anything in Dropsift…",
+                    "Ask a question about anything in DropSift…",
                     text: $model.chatDraft,
                     axis: .vertical
                 )
@@ -209,7 +209,7 @@ struct ChatDetailView: View {
             .padding(.trailing, 8)
             .background(.background.secondary, in: RoundedRectangle(cornerRadius: 14))
 
-            Text("Nothing is sent to an inference service. Answers run inside Dropsift with \(model.selectedModel).")
+            Text("Nothing is sent to an inference service. Answers run inside DropSift with \(model.selectedModel).")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
         }
@@ -249,7 +249,7 @@ struct ChatDetailView: View {
                 "Preparing downloaded \(model.selectedModelPlan.model.name)…"
             default:
                 model.chatContextStatus
-                    ?? "Preparing Dropsift’s built-in model…"
+                    ?? "Preparing DropSift’s built-in model…"
             }
         case .readingSources:
             model.chatContextStatus
@@ -479,7 +479,7 @@ private struct ChatBubble: View {
             bubble
                 .frame(
                     maxWidth: message.role == .assistant ? .infinity : 720,
-                    alignment: .leading
+                    alignment: message.role == .user ? .trailing : .leading
                 )
         }
         .padding(.horizontal, 24)
@@ -492,7 +492,7 @@ private struct ChatBubble: View {
     private var bubble: some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 7) {
-                Text(message.role == .user ? "You" : "Dropsift")
+                Text(message.role == .user ? "You" : "DropSift")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                 if isStreaming {

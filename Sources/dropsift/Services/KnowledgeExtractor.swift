@@ -10,8 +10,8 @@ enum KnowledgeExtractor {
 
         var errorDescription: String? {
             switch self {
-            case .unreadableDocument: "Dropsift could not read this document."
-            case .unreadableImage: "Dropsift could not read this image."
+            case .unreadableDocument: "DropSift could not read this document."
+            case .unreadableImage: "DropSift could not read this image."
             }
         }
     }

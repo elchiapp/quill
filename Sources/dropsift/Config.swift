@@ -11,7 +11,7 @@ import Foundation
 ///     }
 ///
 /// Resolution order for the recordings root: --out flag > config file >
-/// iCloud Drive when available > ~/Dropsift/Recordings. `on_stop` is a shell
+/// iCloud Drive when available > ~/DropSift/Recordings. `on_stop` is a shell
 /// command spawned with the session directory as its argument — after the
 /// transcript is written, or right after recording when transcription is
 /// disabled.
@@ -23,14 +23,14 @@ enum Config {
         .appendingPathComponent(".config/quill/config.json")
 
     /// Keep an existing Quill configuration working after the product rename.
-    /// New installations and users who create a Dropsift config use the new
+    /// New installations and users who create a DropSift config use the new
     /// path without requiring an explicit migration step.
     static var path: URL {
         preferred(new: newPath, legacy: legacyPath)
     }
 
     private static let localRoot = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Dropsift", isDirectory: true)
+        .appendingPathComponent("DropSift", isDirectory: true)
         .appendingPathComponent("Recordings", isDirectory: true)
 
     private static let legacyLocalRoot = FileManager.default.homeDirectoryForCurrentUser
@@ -44,13 +44,16 @@ enum Config {
     /// container entitlements. Macs without iCloud Drive fall back locally.
     static var defaultRoot: URL {
         if FileManager.default.fileExists(atPath: iCloudDriveRoot.path) {
-            let dropsift = iCloudDriveRoot
-                .appendingPathComponent("Dropsift", isDirectory: true)
+            let dropSiftLibrary = iCloudDriveRoot
+                .appendingPathComponent("DropSift", isDirectory: true)
+            let dropSift = dropSiftLibrary
                 .appendingPathComponent("Recordings", isDirectory: true)
-            let quill = iCloudDriveRoot
+            let legacyLibrary = iCloudDriveRoot
                 .appendingPathComponent("Quill", isDirectory: true)
+            migrateLegacyLibraryIfNeeded(from: legacyLibrary, to: dropSiftLibrary)
+            let quill = legacyLibrary
                 .appendingPathComponent("Recordings", isDirectory: true)
-            return preferred(new: dropsift, legacy: quill)
+            return preferred(new: dropSift, legacy: quill)
         }
         return preferred(new: localRoot, legacy: legacyLocalRoot)
     }
@@ -62,11 +65,11 @@ enum Config {
     /// Large inference weights stay local and disposable rather than syncing
     /// through iCloud with the user's recordings and chat history.
     static var modelCacheRoot: URL {
-        let dropsift = FileManager.default.homeDirectoryForCurrentUser
+        let dropSift = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Caches/Dropsift/Models", isDirectory: true)
         let quill = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Caches/Quill/Models", isDirectory: true)
-        return preferred(new: dropsift, legacy: quill)
+        return preferred(new: dropSift, legacy: quill)
     }
 
     static var qvacCacheRoot: URL {
@@ -157,7 +160,7 @@ enum Config {
     }
 
     /// Prefer the new product location, but continue from an existing Quill
-    /// location when the Dropsift equivalent has not been created yet.
+    /// location when the DropSift equivalent has not been created yet.
     private static func preferred(new: URL, legacy: URL) -> URL {
         let fileManager = FileManager.default
         if fileManager.fileExists(atPath: new.path)
@@ -165,5 +168,28 @@ enum Config {
             return new
         }
         return legacy
+    }
+
+    /// Rename the historical iCloud library in place. Moving the containing
+    /// directory preserves every recording and avoids an expensive duplicate
+    /// upload. If iCloud temporarily refuses the rename, the legacy location
+    /// remains untouched and is still used for that launch.
+    @discardableResult
+    static func migrateLegacyLibraryIfNeeded(
+        from legacy: URL,
+        to destination: URL,
+        fileManager: FileManager = .default
+    ) -> Bool {
+        guard fileManager.fileExists(atPath: legacy.path) else { return false }
+        guard !fileManager.fileExists(atPath: destination.path) else { return false }
+        do {
+            try fileManager.moveItem(at: legacy, to: destination)
+            return true
+        } catch {
+            FileHandle.standardError.write(Data(
+                "warning: couldn’t rename the legacy library to DropSift: \(error.localizedDescription)\n".utf8
+            ))
+            return false
+        }
     }
 }

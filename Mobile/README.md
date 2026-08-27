@@ -1,4 +1,4 @@
-# Dropsift for iPhone and Apple Watch
+# DropSift for iPhone and Apple Watch
 
 ## What is included
 
@@ -24,7 +24,7 @@ Automatic, Apple Intelligence, and retrieval-only Local source search.
 3. Connect and trust the iPhone paired with your Apple Watch.
 4. Select that iPhone as the `DropsiftMobile` run destination and press Run.
 5. If automatic Watch installation is disabled, open the Watch app on iPhone
-   and install Dropsift under **Available Apps**.
+   and install DropSift under **Available Apps**.
 
 The checked-in project is generated from `project.yml`. After changing the
 spec, regenerate it with:
@@ -61,11 +61,10 @@ data; update that declaration if the app's data practices change.
 
 On the iPhone's Capture tab, choose **Choose iCloud folder** and select:
 
-- `iCloud Drive/Dropsift`, for current installs; or
-- `iCloud Drive/Quill`, when the Mac still uses the compatible legacy folder.
+- `iCloud Drive/DropSift`, shared with the Mac app.
 
 iOS grants access to user-visible iCloud Drive folders through the system file
-picker, so this one-time selection is intentional. Dropsift saves a
+picker, so this one-time selection is intentional. DropSift saves a
 security-scoped bookmark and restores it on future launches. Captures remain
 local and usable if the folder is not connected; connecting later merges them
 without overwriting existing entries.
@@ -99,10 +98,10 @@ paired iPhone and Watch for the end-to-end check.
 
 1. Disconnect the phone from the network, record on Watch, and stop.
 2. Confirm the Watch shows the message as queued or saved.
-3. Open Dropsift on iPhone and confirm the recording appears in Timeline.
+3. Open DropSift on iPhone and confirm the recording appears in Timeline.
 4. Play it, wait for transcription, and ask a question using a phrase from it.
 5. Tap the answer's source card and confirm it opens the highlighted segment.
-6. Reconnect the network and open Dropsift on Mac; confirm the same recording
+6. Reconnect the network and open DropSift on Mac; confirm the same recording
    appears and any pending multilingual transcription completes.
 
 ## Local validation

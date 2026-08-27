@@ -53,7 +53,7 @@ struct MobileAskView: View {
 
             HStack(alignment: .bottom, spacing: 10) {
                 TextField(
-                    "Ask anything in Dropsift…",
+                    "Ask anything in DropSift…",
                     text: $model.chatDraft,
                     axis: .vertical
                 )
@@ -81,7 +81,7 @@ struct MobileAskView: View {
             .background(.bar)
         }
         .scrollDismissesKeyboard(.interactively)
-        .navigationTitle("Ask Dropsift")
+        .navigationTitle("Ask DropSift")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {

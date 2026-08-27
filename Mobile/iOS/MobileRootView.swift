@@ -55,7 +55,7 @@ struct MobileRootView: View {
             }
         }
         .alert(
-            "Dropsift",
+            "DropSift",
             isPresented: Binding(
                 get: {
                     model.errorMessage != nil
@@ -230,7 +230,7 @@ private struct MobileTasksView: View {
                     "No tasks",
                     systemImage: "checklist",
                     description: Text(
-                        "Create one, or accept an action item Dropsift finds while processing your knowledge."
+                        "Create one, or accept an action item DropSift finds while processing your knowledge."
                     )
                 )
             } else {
@@ -526,7 +526,7 @@ private struct MobileEntitiesView: View {
                     "No \(kind.displayName.lowercased()) yet",
                     systemImage: kind.systemImage,
                     description: Text(
-                        "Dropsift will suggest them while processing recordings and files."
+                        "DropSift will suggest them while processing recordings and files."
                     )
                 )
             } else {

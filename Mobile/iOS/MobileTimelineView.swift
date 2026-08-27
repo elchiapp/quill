@@ -219,7 +219,7 @@ struct MobileTimelineView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Not connected to iCloud")
                         .font(.subheadline.weight(.semibold))
-                    Text("Choose your Dropsift or Quill folder to load the shared timeline.")
+                    Text("Choose your DropSift folder to load the shared timeline.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -300,12 +300,12 @@ struct MobileTimelineView: View {
 
     private var emptyTimelineDescription: String {
         if !model.locator.isConnectedToSharedFolder {
-            return "Choose the Dropsift folder in iCloud Drive—or your existing Quill folder—to see the same timeline as your Mac."
+            return "Choose the DropSift folder in iCloud Drive to see the same timeline as your Mac."
         }
         if !model.timeline.isEmpty {
             return "No timeline items match the current search and filters."
         }
-        return "iCloud Drive is connected and up to date, but this folder does not contain any Dropsift items yet."
+        return "iCloud Drive is connected and up to date, but this folder does not contain any DropSift items yet."
     }
 
     private var isEditing: Bool {
@@ -468,7 +468,7 @@ private struct MobileItemDetail: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This removes the item from the shared Dropsift library.")
+            Text("This removes the item from the shared DropSift library.")
         }
     }
 }

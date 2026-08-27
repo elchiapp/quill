@@ -25,12 +25,12 @@ enum TranscriptionNotificationCopy {
             title: regenerated
                 ? "Transcript regeneration failed"
                 : "Transcription failed",
-            body: "\(recordingTitle). Open Dropsift for details."
+            body: "\(recordingTitle). Open DropSift for details."
         )
     }
 }
 
-/// Use a native app notification when running from Dropsift.app. The CLI
+/// Use a native app notification when running from DropSift.app. The CLI
 /// fallback retains best-effort notifications for terminal-only use.
 func notifyUser(title: String, body: String) {
     if Bundle.main.bundleURL.pathExtension == "app" {
@@ -96,8 +96,8 @@ final class MeetingNotificationController: NSObject, UNUserNotificationCenterDel
         let content = UNMutableNotificationContent()
         content.title = "Meeting detected in \(meeting.appName)"
         content.body = meeting.isBrowser
-            ? "This browser is using your microphone. Start a Dropsift recording?"
-            : "\(meeting.appName) is using your microphone. Start a Dropsift recording?"
+            ? "This browser is using your microphone. Start a DropSift recording?"
+            : "\(meeting.appName) is using your microphone. Start a DropSift recording?"
         content.sound = .default
         content.categoryIdentifier = Self.detectedCategoryID
         content.userInfo = [
@@ -117,7 +117,7 @@ final class MeetingNotificationController: NSObject, UNUserNotificationCenterDel
     func reportAutomaticallyStopped(for meeting: DetectedMeeting) {
         let content = UNMutableNotificationContent()
         content.title = "Recording stopped"
-        content.body = "\(meeting.appName) stopped using the microphone, so Dropsift ended the meeting recording."
+        content.body = "\(meeting.appName) stopped using the microphone, so DropSift ended the meeting recording."
         let request = UNNotificationRequest(
             identifier: "meeting-stopped-\(meeting.bundleID)-\(Date().timeIntervalSince1970)",
             content: content,

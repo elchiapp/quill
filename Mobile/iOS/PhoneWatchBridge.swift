@@ -121,7 +121,7 @@ extension PhoneWatchBridge: WCSessionDelegate {
             } else if watchReady {
                 self?.status = "Apple Watch connected"
             } else {
-                self?.status = "Install Dropsift on your Apple Watch"
+                self?.status = "Install DropSift on your Apple Watch"
             }
         }
     }

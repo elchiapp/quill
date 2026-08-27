@@ -11,7 +11,7 @@ struct Install: ParsableCommand {
         abstract: "Install or remove the launch-at-login LaunchAgent."
     )
 
-    @Flag(name: .long, help: "Register Dropsift to start at login.")
+    @Flag(name: .long, help: "Register DropSift to start at login.")
     var launchAtLogin: Bool = false
 
     @Flag(name: .long, help: "Remove the launch-at-login agent.")
@@ -98,7 +98,7 @@ struct Install: ParsableCommand {
         }
         print(removed
             ? "✓ launch-at-login removed"
-            : "nothing to remove (no Dropsift or legacy Quill agent found)")
+            : "nothing to remove (no DropSift or legacy agent found)")
     }
 
     private func resolveBinaryPath() throws -> String {

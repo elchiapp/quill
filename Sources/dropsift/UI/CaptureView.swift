@@ -17,7 +17,7 @@ struct CaptureView: View {
                 Spacer(minLength: 28)
 
                 VStack(spacing: 8) {
-                    Text("Add something to Dropsift")
+                    Text("Add something to DropSift")
                         .font(.largeTitle.weight(.semibold))
                     Text("Capture it now or bring in something you already have.")
                         .font(.title3)

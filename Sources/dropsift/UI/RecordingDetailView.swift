@@ -145,7 +145,7 @@ struct RecordingDetailView: View {
             }
         } message: { segment in
             Text(
-                "Everything from \(TranscriptDocument.clock(segment.startMs)) onward becomes a separate timeline item. Dropsift splits and rebases the transcript and audio tracks; the untouched source audio remains in this item’s folder for recovery."
+                "Everything from \(TranscriptDocument.clock(segment.startMs)) onward becomes a separate timeline item. DropSift splits and rebases the transcript and audio tracks; the untouched source audio remains in this item’s folder for recovery."
             )
         }
     }
@@ -677,7 +677,7 @@ struct RecordingDetailView: View {
             } description: {
                 Text(
                     model.transcriptionStatus
-                        ?? "Dropsift will transcribe this recording locally. The first run downloads the speech model."
+                        ?? "DropSift will transcribe this recording locally. The first run downloads the speech model."
                 )
             }
         }

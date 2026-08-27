@@ -4,9 +4,9 @@ set -euo pipefail
 SCRIPT_DIR=${0:A:h}
 PROJECT_ROOT=${SCRIPT_DIR:h}
 DIST_DIR="$PROJECT_ROOT/dist"
-APP_OUTPUT="$DIST_DIR/Dropsift.app"
-APP_ARCHIVE="$DIST_DIR/Dropsift.app.zip"
-DMG_PATH="$DIST_DIR/Dropsift.dmg"
+APP_OUTPUT="$DIST_DIR/DropSift.app"
+APP_ARCHIVE="$DIST_DIR/DropSift.app.zip"
+DMG_PATH="$DIST_DIR/DropSift.dmg"
 BUILD_CONFIGURATION=${BUILD_CONFIGURATION:-release}
 SIGN_IDENTITY=${SIGN_IDENTITY:--}
 MLX_DERIVED_DATA="$PROJECT_ROOT/.build/mlx-xcode"
@@ -60,7 +60,7 @@ if [[ ! -x "$DROPSIFT_BINARY" ]]; then
     exit 1
 fi
 
-if [[ "$APP_OUTPUT" != "$PROJECT_ROOT/dist/Dropsift.app" ]]; then
+if [[ "$APP_OUTPUT" != "$PROJECT_ROOT/dist/DropSift.app" ]]; then
     print -u2 "Refusing to replace an unexpected app path: $APP_OUTPUT"
     exit 1
 fi
@@ -68,7 +68,7 @@ fi
 /bin/rm -rf "$APP_OUTPUT" "$APP_ARCHIVE" "$DMG_PATH"
 
 PACKAGE_WORK=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/dropsift-package.XXXXXX")
-APP_BUNDLE="$PACKAGE_WORK/Dropsift.app"
+APP_BUNDLE="$PACKAGE_WORK/DropSift.app"
 /bin/mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
 /usr/bin/ditto "$DROPSIFT_BINARY" "$APP_BUNDLE/Contents/MacOS/dropsift"
 /usr/bin/ditto "$MLX_METALLIB" "$APP_BUNDLE/Contents/Resources/mlx.metallib"
@@ -176,11 +176,11 @@ done
 /usr/bin/codesign --verify --deep --strict "$APP_BUNDLE"
 
 DMG_WORK=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/dropsift-dmg.XXXXXX")
-/usr/bin/ditto "$APP_BUNDLE" "$DMG_WORK/Dropsift.app"
+/usr/bin/ditto "$APP_BUNDLE" "$DMG_WORK/DropSift.app"
 /bin/ln -s /Applications "$DMG_WORK/Applications"
 /usr/bin/hdiutil create \
     -quiet \
-    -volname "Dropsift" \
+    -volname "DropSift" \
     -srcfolder "$DMG_WORK" \
     -ov \
     -format UDZO \

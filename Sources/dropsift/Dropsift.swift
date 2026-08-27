@@ -15,7 +15,7 @@ struct Dropsift: ParsableCommand {
 struct Run: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "run",
-        abstract: "Open the Dropsift desktop app (default)."
+        abstract: "Open the DropSift desktop app (default)."
     )
 
     @Option(name: .long, help: "Recordings root directory (overrides the config file).")
@@ -188,13 +188,13 @@ final class AppController: NSObject, NSApplicationDelegate {
     private func installMainMenu() {
         let mainMenu = NSMenu(title: "Main Menu")
 
-        let applicationMenu = NSMenu(title: "Dropsift")
-        let applicationMenuItem = NSMenuItem(title: "Dropsift", action: nil, keyEquivalent: "")
+        let applicationMenu = NSMenu(title: "DropSift")
+        let applicationMenuItem = NSMenuItem(title: "DropSift", action: nil, keyEquivalent: "")
         applicationMenuItem.submenu = applicationMenu
         mainMenu.addItem(applicationMenuItem)
 
         let about = NSMenuItem(
-            title: "About Dropsift",
+            title: "About DropSift",
             action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
             keyEquivalent: ""
         )
@@ -219,7 +219,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         applicationMenu.addItem(.separator())
 
         let hide = NSMenuItem(
-            title: "Hide Dropsift",
+            title: "Hide DropSift",
             action: #selector(NSApplication.hide(_:)),
             keyEquivalent: "h"
         )
@@ -245,7 +245,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         applicationMenu.addItem(.separator())
 
         let quit = NSMenuItem(
-            title: "Quit Dropsift",
+            title: "Quit DropSift",
             action: #selector(quitFromMenu(_:)),
             keyEquivalent: "q"
         )

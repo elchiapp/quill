@@ -76,7 +76,7 @@ struct WatchCaptureView: View {
             .padding(.vertical, 8)
         }
         .alert(
-            "Dropsift",
+            "DropSift",
             isPresented: Binding(
                 get: { recorder.errorMessage != nil },
                 set: { if !$0 { recorder.errorMessage = nil } }

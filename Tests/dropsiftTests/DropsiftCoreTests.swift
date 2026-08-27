@@ -1538,12 +1538,36 @@ func transcriptNotificationsUseNativeAppStyleCopy() {
     )
     #expect(completed.title == "Transcript regenerated")
     #expect(completed.body == "Product review")
-    #expect(!completed.title.contains("Dropsift —"))
+    #expect(!completed.title.contains("DropSift —"))
 
     let failed = TranscriptionNotificationCopy.failed(
         recordingTitle: "Product review",
         regenerated: true
     )
     #expect(failed.title == "Transcript regeneration failed")
-    #expect(failed.body == "Product review. Open Dropsift for details.")
+    #expect(failed.body == "Product review. Open DropSift for details.")
+}
+
+@Test
+func legacyLibraryIsRenamedWithoutChangingItsContents() throws {
+    let parent = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let legacy = parent.appendingPathComponent("Quill", isDirectory: true)
+    let destination = parent.appendingPathComponent("DropSift", isDirectory: true)
+    let recording = legacy
+        .appendingPathComponent("Recordings", isDirectory: true)
+        .appendingPathComponent("meeting", isDirectory: true)
+    try FileManager.default.createDirectory(at: recording, withIntermediateDirectories: true)
+    try Data("preserved audio".utf8).write(
+        to: recording.appendingPathComponent("mic.caf")
+    )
+    defer { try? FileManager.default.removeItem(at: parent) }
+
+    #expect(Config.migrateLegacyLibraryIfNeeded(from: legacy, to: destination))
+    #expect(!FileManager.default.fileExists(atPath: legacy.path))
+    #expect(
+        try Data(contentsOf: destination
+            .appendingPathComponent("Recordings/meeting/mic.caf"))
+            == Data("preserved audio".utf8)
+    )
 }

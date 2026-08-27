@@ -25,7 +25,7 @@ final class MenuBarController {
         menu.autoenablesItems = false
 
         let show = NSMenuItem(
-            title: "Open Dropsift",
+            title: "Open DropSift",
             action: #selector(showClicked),
             keyEquivalent: ""
         )
@@ -60,7 +60,7 @@ final class MenuBarController {
         menu.addItem(.separator())
 
         let quit = NSMenuItem(
-            title: "Quit Dropsift",
+            title: "Quit DropSift",
             action: #selector(quitClicked),
             keyEquivalent: "q"
         )

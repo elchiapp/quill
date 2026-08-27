@@ -574,7 +574,7 @@ enum TranscriptionRegeneration {
         var errorDescription: String? {
             switch self {
             case .transcriptionDisabled:
-                "Transcription is disabled in Dropsift’s configuration."
+                "Transcription is disabled in DropSift’s configuration."
             case .noAudio:
                 "This recording has no available audio tracks to transcribe."
             }

@@ -52,7 +52,7 @@ final class SystemAudioRecorder: @unchecked Sendable {
         guard !isRecording else { return }
 
         let description = CATapDescription(stereoGlobalTapButExcludeProcesses: [])
-        description.name = "Dropsift system tap"
+        description.name = "DropSift system tap"
         description.isPrivate = true
         description.muteBehavior = .unmuted
 

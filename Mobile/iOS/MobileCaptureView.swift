@@ -26,7 +26,7 @@ struct MobileCaptureView: View {
                 VStack(spacing: 6) {
                     Text("Capture anything")
                         .font(.largeTitle.bold())
-                    Text("It lands in the same private Dropsift timeline.")
+                    Text("It lands in the same private DropSift timeline.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -109,7 +109,7 @@ struct MobileCaptureView: View {
             }
             .padding(18)
         }
-        .navigationTitle("Dropsift")
+        .navigationTitle("DropSift")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showingNote) {
             NewNoteSheet(model: model)
@@ -177,7 +177,7 @@ struct MobileCaptureView: View {
             Label("Connect your shared iCloud library", systemImage: "icloud.and.arrow.up")
                 .font(.headline)
             Text(
-                "Choose the Dropsift folder in iCloud Drive—or your existing Quill folder—once. iPhone, Watch, and Mac will then use the same files."
+                "Choose the DropSift folder in iCloud Drive once. iPhone, Watch, and Mac will then use the same files."
             )
             .font(.subheadline)
             .foregroundStyle(.secondary)
