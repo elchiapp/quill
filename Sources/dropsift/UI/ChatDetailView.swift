@@ -128,26 +128,19 @@ struct ChatDetailView: View {
                             ForEach(thread.messages) { message in
                                 ChatBubble(
                                     message: message,
-                                    isStreaming: model.chatStage == .generating
+                                    isStreaming: (
+                                        model.chatStage == .readingSources
+                                            || model.chatStage == .generating
+                                    )
                                         && message.id == thread.messages.last?.id
                                         && message.role == .assistant,
                                     streamingStatus: model.chatContextStatus,
-                                    viewportWidth: viewport.size.width,
                                     onSourceSelected: model.openSource
                                 )
                                     .id(message.id)
                             }
-                            if model.chatStage != .idle,
-                               model.chatStage != .generating {
-                                HStack(spacing: 8) {
-                                    ProgressView()
-                                        .controlSize(.small)
-                                    Text(pipelineStatus)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                    Spacer()
-                                }
-                                .padding(.horizontal, 24)
+                            if model.chatStage != .idle {
+                                pipelineProgress
                             }
                         }
                         .frame(
@@ -258,9 +251,56 @@ struct ChatDetailView: View {
                 model.chatContextStatus
                     ?? "Preparing Dropsift’s built-in model…"
             }
+        case .readingSources:
+            model.chatContextStatus
+                ?? "Reading the selected source excerpts…"
         case .generating:
             "Generating locally with \(model.selectedModel)…"
         }
+    }
+
+    private var pipelineProgress: some View {
+        let steps = ["Search", "Prepare", "Read", "Answer"]
+        let current = switch model.chatStage {
+        case .idle: 4
+        case .retrieving: 0
+        case .preparingAI: 1
+        case .readingSources: 2
+        case .generating: 3
+        }
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
+                    HStack(spacing: 5) {
+                        if index < current {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                        } else if index == current {
+                            ProgressView()
+                                .controlSize(.mini)
+                        } else {
+                            Image(systemName: "circle")
+                                .foregroundStyle(.tertiary)
+                        }
+                        Text(step)
+                            .foregroundStyle(
+                                index == current ? .primary : .secondary
+                            )
+                    }
+                    if index < steps.count - 1 {
+                        Rectangle()
+                            .fill(Color.secondary.opacity(0.22))
+                            .frame(width: 18, height: 1)
+                    }
+                }
+            }
+            .font(.caption.weight(.medium))
+            Text(pipelineStatus)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 24)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -429,10 +469,27 @@ private struct ChatBubble: View {
     let message: ChatMessage
     let isStreaming: Bool
     let streamingStatus: String?
-    let viewportWidth: CGFloat
     let onSourceSelected: (ChatSource) -> Void
 
     var body: some View {
+        HStack(alignment: .top, spacing: 0) {
+            if message.role == .user {
+                Spacer(minLength: 80)
+            }
+            bubble
+                .frame(
+                    maxWidth: message.role == .assistant ? .infinity : 720,
+                    alignment: .leading
+                )
+        }
+        .padding(.horizontal, 24)
+        .frame(
+            maxWidth: .infinity,
+            alignment: message.role == .user ? .trailing : .leading
+        )
+    }
+
+    private var bubble: some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 7) {
                 Text(message.role == .user ? "You" : "Dropsift")
@@ -504,15 +561,6 @@ private struct ChatBubble: View {
                 ? Color.accentColor.opacity(0.14)
                 : Color(nsColor: .controlBackgroundColor),
             in: RoundedRectangle(cornerRadius: 14)
-        )
-        .frame(
-            maxWidth: message.role == .assistant ? .infinity : 720,
-            alignment: message.role == .user ? .trailing : .leading
-        )
-        .padding(.horizontal, 24)
-        .frame(
-            width: viewportWidth,
-            alignment: message.role == .user ? .trailing : .leading
         )
     }
 }

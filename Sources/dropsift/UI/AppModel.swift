@@ -68,6 +68,7 @@ final class AppModel: ObservableObject {
         case idle
         case retrieving
         case preparingAI
+        case readingSources
         case generating
     }
 
@@ -1434,7 +1435,7 @@ final class AppModel: ObservableObject {
                     : "Using \(retrieval.chunks.count) relevant source\(retrieval.chunks.count == 1 ? "" : "s") · ~\(approximateTokens.formatted()) context tokens…"
                 chatStage = .preparingAI
                 try await llm.prepare()
-                chatStage = .generating
+                chatStage = .readingSources
                 let responseID = UUID()
                 streamingResponseID = responseID
                 guard let responseThreadIndex = threads.firstIndex(
@@ -1463,6 +1464,7 @@ final class AppModel: ObservableObject {
                 var streamedAnswer = ""
                 for try await chunk in stream {
                     if !chunk.isEmpty {
+                        chatStage = .generating
                         chatContextStatus = nil
                     }
                     streamedAnswer += chunk
