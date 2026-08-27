@@ -1,3 +1,4 @@
+import DropsiftShared
 import Foundation
 
 struct KnowledgeChunk: Sendable {
@@ -149,6 +150,20 @@ enum KnowledgeRetriever {
     }
 
     private static func chunks(from item: KnowledgeItem) -> [KnowledgeChunk] {
+        var output: [KnowledgeChunk] = []
+        if let summary = item.summary {
+            output.append(
+                KnowledgeChunk(
+                    itemID: item.id,
+                    itemTitle: item.title,
+                    kind: item.kind,
+                    createdAt: item.createdAt,
+                    text: summaryText(summary),
+                    locator: "Summary",
+                    page: nil
+                )
+            )
+        }
         var blocks = item.blocks
         if item.kind == .note {
             blocks = textBlocks(item.content, locator: "Note")
@@ -156,7 +171,7 @@ enum KnowledgeRetriever {
         if !item.additionalNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             blocks += textBlocks(item.additionalNotes, locator: "Notes")
         }
-        return blocks.map {
+        output += blocks.map {
             KnowledgeChunk(
                 itemID: item.id,
                 itemTitle: item.title,
@@ -167,6 +182,26 @@ enum KnowledgeRetriever {
                 page: $0.page
             )
         }
+        return output
+    }
+
+    private static func summaryText(_ summary: RecordingSummary) -> String {
+        var sections = [summary.overview]
+        if !summary.topics.isEmpty {
+            sections.append("Topics: " + summary.topics.joined(separator: "; "))
+        }
+        if !summary.decisions.isEmpty {
+            sections.append(
+                "Conclusions and decisions: "
+                    + summary.decisions.joined(separator: "; ")
+            )
+        }
+        if !summary.actionItems.isEmpty {
+            sections.append(
+                "Action items: " + summary.actionItems.joined(separator: "; ")
+            )
+        }
+        return sections.joined(separator: "\n")
     }
 
     private static func textBlocks(_ text: String, locator: String) -> [KnowledgeBlock] {

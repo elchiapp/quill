@@ -4,6 +4,39 @@ import DropsiftShared
 import Foundation
 import UniformTypeIdentifiers
 
+enum ChatRetrievalPolicy {
+    static func excerptLimit(
+        contextTokens: Int,
+        query: String
+    ) -> Int {
+        isBroadSummaryQuery(query)
+            ? min(32, max(16, contextTokens / 8_192))
+            : min(16, max(10, contextTokens / 16_384))
+    }
+
+    static func characterBudget(
+        contextTokens: Int,
+        query: String
+    ) -> Int {
+        let broad = isBroadSummaryQuery(query)
+        let ceiling = broad ? 64_000 : 32_000
+        return min(
+            ceiling,
+            max(16_000, contextTokens / (broad ? 4 : 8))
+        )
+    }
+
+    static let responseTokenLimit = 1_024
+
+    private static func isBroadSummaryQuery(_ query: String) -> Bool {
+        let value = query.lowercased()
+        return [
+            "summarize", "summarise", "summary", "entire", "full meeting",
+            "everything", "all action items",
+        ].contains { value.contains($0) }
+    }
+}
+
 @MainActor
 final class AppModel: ObservableObject {
     enum Section: String, CaseIterable, Identifiable {
@@ -154,6 +187,7 @@ final class AppModel: ObservableObject {
     @Published var selectedThreadID: UUID?
     @Published var chatDraft = ""
     @Published var chatStage: ChatPipelineStage = .idle
+    @Published private(set) var chatContextStatus: String?
     @Published var chatError: String?
     @Published private(set) var regeneratingThreadID: UUID?
     @Published private(set) var metadataGenerationItemID: String?
@@ -1317,6 +1351,7 @@ final class AppModel: ObservableObject {
 
         chatDraft = ""
         chatError = nil
+        chatContextStatus = nil
         let userMessage = ChatMessage(role: .user, content: question)
         threads[index].messages.append(userMessage)
         threads[index].updatedAt = Date()
@@ -1333,19 +1368,22 @@ final class AppModel: ObservableObject {
             .joined(separator: "\n")
         let recordingsSnapshot = recordings
         let knowledgeSnapshot = knowledgeItems
-        let retrievalLimit = max(
-            10,
-            min(512, selectedModelPlan.contextTokens / 512)
+        let retrievalLimit = ChatRetrievalPolicy.excerptLimit(
+            contextTokens: selectedModelPlan.contextTokens,
+            query: retrievalQuery
         )
-        let retrievalCharacterBudget = max(
-            16_000,
-            min(
-                600_000,
-                max(4_096, selectedModelPlan.contextTokens - 16_384) * 2
-            )
+        let retrievalCharacterBudget = ChatRetrievalPolicy.characterBudget(
+            contextTokens: selectedModelPlan.contextTokens,
+            query: retrievalQuery
         )
         persistThreads()
         chatStage = .retrieving
+        // Interactive questions preempt automatic titles, summaries, and
+        // semantic extraction. Background work resumes when chat is idle.
+        semanticAnalysisTask?.cancel()
+        semanticAnalysisTask = nil
+        semanticProcessingLabel = nil
+        semanticProcessingSourceID = nil
 
         Task { [weak self, llm] in
             guard let self else { return }
@@ -1387,6 +1425,13 @@ final class AppModel: ObservableObject {
                     threads[currentIndex].updatedAt = Date()
                     persistThreads()
                 }
+                let contextCharacters = retrieval.chunks.reduce(0) {
+                    $0 + $1.text.count + $1.title.count + $1.locator.count
+                }
+                let approximateTokens = max(1, contextCharacters / 4)
+                chatContextStatus = retrieval.chunks.isEmpty
+                    ? "No relevant local sources found. Starting the model…"
+                    : "Using \(retrieval.chunks.count) relevant source\(retrieval.chunks.count == 1 ? "" : "s") · ~\(approximateTokens.formatted()) context tokens…"
                 chatStage = .preparingAI
                 try await llm.prepare()
                 chatStage = .generating
@@ -1396,6 +1441,7 @@ final class AppModel: ObservableObject {
                     where: { $0.id == threadID }
                 ) else {
                     chatStage = .idle
+                    chatContextStatus = nil
                     return
                 }
                 threads[responseThreadIndex].messages.append(
@@ -1411,10 +1457,14 @@ final class AppModel: ObservableObject {
                         chunks: retrieval.chunks,
                         scope: retrieval.scope
                     ),
-                    messages: conversation
+                    messages: conversation,
+                    maxTokens: ChatRetrievalPolicy.responseTokenLimit
                 )
                 var streamedAnswer = ""
                 for try await chunk in stream {
+                    if !chunk.isEmpty {
+                        chatContextStatus = nil
+                    }
                     streamedAnswer += chunk
                     guard let currentIndex = threads.firstIndex(
                         where: { $0.id == threadID }
@@ -1433,12 +1483,14 @@ final class AppModel: ObservableObject {
                 }
                 guard let currentIndex = threads.firstIndex(where: { $0.id == threadID }) else {
                     chatStage = .idle
+                    chatContextStatus = nil
                     return
                 }
                 guard let messageIndex = threads[currentIndex].messages.firstIndex(
                     where: { $0.id == responseID }
                 ) else {
                     chatStage = .idle
+                    chatContextStatus = nil
                     return
                 }
                 threads[currentIndex].messages[messageIndex].content = answer
@@ -1454,6 +1506,7 @@ final class AppModel: ObservableObject {
                 threads.sort { $0.updatedAt > $1.updatedAt }
                 persistThreads()
                 chatStage = .idle
+                chatContextStatus = nil
                 if shouldGenerateConversationTitle,
                    !threads[currentIndex].titleIsManual,
                    !requestedThreadTitles.contains(where: {
@@ -1483,6 +1536,7 @@ final class AppModel: ObservableObject {
                 }
                 chatError = error.localizedDescription
                 chatStage = .idle
+                chatContextStatus = nil
                 aiStatus = .failed(error.localizedDescription)
                 scanForSemanticCandidates()
             }

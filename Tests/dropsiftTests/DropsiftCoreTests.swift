@@ -477,6 +477,94 @@ func transcriptRetrieverFindsRelevantMeetingAcrossLibrary() {
 }
 
 @Test
+func chatRetrievalUsesCompactPromptsDespiteLargeModelContext() {
+    let context = 262_144
+    #expect(
+        ChatRetrievalPolicy.excerptLimit(
+            contextTokens: context,
+            query: "BKN301 what do they want?"
+        ) == 16
+    )
+    #expect(
+        ChatRetrievalPolicy.characterBudget(
+            contextTokens: context,
+            query: "BKN301 what do they want?"
+        ) == 32_000
+    )
+    #expect(
+        ChatRetrievalPolicy.excerptLimit(
+            contextTokens: context,
+            query: "Summarize the entire meeting"
+        ) == 32
+    )
+    #expect(
+        ChatRetrievalPolicy.characterBudget(
+            contextTokens: context,
+            query: "Summarize the entire meeting"
+        ) == 64_000
+    )
+    #expect(ChatRetrievalPolicy.responseTokenLimit == 1_024)
+}
+
+@Test
+func transcriptRetrieverPrefersCompactSavedSummaryForIntentQuestions() throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(
+        at: directory,
+        withIntermediateDirectories: true
+    )
+    defer { try? FileManager.default.removeItem(at: directory) }
+    try RecordingSummaryStore.save(
+        RecordingSummary(
+            overview: "BKN301 wants a proof of concept for its knowledge base.",
+            participantCount: 0,
+            participants: [],
+            topics: ["Knowledge-base integration"],
+            decisions: [],
+            actionItems: ["Prepare the proof-of-concept proposal"],
+            sourceRevision: "test",
+            model: "test"
+        ),
+        to: directory
+    )
+    let recording = RecordingItem(
+        id: "bkn-summary",
+        directory: directory,
+        title: "BKN301 discovery call",
+        startedAt: Date(),
+        endedAt: Date(),
+        durationSeconds: 60,
+        micURL: nil,
+        systemURL: nil,
+        transcript: TranscriptDocument(
+            engine: "test",
+            model: "test",
+            createdAt: "2026-08-27T00:00:00Z",
+            segments: [
+                .init(
+                    speaker: "them",
+                    startMs: 0,
+                    endMs: 1_000,
+                    text: "General introductory discussion."
+                ),
+            ]
+        ),
+        notes: ""
+    )
+
+    let matches = TranscriptRetriever.retrieve(
+        query: "BKN301 what do they want?",
+        recordings: [recording],
+        scope: .all,
+        limit: 4,
+        characterBudget: 4_000
+    )
+    #expect(matches.first?.locator == "Summary")
+    #expect(matches.first?.text.contains("proof of concept") == true)
+}
+
+@Test
 func transcriptRetrieverUsesAssignedSpeakerNames() {
     let recording = RecordingItem(
         id: "named-speaker",

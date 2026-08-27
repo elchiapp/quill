@@ -131,6 +131,7 @@ struct ChatDetailView: View {
                                     isStreaming: model.chatStage == .generating
                                         && message.id == thread.messages.last?.id
                                         && message.role == .assistant,
+                                    streamingStatus: model.chatContextStatus,
                                     viewportWidth: viewport.size.width,
                                     onSourceSelected: model.openSource
                                 )
@@ -254,7 +255,8 @@ struct ChatDetailView: View {
             case .downloaded:
                 "Preparing downloaded \(model.selectedModelPlan.model.name)…"
             default:
-                "Preparing Dropsift’s built-in model…"
+                model.chatContextStatus
+                    ?? "Preparing Dropsift’s built-in model…"
             }
         case .generating:
             "Generating locally with \(model.selectedModel)…"
@@ -426,6 +428,7 @@ private struct ChatScopePicker: View {
 private struct ChatBubble: View {
     let message: ChatMessage
     let isStreaming: Bool
+    let streamingStatus: String?
     let viewportWidth: CGFloat
     let onSourceSelected: (ChatSource) -> Void
 
@@ -444,6 +447,10 @@ private struct ChatBubble: View {
                 Text(.init(message.content))
                     .textSelection(.enabled)
                     .lineSpacing(4)
+            } else if isStreaming {
+                Text(streamingStatus ?? "Starting the local response…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             if !message.sources.isEmpty {

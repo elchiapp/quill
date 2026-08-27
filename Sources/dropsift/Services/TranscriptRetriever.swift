@@ -1,3 +1,4 @@
+import DropsiftShared
 import Foundation
 
 struct TranscriptChunk: Sendable {
@@ -162,6 +163,19 @@ enum TranscriptRetriever {
         let groupSize = 8
         let overlap = 2
         var output: [TranscriptChunk] = []
+        if let summary = recording.summary {
+            output.append(
+                TranscriptChunk(
+                    recordingID: recording.id,
+                    recordingTitle: recording.title,
+                    startedAt: recording.startedAt,
+                    startMs: 0,
+                    endMs: 0,
+                    text: summaryText(summary),
+                    locator: "Summary"
+                )
+            )
+        }
         var index = 0
         while index < segments.count {
             let end = min(index + groupSize, segments.count)
@@ -199,6 +213,29 @@ enum TranscriptRetriever {
             )
         }
         return output
+    }
+
+    private static func summaryText(_ summary: RecordingSummary) -> String {
+        var sections = [summary.overview]
+        if !summary.participants.isEmpty {
+            sections.append(
+                "Participants: " + summary.participants.joined(separator: ", ")
+            )
+        }
+        if !summary.topics.isEmpty {
+            sections.append("Topics: " + summary.topics.joined(separator: "; "))
+        }
+        if !summary.decisions.isEmpty {
+            sections.append(
+                "Decisions: " + summary.decisions.joined(separator: "; ")
+            )
+        }
+        if !summary.actionItems.isEmpty {
+            sections.append(
+                "Action items: " + summary.actionItems.joined(separator: "; ")
+            )
+        }
+        return sections.joined(separator: "\n")
     }
 
     private static func tokenize(_ text: String) -> [String] {
