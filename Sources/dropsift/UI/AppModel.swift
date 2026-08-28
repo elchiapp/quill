@@ -934,6 +934,51 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func updateTranscriptCorrection(
+        source: String,
+        replacement: String,
+        recordingID: String
+    ) {
+        guard let recording = recordings.first(where: { $0.id == recordingID })
+        else { return }
+        let source = source.trimmingCharacters(in: .whitespacesAndNewlines)
+        let replacement = replacement.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !source.isEmpty, !replacement.isEmpty else {
+            appError = "Enter both the transcript term and its correct form."
+            return
+        }
+
+        let sourceID = "recording:\(recordingID)"
+        let hadPresentation = ContentPresentationStore.load(
+            from: recording.directory
+        ) != nil
+        let hadSummary = RecordingSummaryStore.load(
+            from: recording.directory
+        ) != nil
+        do {
+            try RecordingLibrary.saveCorrection(
+                source: source,
+                replacement: replacement,
+                for: recording
+            )
+            try? semanticStore.resetProcessing(sourceID: sourceID)
+            reloadRecordings(selecting: recordingID)
+            if hadPresentation {
+                requestedPresentationSourceIDs.removeAll { $0 == sourceID }
+                requestedPresentationSourceIDs.insert(sourceID, at: 0)
+            }
+            if hadSummary {
+                requestedSummarySourceIDs.removeAll { $0 == sourceID }
+                requestedSummarySourceIDs.insert(sourceID, at: 0)
+            }
+            refreshSemantics()
+            scanForSemanticCandidates()
+        } catch {
+            appError = "Couldn’t save this terminology correction: "
+                + error.localizedDescription
+        }
+    }
+
     func splitRecording(
         _ recording: RecordingItem,
         before segment: TranscriptDocument.Segment
@@ -2345,7 +2390,8 @@ final class AppModel: ObservableObject {
             recording -> SemanticSourceContent? in
             let transcript = recording.transcript
             let text = (transcript?.segments ?? []).map {
-                "\(recording.speakerName(for: $0.speaker)): \($0.text)"
+                "\(recording.speakerName(for: $0.speaker)): "
+                    + recording.corrected($0.text)
             }
             .joined(separator: "\n")
             let notes = recording.notes.trimmingCharacters(
@@ -2355,7 +2401,7 @@ final class AppModel: ObservableObject {
                 ? text
                 : "Notes:\n\(notes)\n\nTranscript:\n\(text)"
             let rawTranscript = (transcript?.segments ?? [])
-                .map(\.text)
+                .map { recording.corrected($0.text) }
                 .joined(separator: "\n")
             let presentationText = notes.isEmpty
                 ? rawTranscript
@@ -2388,7 +2434,8 @@ final class AppModel: ObservableObject {
                     locator: first.map {
                         "Transcript · \(TranscriptDocument.clock($0.startMs))"
                     } ?? "Transcript",
-                    excerpt: first?.text ?? recording.preview,
+                    excerpt: first.map { recording.corrected($0.text) }
+                        ?? recording.preview,
                     startMs: first?.startMs
                 )
             )

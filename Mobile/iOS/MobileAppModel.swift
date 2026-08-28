@@ -452,6 +452,38 @@ final class MobileAppModel: ObservableObject {
         }
     }
 
+    func updateTranscriptCorrection(
+        source: String,
+        replacement: String,
+        recordingID: String
+    ) {
+        let source = source.trimmingCharacters(in: .whitespacesAndNewlines)
+        let replacement = replacement.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !source.isEmpty, !replacement.isEmpty else {
+            errorMessage = "Enter both the transcript term and its correct form."
+            return
+        }
+        let root = locator.rootURL
+        Task { [weak self] in
+            do {
+                try await Task.detached(priority: .utility) {
+                    try SharedLibraryStore(root: root).updateTranscriptCorrection(
+                        source: source,
+                        replacement: replacement,
+                        recordingID: recordingID
+                    )
+                    try? SharedSemanticStore(root: root).resetProcessing(
+                        sourceID: "recording:\(recordingID)"
+                    )
+                }.value
+                self?.reload()
+            } catch {
+                self?.errorMessage = "Couldn’t save this terminology correction: "
+                    + error.localizedDescription
+            }
+        }
+    }
+
     func delete(_ item: SharedTimelineItem) {
         do {
             if selectedTimelineItemID == item.id {
@@ -945,7 +977,8 @@ final class MobileAppModel: ObservableObject {
             recording -> SemanticSourceContent? in
             let transcript = recording.transcript
             let transcriptText = (transcript?.segments ?? []).map {
-                "\(recording.speakerName(for: $0.speaker)): \($0.text)"
+                "\(recording.speakerName(for: $0.speaker)): "
+                    + recording.corrected($0.text)
             }
             .joined(separator: "\n")
             let notes = recording.notes.trimmingCharacters(
@@ -962,7 +995,7 @@ final class MobileAppModel: ObservableObject {
             return SemanticSourceContent(
                 sourceID: itemID,
                 revision: (transcript?.createdAt ?? "notes-only") + "|"
-                    + Self.stableTextSignature(recording.notes),
+                    + Self.stableTextSignature(text),
                 title: recording.title,
                 text: text,
                 reference: SharedSemanticSourceReference(
@@ -971,7 +1004,8 @@ final class MobileAppModel: ObservableObject {
                     locator: first.map {
                         "Transcript · \(Self.clock($0.startMs))"
                     } ?? "Transcript",
-                    excerpt: first?.text ?? recording.preview,
+                    excerpt: first.map { recording.corrected($0.text) }
+                        ?? recording.preview,
                     startMs: first?.startMs
                 )
             )

@@ -1,4 +1,5 @@
 import DropsiftShared
+import AppKit
 import SwiftUI
 
 enum RecordingDetailSection: String, CaseIterable, Identifiable {
@@ -36,6 +37,7 @@ struct RecordingDetailView: View {
     @State private var showingSpeakerEditor = false
     @State private var selectedSection = RecordingDetailSection.transcript
     @State private var splitSegment: TranscriptDocument.Segment?
+    @State private var correctionDraft: TerminologyCorrectionDraft?
 
     init(model: AppModel, recording: RecordingItem) {
         self.model = model
@@ -126,6 +128,25 @@ struct RecordingDetailView: View {
                 speakerNames = names
                 model.updateSpeakerNames(names, recordingID: recording.id)
             }
+        }
+        .sheet(item: $correctionDraft) { draft in
+            TerminologyCorrectionEditor(
+                draft: draft,
+                onSave: { source, replacement in
+                    model.updateTranscriptCorrection(
+                        source: source,
+                        replacement: replacement,
+                        recordingID: recording.id
+                    )
+                },
+                onDelete: draft.replacement.isEmpty ? nil : {
+                    model.updateTranscriptCorrection(
+                        source: draft.source,
+                        replacement: draft.source,
+                        recordingID: recording.id
+                    )
+                }
+            )
         }
         .confirmationDialog(
             "Split this recording here?",
@@ -322,6 +343,41 @@ struct RecordingDetailView: View {
                 } label: {
                     Label("Name speakers", systemImage: "person.2")
                 }
+            }
+
+            Menu {
+                Button {
+                    correctionDraft = TerminologyCorrectionDraft(
+                        source: "",
+                        replacement: ""
+                    )
+                } label: {
+                    Label("New correction…", systemImage: "plus")
+                }
+
+                if !recording.corrections.isEmpty {
+                    Divider()
+                    ForEach(
+                        recording.corrections.keys.sorted {
+                            $0.localizedStandardCompare($1) == .orderedAscending
+                        },
+                        id: \.self
+                    ) { source in
+                        Button("\(source) → \(recording.corrections[source] ?? "")") {
+                            correctionDraft = TerminologyCorrectionDraft(
+                                source: source,
+                                replacement: recording.corrections[source] ?? ""
+                            )
+                        }
+                    }
+                }
+            } label: {
+                Label(
+                    recording.corrections.isEmpty
+                        ? "Terminology corrections"
+                        : "Terminology corrections (\(recording.corrections.count))",
+                    systemImage: "character.cursor.ibeam"
+                )
             }
 
             Divider()
@@ -638,16 +694,32 @@ struct RecordingDetailView: View {
                             ForEach(document.segments) { segment in
                                 TranscriptSegmentRow(
                                     segment: segment,
-                                    speakerName: SharedSpeakerNameStore.displayName(
-                                        for: segment.speaker,
-                                        names: speakerNames
+                                    displayText: recording.corrected(segment.text),
+                                    speakerName: recording.corrected(
+                                        SharedSpeakerNameStore.displayName(
+                                            for: segment.speaker,
+                                            names: speakerNames
+                                        )
                                     ),
                                     onRename: { showingSpeakerEditor = true },
                                     isHighlighted: jumpSegment(in: document)?.id == segment.id,
                                     canSplit: segment.id != document.segments.first?.id
                                         && model.splittingRecordingID == nil
                                         && !model.isRecording,
-                                    onSplit: { splitSegment = segment }
+                                    onSplit: { splitSegment = segment },
+                                    onCorrect: { selectedText in
+                                        let source = selectedText.trimmingCharacters(
+                                            in: .whitespacesAndNewlines
+                                        )
+                                        let existing = recording.corrections.first {
+                                            $0.key.localizedCaseInsensitiveCompare(source)
+                                                == .orderedSame
+                                        }?.value ?? ""
+                                        correctionDraft = TerminologyCorrectionDraft(
+                                            source: source,
+                                            replacement: existing
+                                        )
+                                    }
                                 )
                                 .id(segment.id)
                                 Divider()
@@ -782,11 +854,13 @@ struct SummaryListSection: View {
 
 private struct TranscriptSegmentRow: View {
     let segment: TranscriptDocument.Segment
+    let displayText: String
     let speakerName: String
     let onRename: () -> Void
     let isHighlighted: Bool
     let canSplit: Bool
     let onSplit: () -> Void
+    let onCorrect: (String) -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 16) {
@@ -805,13 +879,21 @@ private struct TranscriptSegmentRow: View {
             }
             .frame(width: 72, alignment: .leading)
 
-            Text(segment.text)
-                .font(.body)
-                .lineSpacing(4)
-                .textSelection(.enabled)
+            CorrectableTranscriptText(
+                text: displayText,
+                onCorrect: onCorrect
+            )
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             Menu {
+                Button {
+                    onCorrect("")
+                } label: {
+                    Label("Correct terminology…", systemImage: "character.cursor.ibeam")
+                }
+
+                Divider()
+
                 Button {
                     onSplit()
                 } label: {
@@ -845,6 +927,180 @@ private struct TranscriptSegmentRow: View {
             $0 + Int($1.value)
         }
         return palette[value % palette.count]
+    }
+}
+
+private struct TerminologyCorrectionDraft: Identifiable {
+    let id = UUID()
+    let source: String
+    let replacement: String
+}
+
+private struct TerminologyCorrectionEditor: View {
+    let draft: TerminologyCorrectionDraft
+    let onSave: (String, String) -> Void
+    let onDelete: (() -> Void)?
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var source: String
+    @State private var replacement: String
+
+    init(
+        draft: TerminologyCorrectionDraft,
+        onSave: @escaping (String, String) -> Void,
+        onDelete: (() -> Void)? = nil
+    ) {
+        self.draft = draft
+        self.onSave = onSave
+        self.onDelete = onDelete
+        _source = State(initialValue: draft.source)
+        _replacement = State(initialValue: draft.replacement)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Correct terminology")
+                    .font(.title2.weight(.semibold))
+                Text(
+                    "DropSift will use this correction for every whole-word occurrence in this recording, including search, summaries, extracted details, and AI answers."
+                )
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 14, verticalSpacing: 12) {
+                GridRow {
+                    Text("Transcript says")
+                    TextField("For example, Cuback", text: $source)
+                        .textFieldStyle(.roundedBorder)
+                }
+                GridRow {
+                    Text("Use instead")
+                    TextField("For example, QVAC", text: $replacement)
+                        .textFieldStyle(.roundedBorder)
+                }
+            }
+
+            HStack {
+                if let onDelete {
+                    Button("Remove correction", role: .destructive) {
+                        onDelete()
+                        dismiss()
+                    }
+                }
+                Spacer()
+                Button("Cancel", role: .cancel) { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button("Apply throughout recording") {
+                    onSave(source, replacement)
+                    dismiss()
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+                .disabled(
+                    source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        || replacement.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                )
+            }
+        }
+        .padding(24)
+        .frame(width: 520)
+    }
+}
+
+private struct CorrectableTranscriptText: NSViewRepresentable {
+    let text: String
+    let onCorrect: (String) -> Void
+
+    func makeNSView(context: Context) -> CorrectionTextView {
+        let textView = CorrectionTextView()
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.drawsBackground = false
+        textView.textContainerInset = .zero
+        textView.textContainer?.lineFragmentPadding = 0
+        textView.isHorizontallyResizable = false
+        textView.isVerticallyResizable = true
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.heightTracksTextView = false
+        textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        textView.setContentCompressionResistancePriority(.required, for: .vertical)
+        return textView
+    }
+
+    func updateNSView(_ textView: CorrectionTextView, context: Context) {
+        textView.correctionHandler = onCorrect
+        guard textView.string != text else { return }
+
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineSpacing = 4
+        textView.textStorage?.setAttributedString(
+            NSAttributedString(
+                string: text,
+                attributes: [
+                    .font: NSFont.preferredFont(forTextStyle: .body),
+                    .foregroundColor: NSColor.labelColor,
+                    .paragraphStyle: paragraph,
+                ]
+            )
+        )
+        textView.invalidateIntrinsicContentSize()
+    }
+}
+
+private final class CorrectionTextView: NSTextView {
+    var correctionHandler: ((String) -> Void)?
+
+    override var intrinsicContentSize: NSSize {
+        guard let textContainer, let layoutManager else {
+            return super.intrinsicContentSize
+        }
+        layoutManager.ensureLayout(for: textContainer)
+        let height = ceil(layoutManager.usedRect(for: textContainer).height)
+            + textContainerInset.height * 2
+        return NSSize(width: NSView.noIntrinsicMetric, height: max(height, 20))
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        let widthChanged = abs(frame.width - newSize.width) > 0.5
+        super.setFrameSize(newSize)
+        if widthChanged {
+            textContainer?.containerSize = NSSize(
+                width: max(newSize.width, 1),
+                height: .greatestFiniteMagnitude
+            )
+            invalidateIntrinsicContentSize()
+        }
+    }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let menu = super.menu(for: event) ?? NSMenu()
+        guard let selectedTerm, !selectedTerm.isEmpty else { return menu }
+        if !menu.items.isEmpty { menu.addItem(.separator()) }
+        let preview = selectedTerm.count > 32
+            ? String(selectedTerm.prefix(29)) + "…"
+            : selectedTerm
+        let item = NSMenuItem(
+            title: "Correct “\(preview)” throughout recording…",
+            action: #selector(correctSelectedTerm),
+            keyEquivalent: ""
+        )
+        item.target = self
+        menu.addItem(item)
+        return menu
+    }
+
+    @objc private func correctSelectedTerm() {
+        guard let selectedTerm else { return }
+        correctionHandler?(selectedTerm)
+    }
+
+    private var selectedTerm: String? {
+        let range = selectedRange()
+        guard range.location != NSNotFound, range.length > 0 else { return nil }
+        return (string as NSString).substring(with: range)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 

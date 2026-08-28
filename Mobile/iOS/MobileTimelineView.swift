@@ -623,6 +623,7 @@ private struct MobileRecordingDetail: View {
     @State private var notes: String
     @State private var speakerNames: [String: String]
     @State private var showingSpeakerEditor = false
+    @State private var correctionDraft: MobileTerminologyCorrectionDraft?
     @StateObject private var playback = MobileRecordingPlayer()
 
     init(model: MobileAppModel, recording: SharedRecordingItem) {
@@ -679,6 +680,27 @@ private struct MobileRecordingDetail: View {
                                 }
                                 .font(.subheadline)
                             }
+                            Menu {
+                                Button("New correction…") {
+                                    correctionDraft = MobileTerminologyCorrectionDraft()
+                                }
+                                ForEach(
+                                    recording.corrections.keys.sorted {
+                                        $0.localizedStandardCompare($1) == .orderedAscending
+                                    },
+                                    id: \.self
+                                ) { source in
+                                    Button("\(source) → \(recording.corrections[source] ?? "")") {
+                                        correctionDraft = MobileTerminologyCorrectionDraft(
+                                            source: source,
+                                            replacement: recording.corrections[source] ?? ""
+                                        )
+                                    }
+                                }
+                            } label: {
+                                Label("Correct term", systemImage: "character.cursor.ibeam")
+                            }
+                            .font(.subheadline)
                         }
                         if let segments = recording.transcript?.segments,
                            !segments.isEmpty {
@@ -694,7 +716,8 @@ private struct MobileRecordingDetail: View {
                                         .foregroundStyle(.secondary)
                                     }
                                     .buttonStyle(.plain)
-                                    Text(segment.text)
+                                    Text(recording.corrected(segment.text))
+                                        .textSelection(.enabled)
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(8)
@@ -732,6 +755,15 @@ private struct MobileRecordingDetail: View {
             }
             .onChange(of: model.selectedSource?.id) {
                 scrollToSelectedSource(with: proxy)
+            }
+        }
+        .sheet(item: $correctionDraft) { draft in
+            MobileTerminologyCorrectionEditor(draft: draft) { source, replacement in
+                model.updateTranscriptCorrection(
+                    source: source,
+                    replacement: replacement,
+                    recordingID: recording.id
+                )
             }
         }
         .navigationTitle("Recording")
@@ -843,7 +875,12 @@ private struct MobileRecordingDetail: View {
     }
 
     private func speakerName(for speakerID: String) -> String {
-        SharedSpeakerNameStore.displayName(for: speakerID, names: speakerNames)
+        recording.corrected(
+            SharedSpeakerNameStore.displayName(
+                for: speakerID,
+                names: speakerNames
+            )
+        )
     }
 
     private func isSelectedSource(_ startMs: Int) -> Bool {
@@ -857,6 +894,67 @@ private struct MobileRecordingDetail: View {
         else { return }
         withAnimation {
             proxy.scrollTo(startMs, anchor: .center)
+        }
+    }
+}
+
+private struct MobileTerminologyCorrectionDraft: Identifiable {
+    let id = UUID()
+    var source = ""
+    var replacement = ""
+}
+
+private struct MobileTerminologyCorrectionEditor: View {
+    let draft: MobileTerminologyCorrectionDraft
+    let onSave: (String, String) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var source: String
+    @State private var replacement: String
+
+    init(
+        draft: MobileTerminologyCorrectionDraft,
+        onSave: @escaping (String, String) -> Void
+    ) {
+        self.draft = draft
+        self.onSave = onSave
+        _source = State(initialValue: draft.source)
+        _replacement = State(initialValue: draft.replacement)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Terminology") {
+                    TextField("Transcript says", text: $source)
+                        .textInputAutocapitalization(.never)
+                    TextField("Use instead", text: $replacement)
+                }
+                Section {
+                    Text(
+                        "This applies to every whole-word occurrence in this recording and is used by search, summaries, extracted details, and AI answers."
+                    )
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle("Correct terminology")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Apply") {
+                        onSave(source, replacement)
+                        dismiss()
+                    }
+                    .disabled(
+                        source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            || replacement.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    )
+                }
+            }
         }
     }
 }

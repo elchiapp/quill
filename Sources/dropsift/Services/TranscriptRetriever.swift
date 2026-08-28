@@ -9,6 +9,7 @@ struct TranscriptChunk: Sendable {
     let endMs: Int
     let text: String
     let locator: String?
+    let searchAliases: String
 
     var citation: String {
         "[\(recordingTitle) @ \(locator ?? TranscriptDocument.clock(startMs))]"
@@ -83,10 +84,13 @@ enum TranscriptRetriever {
             let namedSpeakers = recording.speakerNames.values.joined(separator: " ")
             var found = matches(
                 in: recording.title + " " + recording.notes + " " + namedSpeakers
+                    + " " + SharedTranscriptCorrectionStore.correctionReference(
+                        recording.corrections
+                    )
             )
             guard found.count < queryTerms.count else { return found }
             for segment in recording.transcript?.segments ?? [] {
-                found.formUnion(matches(in: segment.text))
+                found.formUnion(matches(in: recording.corrected(segment.text)))
                 if found.count == queryTerms.count { break }
             }
             return found
@@ -116,7 +120,10 @@ enum TranscriptRetriever {
         let terms = tokenize(query)
         var documentFrequency: [String: Int] = [:]
         let chunkTokens = allChunks.map { chunk -> [String] in
-            let tokens = tokenize(chunk.recordingTitle + " " + chunk.text)
+            let tokens = tokenize(
+                chunk.recordingTitle + " " + chunk.text + " "
+                    + chunk.searchAliases
+            )
             for term in Set(tokens) {
                 documentFrequency[term, default: 0] += 1
             }
@@ -160,6 +167,9 @@ enum TranscriptRetriever {
 
     private static func chunks(from recording: RecordingItem) -> [TranscriptChunk] {
         let segments = recording.transcript?.segments ?? []
+        let aliases = SharedTranscriptCorrectionStore.correctionReference(
+            recording.corrections
+        )
         let groupSize = 8
         let overlap = 2
         var output: [TranscriptChunk] = []
@@ -172,7 +182,8 @@ enum TranscriptRetriever {
                     startMs: 0,
                     endMs: 0,
                     text: summaryText(summary),
-                    locator: "Summary"
+                    locator: "Summary",
+                    searchAliases: aliases
                 )
             )
         }
@@ -181,7 +192,8 @@ enum TranscriptRetriever {
             let end = min(index + groupSize, segments.count)
             let slice = Array(segments[index..<end])
             let text = slice.map { segment in
-                "\(recording.speakerName(for: segment.speaker)): \(segment.text)"
+                "\(recording.speakerName(for: segment.speaker)): "
+                    + recording.corrected(segment.text)
             }.joined(separator: "\n")
             output.append(
                 TranscriptChunk(
@@ -191,7 +203,8 @@ enum TranscriptRetriever {
                     startMs: slice.first?.startMs ?? 0,
                     endMs: slice.last?.endMs ?? 0,
                     text: text,
-                    locator: nil
+                    locator: nil,
+                    searchAliases: aliases
                 )
             )
             if end == segments.count { break }
@@ -208,7 +221,8 @@ enum TranscriptRetriever {
                     startMs: 0,
                     endMs: 0,
                     text: "User notes:\n\(notes)",
-                    locator: "Recording notes"
+                    locator: "Recording notes",
+                    searchAliases: aliases
                 )
             )
         }

@@ -477,6 +477,52 @@ func transcriptRetrieverFindsRelevantMeetingAcrossLibrary() {
 }
 
 @Test
+func transcriptCorrectionsFeedCanonicalAndAliasChatRetrieval() {
+    let recording = RecordingItem(
+        id: "qvac-call",
+        directory: URL(fileURLWithPath: "/tmp/qvac-call"),
+        title: "Cuback product review",
+        startedAt: Date(),
+        endedAt: Date(),
+        durationSeconds: 60,
+        micURL: nil,
+        systemURL: nil,
+        transcript: TranscriptDocument(
+            engine: "test",
+            model: "test",
+            createdAt: "2026-08-28T10:00:00Z",
+            segments: [
+                .init(
+                    speaker: "them",
+                    startMs: 0,
+                    endMs: 4_000,
+                    text: "The Cuback SDK runs locally."
+                ),
+            ]
+        ),
+        notes: "Review Cuback integration",
+        corrections: ["Cuback": "QVAC"]
+    )
+
+    let canonical = TranscriptRetriever.retrieve(
+        query: "How does QVAC run?",
+        recordings: [recording],
+        scope: .all
+    )
+    let alias = TranscriptRetriever.retrieve(
+        query: "How does Cuback run?",
+        recordings: [recording],
+        scope: .all
+    )
+
+    #expect(recording.title == "QVAC product review")
+    #expect(recording.notes == "Review QVAC integration")
+    #expect(canonical.first?.text.contains("QVAC SDK") == true)
+    #expect(canonical.first?.text.contains("Cuback SDK") == false)
+    #expect(alias.first?.text.contains("QVAC SDK") == true)
+}
+
+@Test
 func chatRetrievalUsesCompactPromptsDespiteLargeModelContext() {
     let context = 262_144
     #expect(

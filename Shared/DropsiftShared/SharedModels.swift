@@ -252,23 +252,40 @@ public struct SharedRecordingItem: Identifiable, Sendable, Equatable {
     public let transcript: SharedTranscriptDocument?
     public let notes: String
     public let speakerNames: [String: String]
+    public let corrections: [String: String]
 
     public func speakerName(for speakerID: String) -> String {
-        SharedSpeakerNameStore.displayName(for: speakerID, names: speakerNames)
+        corrected(
+            SharedSpeakerNameStore.displayName(
+                for: speakerID,
+                names: speakerNames
+            )
+        )
+    }
+
+    public func corrected(_ text: String) -> String {
+        SharedTranscriptCorrectionStore.apply(to: text, mappings: corrections)
     }
 
     public var generatedDescription: String {
-        ContentPresentationStore.load(from: directory)?.description
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        corrected(
+            ContentPresentationStore.load(from: directory)?.description
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        )
     }
 
     public var summary: RecordingSummary? {
-        RecordingSummaryStore.load(from: directory)
+        RecordingSummaryStore.load(from: directory).map {
+            SharedTranscriptCorrectionStore.apply(
+                to: $0,
+                mappings: corrections
+            )
+        }
     }
 
     public var preview: String {
         if let first = transcript?.segments.first?.text, !first.isEmpty {
-            return first
+            return corrected(first)
         }
         if !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return notes

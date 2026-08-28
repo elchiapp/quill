@@ -121,6 +121,13 @@ transcripts by timing and fuzzy text similarity, removes high-confidence
 duplicates from the “You” track, and keeps the cleaner diarized system segment.
 The same non-destructive filter is applied when older recordings are opened.
 
+Transcript terminology can also be corrected without rewriting the source.
+Select a word or phrase, open its context menu, and choose **Correct throughout
+recording**. DropSift saves the recording-scoped mapping in `terminology.json`
+and applies it to every whole-word occurrence in the transcript, title,
+description, summary, semantic extraction, library search, and Ask DropSift.
+Both the corrected term and its original alias remain searchable.
+
 DropSift watches locally for known conferencing apps using a microphone. When
 it detects a likely Zoom, Teams, Webex, FaceTime, Slack, Discord, Skype, Lark,
 or browser meeting, it presents an actionable notification asking whether to
@@ -145,6 +152,7 @@ Each captured recording contains:
 | `meta.json` | start/end timestamps, duration, per-track start offsets |
 | `transcript.json` | canonical transcript — engine provenance + timed, speaker-tagged segments |
 | `transcript.md` | the same transcript rendered for reading |
+| `terminology.json` | recording-scoped corrections applied across display, search, and AI |
 | `notes.md` | your autosaved notes, available while the recording is still running |
 | `transcribe.log` | transcription progress/errors for this session |
 

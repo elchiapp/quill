@@ -560,3 +560,64 @@ func sharedSearchPreservesDeepLinkLocations() throws {
     #expect(result.page == 7)
     #expect(result.locator == "Page 7")
 }
+
+@Test
+func transcriptCorrectionPreservesRawTextAndUpdatesSearchAndMarkdown() throws {
+    let base = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let source = base.appendingPathComponent("message.m4a")
+    defer { try? FileManager.default.removeItem(at: base) }
+    try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+    try Data([0, 1, 2, 3]).write(to: source)
+    let store = SharedLibraryStore(root: base.appendingPathComponent("Library"))
+    let recording = try store.importVoiceRecording(
+        source: source,
+        startedAt: Date(timeIntervalSince1970: 1_785_000_000),
+        durationSeconds: 12,
+        title: "Product call",
+        origin: "iphone"
+    )
+    try store.saveTranscript(
+        SharedTranscriptDocument(
+            engine: "test",
+            model: "test",
+            createdAt: "2026-08-28T10:00:00Z",
+            segments: [
+                .init(
+                    speaker: "them",
+                    startMs: 0,
+                    endMs: 4_000,
+                    text: "Cuback powers the Cuback SDK, not Cubackup."
+                ),
+            ]
+        ),
+        recordingID: recording.id
+    )
+
+    try store.updateTranscriptCorrection(
+        source: "Cuback",
+        replacement: "QVAC",
+        recordingID: recording.id
+    )
+
+    let loaded = try #require(
+        store.loadRecordings().first(where: { $0.id == recording.id })
+    )
+    #expect(loaded.corrections == ["Cuback": "QVAC"])
+    #expect(loaded.corrected(loaded.transcript?.segments.first?.text ?? "")
+        == "QVAC powers the QVAC SDK, not Cubackup.")
+    #expect(store.search("QVAC SDK").first?.text.contains("QVAC SDK") == true)
+    #expect(store.search("Cuback SDK").first?.text.contains("QVAC SDK") == true)
+
+    let raw = try String(
+        contentsOf: recording.directory.appendingPathComponent("transcript.json"),
+        encoding: .utf8
+    )
+    let rendered = try String(
+        contentsOf: recording.directory.appendingPathComponent("transcript.md"),
+        encoding: .utf8
+    )
+    #expect(raw.contains("Cuback powers"))
+    #expect(rendered.contains("QVAC powers"))
+    #expect(rendered.contains("Cubackup"))
+}

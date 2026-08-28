@@ -123,6 +123,30 @@ enum RecordingLibrary {
         )
     }
 
+    static func saveCorrection(
+        source: String,
+        replacement: String,
+        for recording: RecordingItem
+    ) throws {
+        let updated = SharedTranscriptCorrectionStore.setting(
+            source: source,
+            replacement: replacement,
+            in: recording.corrections
+        )
+        guard updated != recording.corrections else { return }
+        try SharedTranscriptCorrectionStore.save(
+            updated,
+            to: recording.directory
+        )
+        try recording.transcript?.write(
+            to: recording.directory,
+            title: SharedTranscriptCorrectionStore.apply(
+                to: recording.title,
+                mappings: updated
+            )
+        )
+    }
+
     static func saveGeneratedPresentation(
         _ presentation: ContentPresentation,
         in directory: URL,
@@ -394,6 +418,10 @@ enum RecordingLibrary {
             recording.speakerNames,
             to: stagingDirectory
         )
+        try SharedTranscriptCorrectionStore.save(
+            recording.corrections,
+            to: stagingDirectory
+        )
         let tailTitle = try refreshGeneratedTitle(
             in: stagingDirectory,
             transcript: tailTranscript
@@ -442,10 +470,18 @@ enum RecordingLibrary {
             encoding: .utf8
         )) ?? ""
         let storedTranscript = transcript ?? RecordingItem.load(from: directory)?.transcript
-        let transcriptText = storedTranscript?.segments
-            .map(\.text)
-            .joined(separator: "\n") ?? ""
-        let revisionNotes = notes.trimmingCharacters(
+        let corrections = SharedTranscriptCorrectionStore.load(from: directory)
+        let transcriptText = SharedTranscriptCorrectionStore.apply(
+            to: storedTranscript?.segments
+                .map(\.text)
+                .joined(separator: "\n") ?? "",
+            mappings: corrections
+        )
+        let correctedNotes = SharedTranscriptCorrectionStore.apply(
+            to: notes,
+            mappings: corrections
+        )
+        let revisionNotes = correctedNotes.trimmingCharacters(
             in: .whitespacesAndNewlines
         )
         let sourceText = revisionNotes.isEmpty
@@ -460,7 +496,7 @@ enum RecordingLibrary {
                 ?? "Recording \(directory.lastPathComponent)"
         }
         let generated = ContentTitleGenerator.title(
-            from: [notes, transcriptText],
+            from: [correctedNotes, transcriptText],
             fallback: existingTitle.flatMap { $0.isEmpty ? nil : $0 }
                 ?? "Recording \(directory.lastPathComponent)"
         )

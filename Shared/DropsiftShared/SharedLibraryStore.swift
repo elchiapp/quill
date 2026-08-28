@@ -509,6 +509,34 @@ public struct SharedLibraryStore: Sendable {
         }
     }
 
+    public func updateTranscriptCorrection(
+        source: String,
+        replacement: String,
+        recordingID: String
+    ) throws {
+        let directory = recordingsRoot.appendingPathComponent(
+            recordingID,
+            isDirectory: true
+        )
+        guard FileManager.default.fileExists(atPath: directory.path) else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+        let updated = SharedTranscriptCorrectionStore.setting(
+            source: source,
+            replacement: replacement,
+            in: SharedTranscriptCorrectionStore.load(from: directory)
+        )
+        try SharedTranscriptCorrectionStore.save(updated, to: directory)
+        if let recording = loadRecording(directory),
+           let transcript = recording.transcript {
+            try writeTranscriptMarkdown(
+                transcript,
+                title: recording.title,
+                to: directory
+            )
+        }
+    }
+
     public func search(
         _ query: String,
         limit: Int = 8
@@ -564,11 +592,15 @@ public struct SharedLibraryStore: Sendable {
         for recording in snapshot.recordings {
             for segment in recording.transcript?.segments ?? [] {
                 let speaker = recording.speakerName(for: segment.speaker)
+                let correctedText = recording.corrected(segment.text)
                 let score = Self.score(
                     terms: terms,
                     in: recording.title + " "
                         + recording.generatedDescription + " "
-                        + speaker + " " + segment.text
+                        + speaker + " " + correctedText + " "
+                        + SharedTranscriptCorrectionStore.correctionReference(
+                            recording.corrections
+                        )
                 )
                 if score > 0 {
                     candidates.append(
@@ -578,7 +610,7 @@ public struct SharedLibraryStore: Sendable {
                             title: recording.title,
                             kind: .recording,
                             locator: Self.clock(segment.startMs),
-                            text: "\(speaker): \(segment.text)",
+                            text: "\(speaker): \(correctedText)",
                             score: score,
                             startMs: segment.startMs
                         )
@@ -694,20 +726,29 @@ public struct SharedLibraryStore: Sendable {
         }
         let audioURL = audioTracks.first(where: { $0.speaker == "me" })?.url
             ?? audioTracks.first?.url
+        let corrections = SharedTranscriptCorrectionStore.load(from: directory)
+        let notes = (try? String(
+            contentsOf: directory.appendingPathComponent("notes.md"),
+            encoding: .utf8
+        )) ?? ""
         return SharedRecordingItem(
             id: directory.lastPathComponent,
             directory: directory,
-            title: resolvedTitle,
+            title: SharedTranscriptCorrectionStore.apply(
+                to: resolvedTitle,
+                mappings: corrections
+            ),
             startedAt: startedAt,
             durationSeconds: metadata.durationSeconds ?? 0,
             audioURL: audioURL,
             audioTracks: audioTracks,
             transcript: transcript,
-            notes: (try? String(
-                contentsOf: directory.appendingPathComponent("notes.md"),
-                encoding: .utf8
-            )) ?? "",
-            speakerNames: SharedSpeakerNameStore.load(from: directory)
+            notes: SharedTranscriptCorrectionStore.apply(
+                to: notes,
+                mappings: corrections
+            ),
+            speakerNames: SharedSpeakerNameStore.load(from: directory),
+            corrections: corrections
         )
     }
 
@@ -770,8 +811,16 @@ public struct SharedLibraryStore: Sendable {
             contentsOf: directory.appendingPathComponent("notes.md"),
             encoding: .utf8
         )) ?? ""
-        let transcriptText = transcript?.segments.map(\.text).joined(separator: "\n") ?? ""
-        let revisionNotes = notes.trimmingCharacters(
+        let corrections = SharedTranscriptCorrectionStore.load(from: directory)
+        let transcriptText = SharedTranscriptCorrectionStore.apply(
+            to: transcript?.segments.map(\.text).joined(separator: "\n") ?? "",
+            mappings: corrections
+        )
+        let correctedNotes = SharedTranscriptCorrectionStore.apply(
+            to: notes,
+            mappings: corrections
+        )
+        let revisionNotes = correctedNotes.trimmingCharacters(
             in: .whitespacesAndNewlines
         )
         let sourceText = revisionNotes.isEmpty
@@ -786,7 +835,7 @@ public struct SharedLibraryStore: Sendable {
                 ?? directory.lastPathComponent
         }
         let generated = ContentTitleGenerator.title(
-            from: [notes, transcriptText],
+            from: [correctedNotes, transcriptText],
             fallback: existingTitle.flatMap { $0.isEmpty ? nil : $0 }
                 ?? directory.lastPathComponent
         )
@@ -804,13 +853,18 @@ public struct SharedLibraryStore: Sendable {
     ) throws {
         var lines = ["# \(title)", "", "engine: \(transcript.engine) (\(transcript.model))", ""]
         let speakerNames = SharedSpeakerNameStore.load(from: directory)
+        let corrections = SharedTranscriptCorrectionStore.load(from: directory)
         for segment in transcript.segments {
             let speaker = SharedSpeakerNameStore.displayName(
                 for: segment.speaker,
                 names: speakerNames
             )
             lines.append(
-                "**[\(Self.clock(segment.startMs))] \(speaker):** \(segment.text)"
+                "**[\(Self.clock(segment.startMs))] \(speaker):** "
+                    + SharedTranscriptCorrectionStore.apply(
+                        to: segment.text,
+                        mappings: corrections
+                    )
             )
             lines.append("")
         }

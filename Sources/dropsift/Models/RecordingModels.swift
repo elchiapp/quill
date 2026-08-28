@@ -70,11 +70,20 @@ struct TranscriptDocument: Codable, Sendable {
         try encoder.encode(self)
             .write(to: directory.appendingPathComponent("transcript.json"), options: .atomic)
         let speakerNames = SharedSpeakerNameStore.load(from: directory)
-        try Data(rendered(title: title, speakerNames: speakerNames).utf8)
+        let corrections = SharedTranscriptCorrectionStore.load(from: directory)
+        try Data(rendered(
+            title: title,
+            speakerNames: speakerNames,
+            corrections: corrections
+        ).utf8)
             .write(to: directory.appendingPathComponent("transcript.md"), options: .atomic)
     }
 
-    private func rendered(title: String, speakerNames: [String: String]) -> String {
+    private func rendered(
+        title: String,
+        speakerNames: [String: String],
+        corrections: [String: String]
+    ) -> String {
         var lines = ["# \(title)", "", "engine: \(engine) (\(model))", ""]
         if let languageCode {
             lines.append("language: \(languageCode) (detected from transcript text)")
@@ -93,7 +102,11 @@ struct TranscriptDocument: Codable, Sendable {
                 names: speakerNames
             )
             lines.append(
-                "**[\(Self.clock(segment.startMs))] \(speaker):** \(segment.text)"
+                "**[\(Self.clock(segment.startMs))] \(speaker):** "
+                    + SharedTranscriptCorrectionStore.apply(
+                        to: segment.text,
+                        mappings: corrections
+                    )
             )
             lines.append("")
         }
@@ -137,6 +150,7 @@ struct RecordingItem: Identifiable, Sendable {
     let transcript: TranscriptDocument?
     let notes: String
     let speakerNames: [String: String]
+    let corrections: [String: String]
 
     init(
         id: String,
@@ -149,42 +163,66 @@ struct RecordingItem: Identifiable, Sendable {
         systemURL: URL?,
         transcript: TranscriptDocument?,
         notes: String,
-        speakerNames: [String: String] = [:]
+        speakerNames: [String: String] = [:],
+        corrections: [String: String] = [:]
     ) {
         self.id = id
         self.directory = directory
-        self.title = title
+        self.title = SharedTranscriptCorrectionStore.apply(
+            to: title,
+            mappings: corrections
+        )
         self.startedAt = startedAt
         self.endedAt = endedAt
         self.durationSeconds = durationSeconds
         self.micURL = micURL
         self.systemURL = systemURL
         self.transcript = transcript
-        self.notes = notes
+        self.notes = SharedTranscriptCorrectionStore.apply(
+            to: notes,
+            mappings: corrections
+        )
         self.speakerNames = speakerNames
+        self.corrections = corrections
     }
 
     func speakerName(for speakerID: String) -> String {
-        SharedSpeakerNameStore.displayName(for: speakerID, names: speakerNames)
+        corrected(
+            SharedSpeakerNameStore.displayName(
+                for: speakerID,
+                names: speakerNames
+            )
+        )
+    }
+
+    func corrected(_ text: String) -> String {
+        SharedTranscriptCorrectionStore.apply(to: text, mappings: corrections)
     }
 
     var isTranscribed: Bool { transcript != nil }
     var segmentCount: Int { transcript?.segments.count ?? 0 }
 
     var generatedDescription: String {
-        ContentPresentationStore.load(from: directory)?.description
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        corrected(
+            ContentPresentationStore.load(from: directory)?.description
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        )
     }
 
     var summary: RecordingSummary? {
-        RecordingSummaryStore.load(from: directory)
+        RecordingSummaryStore.load(from: directory).map {
+            SharedTranscriptCorrectionStore.apply(
+                to: $0,
+                mappings: corrections
+            )
+        }
     }
 
     var preview: String {
         guard let segments = transcript?.segments, !segments.isEmpty else {
             return "Waiting for transcription"
         }
-        return segments.prefix(2).map(\.text).joined(separator: " ")
+        return corrected(segments.prefix(2).map(\.text).joined(separator: " "))
     }
 
     var listDescription: String {
@@ -260,6 +298,7 @@ struct RecordingItem: Identifiable, Sendable {
         let titleURL = directory.appendingPathComponent("title.txt")
         let customTitle = (try? String(contentsOf: titleURL, encoding: .utf8))?
             .trimmingCharacters(in: .whitespacesAndNewlines)
+        let corrections = SharedTranscriptCorrectionStore.load(from: directory)
         let title = customTitle.flatMap { $0.isEmpty ? nil : $0 }
             ?? Self.defaultTitle(startedAt: startedAt, folderName: directory.lastPathComponent)
         let notes = (try? String(
@@ -284,7 +323,8 @@ struct RecordingItem: Identifiable, Sendable {
             systemURL: trackURL("system"),
             transcript: transcript,
             notes: notes,
-            speakerNames: SharedSpeakerNameStore.load(from: directory)
+            speakerNames: SharedSpeakerNameStore.load(from: directory),
+            corrections: corrections
         )
     }
 
