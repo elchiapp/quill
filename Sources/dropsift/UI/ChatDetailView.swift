@@ -12,6 +12,11 @@ struct ChatDetailView: View {
             chatHeader
             Divider()
             messages
+                .frame(
+                    maxWidth: .infinity,
+                    maxHeight: .infinity,
+                    alignment: .leading
+                )
             composer
         }
         .background(Color(nsColor: .textBackgroundColor))
@@ -124,10 +129,11 @@ struct ChatDetailView: View {
             GeometryReader { viewport in
                 ScrollViewReader { proxy in
                     ScrollView {
-                        LazyVStack(spacing: 18) {
+                        LazyVStack(alignment: .leading, spacing: 18) {
                             ForEach(thread.messages) { message in
                                 ChatBubble(
                                     message: message,
+                                    viewportWidth: viewport.size.width,
                                     isStreaming: (
                                         model.chatStage == .readingSources
                                             || model.chatStage == .generating
@@ -137,19 +143,21 @@ struct ChatDetailView: View {
                                     streamingStatus: model.chatContextStatus,
                                     onSourceSelected: model.openSource
                                 )
-                                    .id(message.id)
+                                .id(message.id)
                             }
                             if model.chatStage != .idle {
                                 pipelineProgress
+                                    .frame(width: viewport.size.width)
                             }
                         }
-                        .frame(
-                            minWidth: viewport.size.width,
-                            maxWidth: .infinity,
-                            alignment: .leading
-                        )
+                        .frame(width: viewport.size.width, alignment: .leading)
                         .padding(.vertical, 24)
                     }
+                    .frame(
+                        maxWidth: .infinity,
+                        maxHeight: .infinity,
+                        alignment: .leading
+                    )
                     .onChange(of: thread.messages.count) {
                         if let last = thread.messages.last {
                             withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
@@ -467,26 +475,35 @@ private struct ChatScopePicker: View {
 
 private struct ChatBubble: View {
     let message: ChatMessage
+    let viewportWidth: CGFloat
     let isStreaming: Bool
     let streamingStatus: String?
     let onSourceSelected: (ChatSource) -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 0) {
+        Group {
             if message.role == .user {
-                Spacer(minLength: 80)
+                HStack(alignment: .top, spacing: 0) {
+                    Spacer(minLength: 0)
+                    bubble
+                        .frame(
+                            maxWidth: ChatMessageLayoutPolicy.userBubbleMaxWidth(
+                                viewportWidth: viewportWidth
+                            ),
+                            alignment: .trailing
+                        )
+                }
+                .frame(width: messageRowWidth)
+            } else {
+                bubble
+                    .frame(width: messageRowWidth, alignment: .leading)
             }
-            bubble
-                .frame(
-                    maxWidth: message.role == .assistant ? .infinity : 720,
-                    alignment: message.role == .user ? .trailing : .leading
-                )
         }
-        .padding(.horizontal, 24)
-        .frame(
-            maxWidth: .infinity,
-            alignment: message.role == .user ? .trailing : .leading
-        )
+        .padding(.horizontal, ChatMessageLayoutPolicy.horizontalPadding)
+    }
+
+    private var messageRowWidth: CGFloat {
+        ChatMessageLayoutPolicy.rowWidth(viewportWidth: viewportWidth)
     }
 
     private var bubble: some View {
@@ -562,5 +579,22 @@ private struct ChatBubble: View {
                 : Color(nsColor: .controlBackgroundColor),
             in: RoundedRectangle(cornerRadius: 14)
         )
+    }
+}
+
+enum ChatMessageLayoutPolicy {
+    static let horizontalPadding: CGFloat = 24
+    static let maximumUserBubbleWidth: CGFloat = 720
+
+    static func rowWidth(viewportWidth: CGFloat) -> CGFloat {
+        max(0, viewportWidth - horizontalPadding * 2)
+    }
+
+    static func userBubbleMaxWidth(viewportWidth: CGFloat) -> CGFloat {
+        min(maximumUserBubbleWidth, rowWidth(viewportWidth: viewportWidth))
+    }
+
+    static func userBubbleTrailingEdge(viewportWidth: CGFloat) -> CGFloat {
+        horizontalPadding + rowWidth(viewportWidth: viewportWidth)
     }
 }

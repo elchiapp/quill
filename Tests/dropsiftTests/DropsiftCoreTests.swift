@@ -523,6 +523,30 @@ func transcriptCorrectionsFeedCanonicalAndAliasChatRetrieval() {
 }
 
 @Test
+func chatUserMessagesStayPinnedToTheViewportTrailingEdge() {
+    #expect(
+        ChatMessageLayoutPolicy.userBubbleTrailingEdge(
+            viewportWidth: 1_600
+        ) == 1_576
+    )
+    #expect(
+        ChatMessageLayoutPolicy.userBubbleMaxWidth(
+            viewportWidth: 1_600
+        ) == 720
+    )
+    #expect(
+        ChatMessageLayoutPolicy.userBubbleTrailingEdge(
+            viewportWidth: 520
+        ) == 496
+    )
+    #expect(
+        ChatMessageLayoutPolicy.userBubbleMaxWidth(
+            viewportWidth: 520
+        ) == 472
+    )
+}
+
+@Test
 func chatRetrievalUsesCompactPromptsDespiteLargeModelContext() {
     let context = 262_144
     #expect(
