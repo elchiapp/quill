@@ -523,6 +523,41 @@ func transcriptCorrectionsFeedCanonicalAndAliasChatRetrieval() {
 }
 
 @Test
+func copyableTranscriptIncludesTitleTimestampsNamesAndCorrections() {
+    let recording = RecordingItem(
+        id: "copy-test",
+        directory: URL(fileURLWithPath: "/tmp/copy-test"),
+        title: "Cuback review",
+        startedAt: Date(),
+        endedAt: Date(),
+        durationSeconds: 90,
+        micURL: nil,
+        systemURL: nil,
+        transcript: TranscriptDocument(
+            engine: "test",
+            model: "test",
+            createdAt: "2026-09-03T12:00:00Z",
+            segments: [
+                .init(
+                    speaker: "speaker_1",
+                    startMs: 65_000,
+                    endMs: 70_000,
+                    text: "Cuback runs locally."
+                ),
+            ]
+        ),
+        notes: "",
+        speakerNames: ["speaker_1": "Alice"],
+        corrections: ["Cuback": "QVAC"]
+    )
+
+    #expect(
+        recording.copyableTranscript
+            == "QVAC review\n\n[1:05] Alice: QVAC runs locally."
+    )
+}
+
+@Test
 func chatUserMessagesStayPinnedToTheViewportTrailingEdge() {
     #expect(
         ChatMessageLayoutPolicy.userBubbleTrailingEdge(

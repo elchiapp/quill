@@ -624,6 +624,7 @@ private struct MobileRecordingDetail: View {
     @State private var speakerNames: [String: String]
     @State private var showingSpeakerEditor = false
     @State private var correctionDraft: MobileTerminologyCorrectionDraft?
+    @State private var transcriptCopied = false
     @StateObject private var playback = MobileRecordingPlayer()
 
     init(model: MobileAppModel, recording: SharedRecordingItem) {
@@ -681,6 +682,15 @@ private struct MobileRecordingDetail: View {
                                 .font(.subheadline)
                             }
                             Menu {
+                                Button {
+                                    copyTranscript()
+                                } label: {
+                                    Label("Copy transcript", systemImage: "doc.on.doc")
+                                }
+                                .disabled(recording.copyableTranscript.isEmpty)
+
+                                Divider()
+
                                 Button("New correction…") {
                                     correctionDraft = MobileTerminologyCorrectionDraft()
                                 }
@@ -698,9 +708,15 @@ private struct MobileRecordingDetail: View {
                                     }
                                 }
                             } label: {
-                                Label("Correct term", systemImage: "character.cursor.ibeam")
+                                Label("Actions", systemImage: "ellipsis.circle")
                             }
                             .font(.subheadline)
+                        }
+                        if transcriptCopied {
+                            Label("Transcript copied", systemImage: "checkmark.circle.fill")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.green)
+                                .transition(.opacity)
                         }
                         if let segments = recording.transcript?.segments,
                            !segments.isEmpty {
@@ -881,6 +897,21 @@ private struct MobileRecordingDetail: View {
                 names: speakerNames
             )
         )
+    }
+
+    private func copyTranscript() {
+        let value = recording.copyableTranscript
+        guard !value.isEmpty else { return }
+        UIPasteboard.general.string = value
+        withAnimation(.easeInOut(duration: 0.15)) {
+            transcriptCopied = true
+        }
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            withAnimation(.easeInOut(duration: 0.15)) {
+                transcriptCopied = false
+            }
+        }
     }
 
     private func isSelectedSource(_ startMs: Int) -> Bool {

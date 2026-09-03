@@ -229,6 +229,19 @@ struct RecordingItem: Identifiable, Sendable {
         generatedDescription.isEmpty ? preview : generatedDescription
     }
 
+    var copyableTranscript: String {
+        guard let segments = transcript?.segments, !segments.isEmpty else {
+            return ""
+        }
+        var blocks = [title]
+        blocks += segments.map { segment in
+            "[\(TranscriptDocument.clock(segment.startMs))] "
+                + "\(speakerName(for: segment.speaker)): "
+                + corrected(segment.text)
+        }
+        return blocks.joined(separator: "\n\n")
+    }
+
     var displayDate: String {
         guard let startedAt else { return id }
         return startedAt.formatted(

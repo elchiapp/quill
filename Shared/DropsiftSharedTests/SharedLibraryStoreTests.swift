@@ -606,6 +606,11 @@ func transcriptCorrectionPreservesRawTextAndUpdatesSearchAndMarkdown() throws {
     #expect(loaded.corrections == ["Cuback": "QVAC"])
     #expect(loaded.corrected(loaded.transcript?.segments.first?.text ?? "")
         == "QVAC powers the QVAC SDK, not Cubackup.")
+    #expect(
+        loaded.copyableTranscript.contains(
+            "[0:00] Them: QVAC powers the QVAC SDK, not Cubackup."
+        )
+    )
     #expect(store.search("QVAC SDK").first?.text.contains("QVAC SDK") == true)
     #expect(store.search("Cuback SDK").first?.text.contains("QVAC SDK") == true)
 

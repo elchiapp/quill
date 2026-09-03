@@ -38,6 +38,7 @@ struct RecordingDetailView: View {
     @State private var selectedSection = RecordingDetailSection.transcript
     @State private var splitSegment: TranscriptDocument.Segment?
     @State private var correctionDraft: TerminologyCorrectionDraft?
+    @State private var transcriptCopied = false
 
     init(model: AppModel, recording: RecordingItem) {
         self.model = model
@@ -259,6 +260,13 @@ struct RecordingDetailView: View {
                 recordingControl
                 actionsMenu
 
+                if transcriptCopied {
+                    Label("Transcript copied", systemImage: "checkmark.circle.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.green)
+                        .transition(.opacity)
+                }
+
                 Spacer()
 
                 if !model.isRecording {
@@ -380,6 +388,13 @@ struct RecordingDetailView: View {
                 )
             }
 
+            Button {
+                copyTranscript()
+            } label: {
+                Label("Copy transcript", systemImage: "doc.on.doc")
+            }
+            .disabled(recording.copyableTranscript.isEmpty)
+
             Divider()
 
             Button("Open microphone track") {
@@ -411,6 +426,23 @@ struct RecordingDetailView: View {
         .menuStyle(.borderlessButton)
         .fixedSize()
         .help("Recording actions")
+    }
+
+    private func copyTranscript() {
+        let value = recording.copyableTranscript
+        guard !value.isEmpty else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(value, forType: .string)
+        withAnimation(.easeInOut(duration: 0.15)) {
+            transcriptCopied = true
+        }
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            withAnimation(.easeInOut(duration: 0.15)) {
+                transcriptCopied = false
+            }
+        }
     }
 
     @ViewBuilder

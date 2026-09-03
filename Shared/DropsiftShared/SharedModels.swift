@@ -110,6 +110,7 @@ public struct SharedKnowledgeItem: Identifiable, Sendable, Equatable {
     public var listDescription: String {
         generatedDescription.isEmpty ? preview : generatedDescription
     }
+
 }
 
 public struct SharedTranscriptDocument: Codable, Sendable, Equatable {
@@ -295,6 +296,19 @@ public struct SharedRecordingItem: Identifiable, Sendable, Equatable {
 
     public var listDescription: String {
         generatedDescription.isEmpty ? preview : generatedDescription
+    }
+
+    public var copyableTranscript: String {
+        guard let segments = transcript?.segments, !segments.isEmpty else {
+            return ""
+        }
+        var blocks = [title]
+        blocks += segments.map { segment in
+            "[\(SharedLibraryStore.clock(segment.startMs))] "
+                + "\(speakerName(for: segment.speaker)): "
+                + corrected(segment.text)
+        }
+        return blocks.joined(separator: "\n\n")
     }
 }
 
