@@ -2,8 +2,35 @@ import AppKit
 import AVFoundation
 import DropsiftShared
 import Foundation
+import HuggingFace
 import Testing
 @testable import dropsift
+
+@Test
+func publicModelDownloadsIgnoreAmbientHuggingFaceCredentials() async {
+    let client = PublicModelHub.client(
+        cache: HubCache(cacheDirectory: Config.modelCacheRoot)
+    )
+    #expect(await client.bearerToken == nil)
+}
+
+@Test
+func huggingFaceFailuresKeepTheirUsefulServerMessage() {
+    let response = HTTPURLResponse(
+        url: URL(string: "https://huggingface.co")!,
+        statusCode: 401,
+        httpVersion: nil,
+        headerFields: nil
+    )!
+    let error = HTTPClientError.responseError(
+        response: response,
+        detail: "OAuth token has expired"
+    )
+    #expect(
+        localAIErrorDescription(error)
+            == "Response error (Status 401): OAuth token has expired"
+    )
+}
 
 @Test
 func meetingDetectionWaitsTenSecondsBeforeReportingAnEnd() {

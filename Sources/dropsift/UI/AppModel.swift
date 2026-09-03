@@ -1583,10 +1583,10 @@ final class AppModel: ObservableObject {
                         persistThreads()
                     }
                 }
-                chatError = error.localizedDescription
+                chatError = localAIErrorDescription(error)
                 chatStage = .idle
                 chatContextStatus = nil
-                aiStatus = .failed(error.localizedDescription)
+                aiStatus = .failed(localAIErrorDescription(error))
                 scanForSemanticCandidates()
             }
         }
@@ -1609,7 +1609,7 @@ final class AppModel: ObservableObject {
             guard requestedModelID == selectedModelID,
                   requestedBackend == aiBackend
             else { return }
-            aiStatus = .failed(error.localizedDescription)
+            aiStatus = .failed(localAIErrorDescription(error))
         }
     }
 

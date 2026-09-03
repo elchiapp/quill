@@ -1,7 +1,31 @@
 import Foundation
 import DropsiftShared
+import HuggingFace
 import Testing
 @testable import dropsift
+
+@Test(
+    "Every advertised MLX model exposes a downloadable Hugging Face snapshot",
+    .enabled(
+        if: ProcessInfo.processInfo.environment["DROPSIFT_MODEL_CATALOG_INTEGRATION"] == "1",
+        "Set DROPSIFT_MODEL_CATALOG_INTEGRATION=1 to validate the live model catalog."
+    )
+)
+func advertisedModelSnapshotsExist() async throws {
+    let cache = HubCache(cacheDirectory: Config.modelCacheRoot)
+    let client = PublicModelHub.client(cache: cache)
+
+    for model in AIModelCatalog.models {
+        let repo = try #require(Repo.ID(rawValue: model.id))
+        let files = try await client.listFiles(
+            in: repo,
+            revision: "main",
+            recursive: true
+        )
+        #expect(files.contains { $0.path == "config.json" })
+        #expect(files.contains { $0.path.hasSuffix(".safetensors") })
+    }
+}
 
 @Test(
     "Built-in MLX answers from transcript context without a server",

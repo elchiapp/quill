@@ -9,6 +9,28 @@ import Tokenizers
 import Darwin
 #endif
 
+func localAIErrorDescription(_ error: Error) -> String {
+    if let error = error as? HTTPClientError {
+        return error.description
+    }
+    return error.localizedDescription
+}
+
+enum PublicModelHub {
+    static func client(cache: HubCache) -> HubClient {
+        // Every model in AIModelCatalog is public. Supplying the host
+        // explicitly selects TokenProvider.none, so an unrelated stale token
+        // from HF_TOKEN or the user's Hugging Face CLI cannot turn public
+        // downloads into 401 failures.
+        HubClient(
+            host: HubClient.defaultHost,
+            userAgent: "Dropsift/1.0 built-in-local-ai",
+            bearerToken: nil,
+            cache: cache
+        )
+    }
+}
+
 private final class DownloadProgressCollection: @unchecked Sendable {
     let files: [Progress]
     let aggregate: Progress
@@ -712,10 +734,7 @@ actor BuiltInLLMEngine {
                 withIntermediateDirectories: true
             )
             let cache = HubCache(cacheDirectory: root)
-            let client = HubClient(
-                userAgent: "Dropsift/1.0 built-in-local-ai",
-                cache: cache
-            )
+            let client = PublicModelHub.client(cache: cache)
             let configuration = ModelConfiguration(
                 id: modelID,
                 extraEOSTokens: ["<|im_end|>"]
@@ -774,7 +793,7 @@ actor BuiltInLLMEngine {
                 container = nil
                 loadedModelID = nil
                 Memory.clearCache()
-                emit(.failed(error.localizedDescription))
+                emit(.failed(localAIErrorDescription(error)))
             }
             throw error
         }
