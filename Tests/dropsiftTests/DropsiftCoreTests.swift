@@ -592,6 +592,42 @@ func staleModelFailureCannotPoisonTheNewlySelectedModel() throws {
 }
 
 @Test
+func completeCachedModelSnapshotLoadsWithoutNetworkMetadata() throws {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let model = AIModelCatalog.defaultModel
+    let repository = BuiltInLLMEngine.modelCacheDirectory(for: model, in: root)
+    let commit = "0123456789abcdef"
+    let snapshot = repository
+        .appendingPathComponent("snapshots", isDirectory: true)
+        .appendingPathComponent(commit, isDirectory: true)
+    let refs = repository.appendingPathComponent("refs", isDirectory: true)
+    try FileManager.default.createDirectory(at: snapshot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: refs, withIntermediateDirectories: true)
+    try Data(commit.utf8).write(to: refs.appendingPathComponent("main"))
+    try Data("{}".utf8).write(to: snapshot.appendingPathComponent("config.json"))
+    try Data("{}".utf8).write(to: snapshot.appendingPathComponent("tokenizer.json"))
+    try Data([1, 2, 3]).write(to: snapshot.appendingPathComponent("model.safetensors"))
+    try JSONSerialization.data(
+        withJSONObject: [
+            "weight_map": ["model.layers.0.weight": "model.safetensors"],
+        ],
+        options: [.sortedKeys]
+    ).write(to: snapshot.appendingPathComponent("model.safetensors.index.json"))
+
+    #expect(
+        CachedModelSnapshot.resolve(modelID: model.id, in: root)
+            == snapshot
+    )
+
+    try FileManager.default.removeItem(
+        at: snapshot.appendingPathComponent("model.safetensors")
+    )
+    #expect(CachedModelSnapshot.resolve(modelID: model.id, in: root) == nil)
+}
+
+@Test
 func chatRetrievalUsesCompactPromptsDespiteLargeModelContext() {
     let context = 262_144
     #expect(

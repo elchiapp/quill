@@ -218,6 +218,7 @@ private final class ResumableModelDownload: NSObject, URLSessionDataDelegate,
 private struct DropsiftHubDownloader: Downloader {
     let client: HubClient
     let cache: HubCache
+    let root: URL
 
     func download(
         id: String,
@@ -226,6 +227,16 @@ private struct DropsiftHubDownloader: Downloader {
         useLatest _: Bool,
         progressHandler: @Sendable @escaping (Progress) -> Void
     ) async throws -> URL {
+        if let snapshot = CachedModelSnapshot.resolve(
+            modelID: id,
+            revision: revision ?? "main",
+            in: root
+        ) {
+            let progress = Progress(totalUnitCount: 1)
+            progress.completedUnitCount = 1
+            progressHandler(progress)
+            return snapshot
+        }
         guard let repo = Repo.ID(rawValue: id) else {
             throw BuiltInLLMEngine.EngineError.invalidRepositoryID(id)
         }
@@ -377,6 +388,73 @@ private struct DropsiftHubDownloader: Downloader {
         guard let values = try? url.resourceValues(forKeys: [.fileSizeKey])
         else { return 0 }
         return Int64(values.fileSize ?? 0)
+    }
+}
+
+enum CachedModelSnapshot {
+    static func resolve(
+        modelID: String,
+        revision: String = "main",
+        in root: URL
+    ) -> URL? {
+        guard let repo = Repo.ID(rawValue: modelID) else { return nil }
+        let cache = HubCache(cacheDirectory: root)
+        guard let commit = cache.resolveRevision(
+            repo: repo,
+            kind: .model,
+            ref: revision
+        ) else { return nil }
+        let snapshot = cache.snapshotsDirectory(repo: repo, kind: .model)
+            .appendingPathComponent(commit, isDirectory: true)
+        return isComplete(snapshot) ? snapshot : nil
+    }
+
+    private static func isComplete(_ snapshot: URL) -> Bool {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(
+            atPath: snapshot.appendingPathComponent("config.json").path
+        ) else { return false }
+
+        let tokenizerFiles = [
+            "tokenizer.json",
+            "tokenizer.model",
+            "tokenizer_config.json",
+            "vocab.json",
+        ]
+        guard tokenizerFiles.contains(where: {
+            fileManager.fileExists(
+                atPath: snapshot.appendingPathComponent($0).path
+            )
+        }) else { return false }
+
+        let indexURL = snapshot.appendingPathComponent(
+            "model.safetensors.index.json"
+        )
+        if let data = try? Data(contentsOf: indexURL),
+           let object = try? JSONSerialization.jsonObject(with: data)
+                as? [String: Any],
+           let weightMap = object["weight_map"] as? [String: String] {
+            let filenames = Set(weightMap.values)
+            guard !filenames.isEmpty else { return false }
+            return filenames.allSatisfy {
+                validWeightFile(snapshot.appendingPathComponent($0))
+            }
+        }
+
+        guard let entries = try? fileManager.contentsOfDirectory(
+            at: snapshot,
+            includingPropertiesForKeys: [.fileSizeKey],
+            options: [.skipsHiddenFiles]
+        ) else { return false }
+        return entries.contains {
+            $0.pathExtension == "safetensors" && validWeightFile($0)
+        }
+    }
+
+    private static func validWeightFile(_ url: URL) -> Bool {
+        guard let values = try? url.resourceValues(forKeys: [.fileSizeKey])
+        else { return false }
+        return (values.fileSize ?? 0) > 0
     }
 }
 
@@ -643,7 +721,11 @@ actor BuiltInLLMEngine {
                 extraEOSTokens: ["<|im_end|>"]
             )
             return try await LLMModelFactory.shared.loadContainer(
-                from: DropsiftHubDownloader(client: client, cache: cache),
+                from: DropsiftHubDownloader(
+                    client: client,
+                    cache: cache,
+                    root: root
+                ),
                 using: #huggingFaceTokenizerLoader(),
                 configuration: configuration,
                 progressHandler: { progress in
