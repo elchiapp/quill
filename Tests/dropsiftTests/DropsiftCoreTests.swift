@@ -987,6 +987,74 @@ func builtInModelCacheDetectionAndResponseCleanup() throws {
 }
 
 @Test
+func pausedModelDownloadsStayPausedAcrossServiceRestarts() {
+    #expect(
+        !ModelDownloadResumePolicy.shouldPrepare(
+            backend: .native,
+            resumedTranscription: false,
+            isCached: false,
+            pendingModelID: nil,
+            selectedModelID: "model",
+            isPaused: true
+        )
+    )
+    #expect(
+        !ModelDownloadResumePolicy.shouldPrepare(
+            backend: .qvac,
+            resumedTranscription: false,
+            isCached: false,
+            pendingModelID: nil,
+            selectedModelID: "model",
+            isPaused: true
+        )
+    )
+    #expect(
+        ModelDownloadResumePolicy.shouldPrepare(
+            backend: .native,
+            resumedTranscription: false,
+            isCached: false,
+            pendingModelID: "model",
+            selectedModelID: "model",
+            isPaused: false
+        )
+    )
+    #expect(
+        !ModelDownloadResumePolicy.shouldPrepare(
+            backend: .native,
+            resumedTranscription: false,
+            isCached: false,
+            pendingModelID: nil,
+            selectedModelID: "model",
+            isPaused: false
+        )
+    )
+}
+
+@Test
+func pausingNativePreparationPreservesPartialModelBytes() async throws {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let model = AIModelCatalog.defaultModel
+    let partial = BuiltInLLMEngine.modelCacheDirectory(for: model, in: root)
+        .appendingPathComponent("blobs/weights.incomplete")
+    try FileManager.default.createDirectory(
+        at: partial.deletingLastPathComponent(),
+        withIntermediateDirectories: true
+    )
+    let bytes = Data(repeating: 0x5a, count: 4_096)
+    try bytes.write(to: partial)
+    let engine = BuiltInLLMEngine(
+        cacheRoot: root,
+        plan: AIModelCatalog.plan(for: model, device: .current)
+    )
+
+    await engine.pausePreparation()
+
+    #expect(try Data(contentsOf: partial) == bytes)
+}
+
+@Test
 func deviceRecommendationsStayWithinHalfOfUnifiedMemory() {
     let profiles = [
         DeviceProfile(

@@ -104,6 +104,13 @@ actor LocalAIEngine {
         }
     }
 
+    func pausePreparation() async {
+        switch backend {
+        case .native: await native.pausePreparation()
+        case .qvac: await qvac.pausePreparation()
+        }
+    }
+
     func suspendForTranscription() async {
         guard backend == .qvac else { return }
         qvacIsReservedForTranscription = true

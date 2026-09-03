@@ -219,6 +219,8 @@ final class AppModel: ObservableObject {
 
     @Published var aiStatus: BuiltInAIState
     @Published private(set) var aiDownloadIsStalled = false
+    @Published private(set) var aiDownloadIsPaused: Bool
+    @Published private(set) var aiDownloadProgress = 0.0
     @Published var aiBackend: AIBackend
     @Published var selectedModelID: String
     @Published var selectedModelPlan: BuiltInModelPlan
@@ -264,7 +266,6 @@ final class AppModel: ObservableObject {
     private var knownPresentationSourceIDs = Set<String>()
     private var requestedThreadTitles: [ThreadTitleRequest] = []
     private var failedPresentationKeys = Set<String>()
-    private var aiDownloadProgress = 0.0
     private var microphoneLevelUpdatedAt: Date?
     private var systemLevelUpdatedAt: Date?
 
@@ -275,6 +276,9 @@ final class AppModel: ObservableObject {
     private static let legacyRecommendationKey = "quill.builtInAI.recommendationHandled"
     private static let meetingDetectionKey = "dropsift.meetingDetection.enabled"
     private static let pendingModelDownloadKey = "dropsift.builtInAI.pendingModelDownload"
+    private static let pausedModelDownloadKey = "dropsift.builtInAI.pausedModelDownload"
+    private static let pausedModelDownloadProgressKey =
+        "dropsift.builtInAI.pausedModelDownloadProgress"
     private static let knownPresentationSourceIDsKey =
         "dropsift.presentation.knownSourceIDs"
     private static let automaticPresentationSourceIDsKey =
@@ -300,6 +304,15 @@ final class AppModel: ObservableObject {
             forKey: Self.selectedBackendKey
         )
         let selectedBackend = AIBackend(rawValue: storedBackend ?? "") ?? .native
+        let pausedDownloadSignature = UserDefaults.standard.string(
+            forKey: Self.pausedModelDownloadKey
+        )
+        let selectedDownloadSignature = Self.modelDownloadSignature(
+            modelID: selectedModel.id,
+            backend: selectedBackend
+        )
+        let selectedDownloadIsPaused =
+            pausedDownloadSignature == selectedDownloadSignature
 
         self.root = root
         knowledgeRoot = root.deletingLastPathComponent().appendingPathComponent(
@@ -310,6 +323,12 @@ final class AppModel: ObservableObject {
         selectedModelID = selectedModel.id
         selectedModelPlan = modelPlan
         aiBackend = selectedBackend
+        aiDownloadIsPaused = selectedDownloadIsPaused
+        if selectedDownloadIsPaused {
+            aiDownloadProgress = UserDefaults.standard.double(
+                forKey: Self.pausedModelDownloadProgressKey
+            )
+        }
         llm = LocalAIEngine(
             cacheRoot: Config.modelCacheRoot,
             plan: modelPlan,
@@ -466,20 +485,17 @@ final class AppModel: ObservableObject {
                 selectedModel,
                 in: Config.modelCacheRoot
             )
-            let selectedModelIsPartial = BuiltInLLMEngine.hasPartialModel(
-                selectedModel,
-                in: Config.modelCacheRoot
-            )
             let pendingModelID = UserDefaults.standard.string(
                 forKey: Self.pendingModelDownloadKey
             )
-            let shouldPrepareLanguageModel = if model.aiBackend == .qvac {
-                !resumedTranscription
-            } else {
-                selectedModelIsCached
-                    || selectedModelIsPartial
-                    || pendingModelID == selectedModel.id
-            }
+            let shouldPrepareLanguageModel = ModelDownloadResumePolicy.shouldPrepare(
+                backend: model.aiBackend,
+                resumedTranscription: resumedTranscription,
+                isCached: selectedModelIsCached,
+                pendingModelID: pendingModelID,
+                selectedModelID: selectedModel.id,
+                isPaused: model.aiDownloadIsPaused
+            )
             if shouldPrepareLanguageModel {
                 await model.prepareBuiltInAI()
             }
@@ -1621,7 +1637,7 @@ final class AppModel: ObservableObject {
         beginBuiltInAIPreparation(restarting: true)
     }
 
-    func cancelBuiltInAIDownload() {
+    func pauseBuiltInAIDownload() {
         aiPreparationTask?.cancel()
         aiPreparationTask = nil
         aiPreparationID = nil
@@ -1629,8 +1645,20 @@ final class AppModel: ObservableObject {
         aiDownloadStallTask = nil
         aiDownloadIsStalled = false
         UserDefaults.standard.removeObject(forKey: Self.pendingModelDownloadKey)
+        aiDownloadIsPaused = true
+        UserDefaults.standard.set(
+            Self.modelDownloadSignature(
+                modelID: selectedModelID,
+                backend: aiBackend
+            ),
+            forKey: Self.pausedModelDownloadKey
+        )
+        UserDefaults.standard.set(
+            aiDownloadProgress,
+            forKey: Self.pausedModelDownloadProgressKey
+        )
         Task { [llm] in
-            await llm.cancelPreparation()
+            await llm.pausePreparation()
         }
     }
 
@@ -1651,6 +1679,8 @@ final class AppModel: ObservableObject {
         aiDownloadStallTask?.cancel()
         aiDownloadStallTask = nil
         aiDownloadIsStalled = false
+        clearPausedModelDownload()
+        aiDownloadProgress = 0
 
         selectedModelID = model.id
         selectedModelPlan = newPlan
@@ -1702,6 +1732,8 @@ final class AppModel: ObservableObject {
         aiDownloadStallTask?.cancel()
         aiDownloadStallTask = nil
         aiDownloadIsStalled = false
+        clearPausedModelDownload()
+        aiDownloadProgress = 0
         aiBackend = backend
         UserDefaults.standard.set(backend.rawValue, forKey: Self.selectedBackendKey)
         aiStatus = backend == .native
@@ -1739,6 +1771,7 @@ final class AppModel: ObservableObject {
     }
 
     private func beginBuiltInAIPreparation(restarting: Bool) {
+        clearPausedModelDownload()
         UserDefaults.standard.set(
             selectedModelPlan.model.id,
             forKey: Self.pendingModelDownloadKey
@@ -1798,13 +1831,16 @@ final class AppModel: ObservableObject {
             UserDefaults.standard.removeObject(
                 forKey: Self.pendingModelDownloadKey
             )
+            clearPausedModelDownload()
             scanForSemanticCandidates()
         case .notDownloaded, .downloaded, .loading, .failed:
             aiDownloadStallTask?.cancel()
             aiDownloadStallTask = nil
             aiDownloadIsStalled = false
             if case .notDownloaded = state {
-                aiDownloadProgress = 0
+                if !aiDownloadIsPaused {
+                    aiDownloadProgress = 0
+                }
             }
         }
     }
@@ -1829,6 +1865,21 @@ final class AppModel: ObservableObject {
         if selectedModelID != AIModelCatalog.defaultModel.id {
             selectModel(AIModelCatalog.defaultModel.id, downloadAndUse: false)
         }
+    }
+
+    private func clearPausedModelDownload() {
+        aiDownloadIsPaused = false
+        UserDefaults.standard.removeObject(forKey: Self.pausedModelDownloadKey)
+        UserDefaults.standard.removeObject(
+            forKey: Self.pausedModelDownloadProgressKey
+        )
+    }
+
+    private static func modelDownloadSignature(
+        modelID: String,
+        backend: AIBackend
+    ) -> String {
+        backend.rawValue + "|" + modelID
     }
 
     func useRecommendedModel() {

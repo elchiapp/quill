@@ -35,8 +35,9 @@ actor QVACLLMEngine {
             || newPlan.contextTokens != plan.contextTokens
         plan = newPlan
         guard changed else { return }
-        preparation?.task.cancel()
-        preparation = nil
+        if preparation != nil {
+            await stopPreparation()
+        }
         if ready {
             let generation = await runtime.currentGeneration()
             if readyGeneration == generation {
@@ -132,15 +133,17 @@ actor QVACLLMEngine {
         }
     }
 
-    func cancelPreparation() {
-        preparation?.task.cancel()
-        preparation = nil
+    func cancelPreparation() async {
+        await stopPreparation()
         emit(ready ? .ready : .notDownloaded)
     }
 
+    func pausePreparation() async {
+        await cancelPreparation()
+    }
+
     func unload() async {
-        preparation?.task.cancel()
-        preparation = nil
+        await stopPreparation()
         if ready {
             let generation = await runtime.currentGeneration()
             if readyGeneration == generation {
@@ -150,6 +153,16 @@ actor QVACLLMEngine {
         ready = false
         readyGeneration = nil
         emit(.notDownloaded)
+    }
+
+    private func stopPreparation() async {
+        guard let preparation else { return }
+        preparation.task.cancel()
+        self.preparation = nil
+        // QVAC's registry keeps downloaded blocks on disk. Restarting the
+        // child stops the active transfer while preserving those blocks for
+        // the next loadModel call.
+        await runtime.restart()
     }
 
     func complete(

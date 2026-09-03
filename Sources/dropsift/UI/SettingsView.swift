@@ -267,6 +267,16 @@ struct SettingsView: View {
                             )
                     }
                     .frame(width: 300)
+                } else if selected, model.aiDownloadIsPaused {
+                    ProgressView(value: model.aiDownloadProgress) {
+                        Text(
+                            "Download paused at "
+                                + Self.percent(model.aiDownloadProgress)
+                        )
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    }
+                    .frame(width: 300)
                 } else if selected, case .loading = model.aiStatus {
                     HStack(spacing: 7) {
                         ProgressView()
@@ -312,7 +322,9 @@ struct SettingsView: View {
     private var selectedModelAction: some View {
         switch model.aiStatus {
         case .notDownloaded:
-            Button("Download") { model.downloadBuiltInAI() }
+            Button(model.aiDownloadIsPaused ? "Resume download" : "Download") {
+                model.downloadBuiltInAI()
+            }
                 .buttonStyle(.borderedProminent)
         case .downloaded:
             Button("Load") { model.downloadBuiltInAI() }
@@ -325,19 +337,19 @@ struct SettingsView: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.green)
         case .downloading:
-            HStack(spacing: 8) {
-                Button(model.aiDownloadIsStalled ? "Retry" : "Restart") {
+            if model.aiDownloadIsStalled {
+                Button("Resume download") {
                     model.restartBuiltInAIDownload()
                 }
-                if !model.aiDownloadIsStalled {
-                    Button("Cancel") {
-                        model.cancelBuiltInAIDownload()
-                    }
+                .buttonStyle(.borderedProminent)
+            } else {
+                Button("Pause") {
+                    model.pauseBuiltInAIDownload()
                 }
             }
         case .loading:
-            Button("Cancel") {
-                model.cancelBuiltInAIDownload()
+            Button("Stop loading") {
+                model.pauseBuiltInAIDownload()
             }
         }
     }
@@ -354,7 +366,7 @@ struct SettingsView: View {
     private var statusText: String {
         switch model.aiStatus {
         case .notDownloaded:
-            "Not downloaded"
+            model.aiDownloadIsPaused ? "Download paused" : "Not downloaded"
         case .downloaded:
             "Downloaded · not loaded"
         case .downloading(let fraction):

@@ -595,6 +595,13 @@ actor BuiltInLLMEngine {
         }
     }
 
+    /// Stops network/model preparation without removing any cached or
+    /// partially downloaded files. A later prepare() resumes from the blob's
+    /// existing byte offset.
+    func pausePreparation() {
+        cancelPreparation()
+    }
+
     func unloadModel(_ modelID: String) {
         if preparation?.modelID == modelID {
             preparation?.task.cancel()

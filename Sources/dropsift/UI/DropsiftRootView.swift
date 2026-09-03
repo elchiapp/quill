@@ -340,7 +340,9 @@ struct DropsiftRootView: View {
     private var aiStatusLabel: String {
         switch model.aiStatus {
         case .notDownloaded:
-            "\(model.selectedModelPlan.model.name) · download on first use"
+            model.aiDownloadIsPaused
+                ? "\(model.selectedModelPlan.model.name) · download paused"
+                : "\(model.selectedModelPlan.model.name) · download on first use"
         case .downloaded:
             "\(model.selectedModelPlan.model.name) · ready to load"
         case .downloading(let fraction):
