@@ -1,6 +1,12 @@
 import Foundation
 
 actor LocalAIEngine {
+    struct StateUpdate: Sendable, Equatable {
+        let backend: AIBackend
+        let modelID: String
+        let state: BuiltInAIState
+    }
+
     enum AvailabilityError: LocalizedError {
         case transcriptionInProgress
 
@@ -9,7 +15,7 @@ actor LocalAIEngine {
         }
     }
 
-    typealias StateHandler = @Sendable (BuiltInAIState) -> Void
+    typealias StateHandler = @Sendable (StateUpdate) -> Void
 
     private let native: BuiltInLLMEngine
     private let qvac: QVACLLMEngine
@@ -31,18 +37,30 @@ actor LocalAIEngine {
 
     func setStateHandler(_ handler: @escaping StateHandler) async {
         stateHandler = handler
-        await native.setStateHandler { [weak self] state in
-            Task { await self?.received(state, from: .native) }
+        await native.setStateHandler { [weak self] modelID, state in
+            Task {
+                await self?.received(
+                    state,
+                    modelID: modelID,
+                    from: .native
+                )
+            }
         }
-        await qvac.setStateHandler { [weak self] state in
-            Task { await self?.received(state, from: .qvac) }
+        await qvac.setStateHandler { [weak self] modelID, state in
+            Task {
+                await self?.received(
+                    state,
+                    modelID: modelID,
+                    from: .qvac
+                )
+            }
         }
-        handler(await activeState())
+        handler(await activeStateUpdate())
     }
 
     func setBackend(_ newBackend: AIBackend) async {
         guard newBackend != backend else {
-            stateHandler?(await activeState())
+            stateHandler?(await activeStateUpdate())
             return
         }
         let oldBackend = backend
@@ -59,7 +77,7 @@ actor LocalAIEngine {
         } else {
             await qvac.configure(plan)
         }
-        stateHandler?(await activeState())
+        stateHandler?(await activeStateUpdate())
     }
 
     func configure(_ newPlan: BuiltInModelPlan) async {
@@ -148,20 +166,37 @@ actor LocalAIEngine {
         }
     }
 
-    private func received(_ state: BuiltInAIState, from source: AIBackend) {
+    private func received(
+        _ state: BuiltInAIState,
+        modelID: String,
+        from source: AIBackend
+    ) {
         guard source == backend else { return }
-        stateHandler?(state)
+        stateHandler?(
+            StateUpdate(
+                backend: source,
+                modelID: modelID,
+                state: state
+            )
+        )
     }
 
-    private func activeState() async -> BuiltInAIState {
+    private func activeStateUpdate() async -> StateUpdate {
+        let state: BuiltInAIState
         switch backend {
         case .native:
             if BuiltInLLMEngine.hasCachedModel(plan.model, in: Config.modelCacheRoot) {
-                return .downloaded
+                state = .downloaded
+            } else {
+                state = .notDownloaded
             }
-            return .notDownloaded
         case .qvac:
-            return await qvac.currentState()
+            state = await qvac.currentState()
         }
+        return StateUpdate(
+            backend: backend,
+            modelID: plan.model.id,
+            state: state
+        )
     }
 }

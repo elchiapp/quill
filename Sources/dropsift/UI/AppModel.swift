@@ -252,6 +252,7 @@ final class AppModel: ObservableObject {
     private var libraryRefreshQueued = false
     private var queuedRefreshGeneratesTitles = false
     private var aiPreparationTask: Task<Void, Never>?
+    private var aiPreparationID: UUID?
     private var aiDownloadStallTask: Task<Void, Never>?
     private var semanticAnalysisTask: Task<Void, Never>?
     private var requestedSemanticSourceIDs: [String] = []
@@ -454,8 +455,8 @@ final class AppModel: ObservableObject {
             await transcription.setWillBeginWorkHandler {
                 await model.prepareForTranscription()
             }
-            await model.llm.setStateHandler { state in
-                Task { @MainActor in model.applyAIState(state) }
+            await model.llm.setStateHandler { update in
+                Task { @MainActor in model.applyAIState(update) }
             }
             let resumedTranscription = await transcription.resumePending(
                 root: root
@@ -529,6 +530,7 @@ final class AppModel: ObservableObject {
         queuedRefreshGeneratesTitles = false
         aiPreparationTask?.cancel()
         aiPreparationTask = nil
+        aiPreparationID = nil
         aiDownloadStallTask?.cancel()
         aiDownloadStallTask = nil
         semanticAnalysisTask?.cancel()
@@ -1590,7 +1592,12 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func prepareBuiltInAI() async {
+    func prepareBuiltInAI(
+        expectedModelID: String? = nil,
+        expectedBackend: AIBackend? = nil
+    ) async {
+        let requestedModelID = expectedModelID ?? selectedModelID
+        let requestedBackend = expectedBackend ?? aiBackend
         do {
             try await llm.prepare()
         } catch {
@@ -1598,6 +1605,9 @@ final class AppModel: ObservableObject {
             guard !(error is CancellationError),
                   !(cocoaError.domain == NSURLErrorDomain
                     && cocoaError.code == NSURLErrorCancelled)
+            else { return }
+            guard requestedModelID == selectedModelID,
+                  requestedBackend == aiBackend
             else { return }
             aiStatus = .failed(error.localizedDescription)
         }
@@ -1614,6 +1624,7 @@ final class AppModel: ObservableObject {
     func cancelBuiltInAIDownload() {
         aiPreparationTask?.cancel()
         aiPreparationTask = nil
+        aiPreparationID = nil
         aiDownloadStallTask?.cancel()
         aiDownloadStallTask = nil
         aiDownloadIsStalled = false
@@ -1634,6 +1645,13 @@ final class AppModel: ObservableObject {
             return
         }
 
+        aiPreparationTask?.cancel()
+        aiPreparationTask = nil
+        aiPreparationID = nil
+        aiDownloadStallTask?.cancel()
+        aiDownloadStallTask = nil
+        aiDownloadIsStalled = false
+
         selectedModelID = model.id
         selectedModelPlan = newPlan
         UserDefaults.standard.set(model.id, forKey: Self.selectedModelKey)
@@ -1650,11 +1668,28 @@ final class AppModel: ObservableObject {
             in: Config.modelCacheRoot
         )
         aiStatus = aiBackend == .native && cached ? .downloaded : .notDownloaded
-        Task { [weak self, llm] in
+        let requestedBackend = aiBackend
+        let preparationID = UUID()
+        aiPreparationID = preparationID
+        aiPreparationTask = Task { [weak self, llm] in
+            await llm.cancelPreparation()
+            guard !Task.isCancelled else { return }
             await llm.configure(newPlan)
-            guard let self else { return }
+            guard let self,
+                  !Task.isCancelled,
+                  self.selectedModelID == model.id,
+                  self.aiBackend == requestedBackend,
+                  self.aiPreparationID == preparationID
+            else { return }
             if downloadAndUse || cached {
-                await self.prepareBuiltInAI()
+                await self.prepareBuiltInAI(
+                    expectedModelID: model.id,
+                    expectedBackend: requestedBackend
+                )
+            }
+            if self.aiPreparationID == preparationID {
+                self.aiPreparationTask = nil
+                self.aiPreparationID = nil
             }
         }
     }
@@ -1663,6 +1698,7 @@ final class AppModel: ObservableObject {
         guard backend != aiBackend, !isAnswering, !isAITransitioning else { return }
         aiPreparationTask?.cancel()
         aiPreparationTask = nil
+        aiPreparationID = nil
         aiDownloadStallTask?.cancel()
         aiDownloadStallTask = nil
         aiDownloadIsStalled = false
@@ -1676,14 +1712,29 @@ final class AppModel: ObservableObject {
                 ? .downloaded
                 : .notDownloaded
 
-        Task { [weak self, llm, transcription] in
+        let requestedModelID = selectedModelID
+        let preparationID = UUID()
+        aiPreparationID = preparationID
+        aiPreparationTask = Task { [weak self, llm, transcription] in
             await llm.setBackend(backend)
             await transcription.configureBackend(backend)
             if backend == .native {
                 await QVACImageExtractor.shared.unload()
             }
-            guard let self else { return }
-            await self.prepareBuiltInAI()
+            guard let self,
+                  !Task.isCancelled,
+                  self.aiBackend == backend,
+                  self.selectedModelID == requestedModelID,
+                  self.aiPreparationID == preparationID
+            else { return }
+            await self.prepareBuiltInAI(
+                expectedModelID: requestedModelID,
+                expectedBackend: backend
+            )
+            if self.aiPreparationID == preparationID {
+                self.aiPreparationTask = nil
+                self.aiPreparationID = nil
+            }
         }
     }
 
@@ -1696,18 +1747,38 @@ final class AppModel: ObservableObject {
         aiDownloadStallTask?.cancel()
         aiDownloadStallTask = nil
         aiPreparationTask?.cancel()
+        aiPreparationID = nil
 
+        let requestedModelID = selectedModelID
+        let requestedBackend = aiBackend
+        let preparationID = UUID()
+        aiPreparationID = preparationID
         aiPreparationTask = Task { [weak self, llm] in
             if restarting {
                 await llm.cancelPreparation()
             }
-            guard let self, !Task.isCancelled else { return }
-            await self.prepareBuiltInAI()
-            self.aiPreparationTask = nil
+            guard let self,
+                  !Task.isCancelled,
+                  self.selectedModelID == requestedModelID,
+                  self.aiBackend == requestedBackend,
+                  self.aiPreparationID == preparationID
+            else { return }
+            await self.prepareBuiltInAI(
+                expectedModelID: requestedModelID,
+                expectedBackend: requestedBackend
+            )
+            if self.aiPreparationID == preparationID {
+                self.aiPreparationTask = nil
+                self.aiPreparationID = nil
+            }
         }
     }
 
-    private func applyAIState(_ state: BuiltInAIState) {
+    func applyAIState(_ update: LocalAIEngine.StateUpdate) {
+        guard update.backend == aiBackend,
+              update.modelID == selectedModelID
+        else { return }
+        let state = update.state
         let priorProgress = aiDownloadProgress
         aiStatus = state
 
@@ -1805,6 +1876,7 @@ final class AppModel: ObservableObject {
         if deletingSelectedModel {
             aiPreparationTask?.cancel()
             aiPreparationTask = nil
+            aiPreparationID = nil
             aiDownloadStallTask?.cancel()
             aiDownloadStallTask = nil
             aiDownloadIsStalled = false

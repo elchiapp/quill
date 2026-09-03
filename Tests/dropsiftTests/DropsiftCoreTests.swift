@@ -547,6 +547,51 @@ func chatUserMessagesStayPinnedToTheViewportTrailingEdge() {
 }
 
 @Test
+@MainActor
+func staleModelFailureCannotPoisonTheNewlySelectedModel() throws {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let model = AppModel(root: root)
+    let healthyModelID = AIModelCatalog.defaultModel.id
+    let failedModelID = try #require(
+        AIModelCatalog.models.first { $0.id != healthyModelID }
+    ).id
+    model.aiBackend = .native
+    model.selectedModelID = healthyModelID
+    model.aiStatus = .ready
+
+    model.applyAIState(
+        LocalAIEngine.StateUpdate(
+            backend: .native,
+            modelID: failedModelID,
+            state: .failed("Unavailable model")
+        )
+    )
+    #expect(model.aiStatus == .ready)
+
+    model.applyAIState(
+        LocalAIEngine.StateUpdate(
+            backend: .qvac,
+            modelID: healthyModelID,
+            state: .failed("Stale backend")
+        )
+    )
+    #expect(model.aiStatus == .ready)
+
+    model.applyAIState(
+        LocalAIEngine.StateUpdate(
+            backend: .native,
+            modelID: healthyModelID,
+            state: .failed("Current model failure")
+        )
+    )
+    #expect(model.aiStatus == .failed("Current model failure"))
+}
+
+@Test
 func chatRetrievalUsesCompactPromptsDespiteLargeModelContext() {
     let context = 262_144
     #expect(

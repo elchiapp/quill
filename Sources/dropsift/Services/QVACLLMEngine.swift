@@ -1,7 +1,7 @@
 import Foundation
 
 actor QVACLLMEngine {
-    typealias StateHandler = @Sendable (BuiltInAIState) -> Void
+    typealias StateHandler = @Sendable (String, BuiltInAIState) -> Void
 
     private let runtime: QVACRuntime
     private var plan: BuiltInModelPlan
@@ -25,7 +25,7 @@ actor QVACLLMEngine {
 
     func setStateHandler(_ handler: @escaping StateHandler) {
         stateHandler = handler
-        handler(state)
+        handler(plan.model.id, state)
     }
 
     func currentState() -> BuiltInAIState { state }
@@ -123,6 +123,9 @@ actor QVACLLMEngine {
             if isCurrent, plan == selectedPlan,
                !(error is CancellationError)
             {
+                ready = false
+                readyGeneration = nil
+                await runtime.restart()
                 emit(.failed(error.localizedDescription))
             }
             throw error
@@ -177,6 +180,7 @@ actor QVACLLMEngine {
             throw BuiltInLLMEngine.EngineError.emptyConversation
         }
         try await prepare()
+        let selectedPlan = plan
         let runtime = runtime
         let params = QVACBridgeParams(
             systemPrompt: systemPrompt + "\nDo not reveal private reasoning.",
@@ -185,7 +189,7 @@ actor QVACLLMEngine {
             },
             maxTokens: maxTokens ?? min(
                 2_048,
-                max(900, plan.contextTokens / 64)
+                max(900, selectedPlan.contextTokens / 64)
             )
         )
 
@@ -205,11 +209,14 @@ actor QVACLLMEngine {
                         // Tokens are the canonical streaming surface. The final
                         // text is only a fallback for engines that emit none.
                     }
-                    await self?.emit(.ready)
+                    await self?.markReady(for: selectedPlan)
                     continuation.finish()
                 } catch {
                     if !(error is CancellationError) {
-                        await self?.emit(.failed(error.localizedDescription))
+                        await self?.recover(
+                            after: error,
+                            selectedPlan: selectedPlan
+                        )
                     }
                     continuation.finish(throwing: error)
                 }
@@ -230,7 +237,25 @@ actor QVACLLMEngine {
 
     private func emit(_ newState: BuiltInAIState) {
         state = newState
-        stateHandler?(newState)
+        stateHandler?(plan.model.id, newState)
+    }
+
+    private func recover(
+        after error: Error,
+        selectedPlan: BuiltInModelPlan
+    ) async {
+        guard plan == selectedPlan else { return }
+        preparation?.task.cancel()
+        preparation = nil
+        ready = false
+        readyGeneration = nil
+        await runtime.restart()
+        emit(.failed(error.localizedDescription))
+    }
+
+    private func markReady(for selectedPlan: BuiltInModelPlan) {
+        guard plan == selectedPlan else { return }
+        emit(.ready)
     }
 
     private static func modelSize(_ model: BuiltInModel) -> String {

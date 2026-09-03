@@ -419,7 +419,7 @@ actor BuiltInLLMEngine {
         }
     }
 
-    typealias StateHandler = @Sendable (BuiltInAIState) -> Void
+    typealias StateHandler = @Sendable (String, BuiltInAIState) -> Void
 
     private let cacheRoot: URL
     private var plan: BuiltInModelPlan
@@ -689,6 +689,9 @@ actor BuiltInLLMEngine {
                 preparation = nil
             }
             if isCurrentPreparation, plan.model.id == modelID {
+                container = nil
+                loadedModelID = nil
+                Memory.clearCache()
                 emit(.failed(error.localizedDescription))
             }
             throw error
@@ -716,7 +719,7 @@ actor BuiltInLLMEngine {
     }
 
     private func emit(_ state: BuiltInAIState) {
-        stateHandler?(state)
+        stateHandler?(plan.model.id, state)
     }
 
     private func generationFinished() {
