@@ -253,27 +253,34 @@ struct SettingsView: View {
                 .foregroundStyle(compatible ? Color.secondary : Color.red)
 
                 if selected, case .downloading(let fraction) = model.aiStatus {
-                    ProgressView(value: fraction) {
-                        Text(
-                            model.aiDownloadIsStalled
-                                ? "Download stalled at \(Self.percent(fraction))"
-                                : "Downloading · \(Self.percent(fraction))"
-                        )
-                            .font(.caption2)
+                    ProgressView(value: fraction.fraction) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(
+                                model.aiDownloadIsStalled
+                                    ? "Download stalled at \(Self.percent(fraction.fraction))"
+                                    : "Downloading · \(Self.percent(fraction.fraction))"
+                            )
                             .foregroundStyle(
                                 model.aiDownloadIsStalled
                                     ? Color.red
                                     : Color.secondary
                             )
+                            Text(downloadTelemetryLabel)
+                                .foregroundStyle(.secondary)
+                        }
+                        .font(.caption2.monospacedDigit())
                     }
                     .frame(width: 300)
                 } else if selected, model.aiDownloadIsPaused {
                     ProgressView(value: model.aiDownloadProgress) {
-                        Text(
-                            "Download paused at "
-                                + Self.percent(model.aiDownloadProgress)
-                        )
-                        .font(.caption2)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(
+                                "Download paused at "
+                                    + Self.percent(model.aiDownloadProgress)
+                            )
+                            Text(downloadTelemetryLabel)
+                        }
+                        .font(.caption2.monospacedDigit())
                         .foregroundStyle(.secondary)
                     }
                     .frame(width: 300)
@@ -369,10 +376,10 @@ struct SettingsView: View {
             model.aiDownloadIsPaused ? "Download paused" : "Not downloaded"
         case .downloaded:
             "Downloaded · not loaded"
-        case .downloading(let fraction):
+        case .downloading(let progress):
             model.aiDownloadIsStalled
-                ? "Download stalled · \(Self.percent(fraction))"
-                : "Downloading \(model.selectedModelPlan.model.name) · \(Self.percent(fraction))"
+                ? "Download stalled · \(Self.percent(progress.fraction))"
+                : "Downloading \(model.selectedModelPlan.model.name) · \(Self.percent(progress.fraction))"
         case .loading:
             "Loading \(model.selectedModelPlan.model.name)…"
         case .ready:
@@ -387,6 +394,16 @@ struct SettingsView: View {
         return percentage < 10
             ? String(format: "%.1f%%", percentage)
             : String(format: "%.0f%%", percentage)
+    }
+
+    private var downloadTelemetryLabel: String {
+        ModelDownloadTelemetry.label(
+            completedBytes: model.aiDownloadCompletedBytes,
+            totalBytes: model.aiDownloadTotalBytes,
+            bytesPerSecond: model.aiDownloadIsPaused
+                ? nil
+                : model.aiDownloadBytesPerSecond
+        )
     }
 
     private var modelDeletionConfirmationPresented: Binding<Bool> {

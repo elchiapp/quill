@@ -1031,6 +1031,22 @@ func pausedModelDownloadsStayPausedAcrossServiceRestarts() {
 }
 
 @Test
+func modelDownloadTelemetryShowsBytesTotalAndSpeed() {
+    let progress = ModelDownloadProgress(
+        completedBytes: 512 * 1_024 * 1_024,
+        totalBytes: 16 * 1_024 * 1_024 * 1_024
+    )
+    #expect(progress.fraction == 0.03125)
+    #expect(
+        ModelDownloadTelemetry.label(
+            completedBytes: progress.completedBytes,
+            totalBytes: progress.totalBytes,
+            bytesPerSecond: 24 * 1_024 * 1_024
+        ) == "512.0 MB of 16.0 GB · 24.0 MB/s"
+    )
+}
+
+@Test
 func pausingNativePreparationPreservesPartialModelBytes() async throws {
     let root = FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString, isDirectory: true)

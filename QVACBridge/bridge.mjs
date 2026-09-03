@@ -85,6 +85,8 @@ async function prepareModel (kind, id, detail, loader) {
           id: listener,
           type: 'progress',
           percentage,
+          downloaded: progress.downloaded,
+          total: progress.total,
           detail
         })
       }

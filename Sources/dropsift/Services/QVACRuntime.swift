@@ -60,6 +60,8 @@ struct QVACBridgeResponse: Codable, Sendable {
     let type: String
     let text: String?
     let percentage: Double?
+    let downloaded: Int64?
+    let total: Int64?
     let detail: String?
     let model: String?
     let segments: [QVACBridgeSegment]?

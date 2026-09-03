@@ -221,6 +221,9 @@ final class AppModel: ObservableObject {
     @Published private(set) var aiDownloadIsStalled = false
     @Published private(set) var aiDownloadIsPaused: Bool
     @Published private(set) var aiDownloadProgress = 0.0
+    @Published private(set) var aiDownloadCompletedBytes: Int64 = 0
+    @Published private(set) var aiDownloadTotalBytes: Int64 = 0
+    @Published private(set) var aiDownloadBytesPerSecond = 0.0
     @Published var aiBackend: AIBackend
     @Published var selectedModelID: String
     @Published var selectedModelPlan: BuiltInModelPlan
@@ -268,6 +271,8 @@ final class AppModel: ObservableObject {
     private var failedPresentationKeys = Set<String>()
     private var microphoneLevelUpdatedAt: Date?
     private var systemLevelUpdatedAt: Date?
+    private var aiDownloadSpeedSample: (bytes: Int64, date: Date)?
+    private var aiDownloadSmoothedSpeed = 0.0
 
     private static let selectedModelKey = "dropsift.builtInAI.selectedModel"
     private static let selectedBackendKey = "dropsift.localAI.backend"
@@ -279,6 +284,10 @@ final class AppModel: ObservableObject {
     private static let pausedModelDownloadKey = "dropsift.builtInAI.pausedModelDownload"
     private static let pausedModelDownloadProgressKey =
         "dropsift.builtInAI.pausedModelDownloadProgress"
+    private static let pausedModelDownloadCompletedBytesKey =
+        "dropsift.builtInAI.pausedModelDownloadCompletedBytes"
+    private static let pausedModelDownloadTotalBytesKey =
+        "dropsift.builtInAI.pausedModelDownloadTotalBytes"
     private static let knownPresentationSourceIDsKey =
         "dropsift.presentation.knownSourceIDs"
     private static let automaticPresentationSourceIDsKey =
@@ -327,6 +336,16 @@ final class AppModel: ObservableObject {
         if selectedDownloadIsPaused {
             aiDownloadProgress = UserDefaults.standard.double(
                 forKey: Self.pausedModelDownloadProgressKey
+            )
+            aiDownloadCompletedBytes = Int64(
+                UserDefaults.standard.double(
+                    forKey: Self.pausedModelDownloadCompletedBytesKey
+                )
+            )
+            aiDownloadTotalBytes = Int64(
+                UserDefaults.standard.double(
+                    forKey: Self.pausedModelDownloadTotalBytesKey
+                )
             )
         }
         llm = LocalAIEngine(
@@ -1644,6 +1663,9 @@ final class AppModel: ObservableObject {
         aiDownloadStallTask?.cancel()
         aiDownloadStallTask = nil
         aiDownloadIsStalled = false
+        aiDownloadBytesPerSecond = 0
+        aiDownloadSpeedSample = nil
+        aiDownloadSmoothedSpeed = 0
         UserDefaults.standard.removeObject(forKey: Self.pendingModelDownloadKey)
         aiDownloadIsPaused = true
         UserDefaults.standard.set(
@@ -1656,6 +1678,14 @@ final class AppModel: ObservableObject {
         UserDefaults.standard.set(
             aiDownloadProgress,
             forKey: Self.pausedModelDownloadProgressKey
+        )
+        UserDefaults.standard.set(
+            Double(aiDownloadCompletedBytes),
+            forKey: Self.pausedModelDownloadCompletedBytesKey
+        )
+        UserDefaults.standard.set(
+            Double(aiDownloadTotalBytes),
+            forKey: Self.pausedModelDownloadTotalBytesKey
         )
         Task { [llm] in
             await llm.pausePreparation()
@@ -1681,6 +1711,7 @@ final class AppModel: ObservableObject {
         aiDownloadIsStalled = false
         clearPausedModelDownload()
         aiDownloadProgress = 0
+        resetDownloadTelemetry()
 
         selectedModelID = model.id
         selectedModelPlan = newPlan
@@ -1734,6 +1765,7 @@ final class AppModel: ObservableObject {
         aiDownloadIsStalled = false
         clearPausedModelDownload()
         aiDownloadProgress = 0
+        resetDownloadTelemetry()
         aiBackend = backend
         UserDefaults.standard.set(backend.rawValue, forKey: Self.selectedBackendKey)
         aiStatus = backend == .native
@@ -1772,6 +1804,9 @@ final class AppModel: ObservableObject {
 
     private func beginBuiltInAIPreparation(restarting: Bool) {
         clearPausedModelDownload()
+        aiDownloadBytesPerSecond = 0
+        aiDownloadSpeedSample = nil
+        aiDownloadSmoothedSpeed = 0
         UserDefaults.standard.set(
             selectedModelPlan.model.id,
             forKey: Self.pendingModelDownloadKey
@@ -1816,18 +1851,21 @@ final class AppModel: ObservableObject {
         aiStatus = state
 
         switch state {
-        case .downloading(let fraction):
-            let madeProgress = fraction > priorProgress + 0.000_001
-            aiDownloadProgress = max(aiDownloadProgress, fraction)
+        case .downloading(let progress):
+            let madeProgress = progress.fraction > priorProgress + 0.000_001
+            aiDownloadProgress = max(aiDownloadProgress, progress.fraction)
+            updateDownloadTelemetry(progress)
             if madeProgress || aiDownloadStallTask == nil {
                 aiDownloadIsStalled = false
-                scheduleDownloadStallCheck(progress: fraction)
+                scheduleDownloadStallCheck(progress: progress.fraction)
             }
         case .ready:
             aiDownloadStallTask?.cancel()
             aiDownloadStallTask = nil
             aiDownloadIsStalled = false
             aiDownloadProgress = 1
+            aiDownloadBytesPerSecond = 0
+            aiDownloadSpeedSample = nil
             UserDefaults.standard.removeObject(
                 forKey: Self.pendingModelDownloadKey
             )
@@ -1837,6 +1875,8 @@ final class AppModel: ObservableObject {
             aiDownloadStallTask?.cancel()
             aiDownloadStallTask = nil
             aiDownloadIsStalled = false
+            aiDownloadBytesPerSecond = 0
+            aiDownloadSpeedSample = nil
             if case .notDownloaded = state {
                 if !aiDownloadIsPaused {
                     aiDownloadProgress = 0
@@ -1851,12 +1891,47 @@ final class AppModel: ObservableObject {
             try? await Task.sleep(for: .seconds(60))
             guard let self, !Task.isCancelled else { return }
             guard case .downloading(let currentProgress) = self.aiStatus,
-                  abs(currentProgress - progress) < 0.000_001
+                  abs(currentProgress.fraction - progress) < 0.000_001
             else { return }
 
             self.aiDownloadIsStalled = true
+            self.aiDownloadBytesPerSecond = 0
             self.aiDownloadStallTask = nil
         }
+    }
+
+    private func updateDownloadTelemetry(_ progress: ModelDownloadProgress) {
+        aiDownloadCompletedBytes = progress.completedBytes
+        aiDownloadTotalBytes = progress.totalBytes
+        guard progress.completedBytes > 0 else { return }
+
+        let now = Date()
+        guard let sample = aiDownloadSpeedSample else {
+            aiDownloadSpeedSample = (progress.completedBytes, now)
+            return
+        }
+        let elapsed = now.timeIntervalSince(sample.date)
+        guard elapsed >= 0.35 else { return }
+        let addedBytes = progress.completedBytes - sample.bytes
+        aiDownloadSpeedSample = (progress.completedBytes, now)
+        guard addedBytes >= 0 else {
+            aiDownloadSmoothedSpeed = 0
+            aiDownloadBytesPerSecond = 0
+            return
+        }
+        let currentSpeed = Double(addedBytes) / elapsed
+        aiDownloadSmoothedSpeed = aiDownloadSmoothedSpeed > 0
+            ? aiDownloadSmoothedSpeed * 0.65 + currentSpeed * 0.35
+            : currentSpeed
+        aiDownloadBytesPerSecond = aiDownloadSmoothedSpeed
+    }
+
+    private func resetDownloadTelemetry() {
+        aiDownloadCompletedBytes = 0
+        aiDownloadTotalBytes = 0
+        aiDownloadBytesPerSecond = 0
+        aiDownloadSpeedSample = nil
+        aiDownloadSmoothedSpeed = 0
     }
 
     func keepConservativeModel() {
@@ -1872,6 +1947,12 @@ final class AppModel: ObservableObject {
         UserDefaults.standard.removeObject(forKey: Self.pausedModelDownloadKey)
         UserDefaults.standard.removeObject(
             forKey: Self.pausedModelDownloadProgressKey
+        )
+        UserDefaults.standard.removeObject(
+            forKey: Self.pausedModelDownloadCompletedBytesKey
+        )
+        UserDefaults.standard.removeObject(
+            forKey: Self.pausedModelDownloadTotalBytesKey
         )
     }
 

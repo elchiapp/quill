@@ -241,8 +241,8 @@ struct ChatDetailView: View {
             "Searching \(model.timelineItems.count) timeline item\(model.timelineItems.count == 1 ? "" : "s") for relevant sources…"
         case .preparingAI:
             switch model.aiStatus {
-            case .downloading(let fraction):
-                "Downloading \(model.selectedModelPlan.model.name) · \(Int(fraction * 100))%…"
+            case .downloading(let progress):
+                "Downloading \(model.selectedModelPlan.model.name) · \(Int(progress.fraction * 100))%…"
             case .loading:
                 "Loading \(model.selectedModelPlan.model.name) into memory…"
             case .downloaded:

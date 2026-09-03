@@ -69,7 +69,7 @@ actor QVACLLMEngine {
 
         preparation?.task.cancel()
         let preparationID = UUID()
-        emit(.downloading(0))
+        emit(.downloading(ModelDownloadProgress(fraction: 0)))
         let runtime = runtime
         let engine = self
         let task = Task<QVACBridgeResponse, Error> {
@@ -84,6 +84,8 @@ actor QVACLLMEngine {
                     Task {
                         await engine.applyProgress(
                             (event.percentage ?? 0) / 100,
+                            completedBytes: event.downloaded ?? 0,
+                            totalBytes: event.total ?? 0,
                             for: selectedPlan
                         )
                     }
@@ -240,12 +242,24 @@ actor QVACLLMEngine {
 
     private func applyProgress(
         _ progress: Double,
+        completedBytes: Int64,
+        totalBytes: Int64,
         for selectedPlan: BuiltInModelPlan
     ) {
         guard plan == selectedPlan, preparation?.plan == selectedPlan else {
             return
         }
-        emit(progress >= 1 ? .loading : .downloading(progress))
+        emit(
+            progress >= 1
+                ? .loading
+                : .downloading(
+                    ModelDownloadProgress(
+                        fraction: progress,
+                        completedBytes: completedBytes,
+                        totalBytes: totalBytes
+                    )
+                )
+        )
     }
 
     private func emit(_ newState: BuiltInAIState) {

@@ -345,10 +345,10 @@ struct DropsiftRootView: View {
                 : "\(model.selectedModelPlan.model.name) · download on first use"
         case .downloaded:
             "\(model.selectedModelPlan.model.name) · ready to load"
-        case .downloading(let fraction):
+        case .downloading(let progress):
             model.aiDownloadIsStalled
                 ? "Download stalled · open Settings to retry"
-                : "Downloading \(model.selectedModelPlan.model.name) · \(Self.percent(fraction))"
+                : "Downloading \(model.selectedModelPlan.model.name) · \(Self.percent(progress.fraction))"
         case .loading:
             "Loading \(model.selectedModelPlan.model.name)…"
         case .ready:

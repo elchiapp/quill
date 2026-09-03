@@ -480,10 +480,38 @@ enum CachedModelSnapshot {
     }
 }
 
+struct ModelDownloadProgress: Sendable, Equatable {
+    let fraction: Double
+    let completedBytes: Int64
+    let totalBytes: Int64
+
+    init(
+        fraction: Double,
+        completedBytes: Int64 = 0,
+        totalBytes: Int64 = 0
+    ) {
+        self.fraction = max(0, min(1, fraction))
+        self.completedBytes = max(0, completedBytes)
+        self.totalBytes = max(0, totalBytes)
+    }
+
+    init(completedBytes: Int64, totalBytes: Int64) {
+        let total = max(0, totalBytes)
+        let completed = max(0, completedBytes)
+        self.init(
+            fraction: total > 0
+                ? Double(min(completed, total)) / Double(total)
+                : 0,
+            completedBytes: completed,
+            totalBytes: total
+        )
+    }
+}
+
 enum BuiltInAIState: Sendable, Equatable {
     case notDownloaded
     case downloaded
-    case downloading(Double)
+    case downloading(ModelDownloadProgress)
     case loading
     case ready
     case failed(String)
@@ -733,7 +761,16 @@ actor BuiltInLLMEngine {
         let modelID = requestedPlan.model.id
         let preparationID = UUID()
         let cached = Self.hasCachedModel(requestedPlan.model, in: cacheRoot)
-        emit(cached ? .loading : .downloading(0))
+        emit(
+            cached
+                ? .loading
+                : .downloading(
+                    ModelDownloadProgress(
+                        fraction: 0,
+                        totalBytes: Int64(requestedPlan.model.downloadBytes)
+                    )
+                )
+        )
         let root = cacheRoot
         let task = Task<ModelContainer, Error> {
             try FileManager.default.createDirectory(
@@ -755,10 +792,13 @@ actor BuiltInLLMEngine {
                 using: #huggingFaceTokenizerLoader(),
                 configuration: configuration,
                 progressHandler: { progress in
-                    let fraction = max(0, min(1, progress.fractionCompleted))
+                    let update = ModelDownloadProgress(
+                        completedBytes: progress.completedUnitCount,
+                        totalBytes: progress.totalUnitCount
+                    )
                     Task {
                         await self.updateDownloadProgress(
-                            fraction,
+                            update,
                             modelID: modelID
                         )
                     }
@@ -806,9 +846,12 @@ actor BuiltInLLMEngine {
         }
     }
 
-    private func updateDownloadProgress(_ fraction: Double, modelID: String) {
+    private func updateDownloadProgress(
+        _ progress: ModelDownloadProgress,
+        modelID: String
+    ) {
         guard plan.model.id == modelID else { return }
-        emit(fraction >= 1 ? .loading : .downloading(fraction))
+        emit(progress.fraction >= 1 ? .loading : .downloading(progress))
     }
 
     private nonisolated func configureMemoryLimit(for plan: BuiltInModelPlan) {
