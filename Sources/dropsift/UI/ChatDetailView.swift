@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct ChatDetailView: View {
@@ -20,12 +21,6 @@ struct ChatDetailView: View {
             composer
         }
         .background(Color(nsColor: .textBackgroundColor))
-        .task(id: thread.id) {
-            // Let the navigation split view install the new detail hierarchy
-            // before asking AppKit to make the composer first responder.
-            await Task.yield()
-            isComposerFocused = true
-        }
     }
 
     private var chatHeader: some View {
@@ -126,48 +121,45 @@ struct ChatDetailView: View {
             }
             .padding(28)
         } else {
-            GeometryReader { viewport in
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 18) {
-                            ForEach(thread.messages) { message in
-                                ChatBubble(
-                                    message: message,
-                                    viewportWidth: viewport.size.width,
-                                    isStreaming: (
-                                        model.chatStage == .readingSources
-                                            || model.chatStage == .generating
-                                    )
-                                        && message.id == thread.messages.last?.id
-                                        && message.role == .assistant,
-                                    streamingStatus: model.chatContextStatus,
-                                    onSourceSelected: model.openSource
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 18) {
+                        ForEach(thread.messages) { message in
+                            ChatBubble(
+                                message: message,
+                                isStreaming: (
+                                    model.chatStage == .readingSources
+                                        || model.chatStage == .generating
                                 )
-                                .id(message.id)
-                            }
-                            if model.chatStage != .idle {
-                                pipelineProgress
-                                    .frame(width: viewport.size.width)
-                            }
+                                    && message.id == thread.messages.last?.id
+                                    && message.role == .assistant,
+                                streamingStatus: model.chatContextStatus,
+                                onSourceSelected: model.openSource
+                            )
+                            .id(message.id)
                         }
-                        .frame(width: viewport.size.width, alignment: .leading)
-                        .padding(.vertical, 24)
-                    }
-                    .frame(
-                        maxWidth: .infinity,
-                        maxHeight: .infinity,
-                        alignment: .leading
-                    )
-                    .onChange(of: thread.messages.count) {
-                        if let last = thread.messages.last {
-                            withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
+                        if model.chatStage != .idle {
+                            pipelineProgress
                         }
                     }
-                    .onChange(of: thread.messages.last?.content) {
-                        if let last = thread.messages.last,
-                           model.chatStage == .generating {
-                            proxy.scrollTo(last.id, anchor: .bottom)
-                        }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .containerRelativeFrame(.horizontal, alignment: .leading)
+                    .padding(.vertical, 24)
+                }
+                .frame(
+                    maxWidth: .infinity,
+                    maxHeight: .infinity,
+                    alignment: .leading
+                )
+                .onChange(of: thread.messages.count) {
+                    if let last = thread.messages.last {
+                        withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
+                    }
+                }
+                .onChange(of: thread.messages.last?.content) {
+                    if let last = thread.messages.last,
+                       model.chatStage == .generating {
+                        proxy.scrollTo(last.id, anchor: .bottom)
                     }
                 }
             }
@@ -475,35 +467,28 @@ private struct ChatScopePicker: View {
 
 private struct ChatBubble: View {
     let message: ChatMessage
-    let viewportWidth: CGFloat
     let isStreaming: Bool
     let streamingStatus: String?
     let onSourceSelected: (ChatSource) -> Void
 
     var body: some View {
-        Group {
+        HStack(alignment: .top, spacing: 0) {
             if message.role == .user {
-                HStack(alignment: .top, spacing: 0) {
-                    Spacer(minLength: 0)
-                    bubble
-                        .frame(
-                            maxWidth: ChatMessageLayoutPolicy.userBubbleMaxWidth(
-                                viewportWidth: viewportWidth
-                            ),
-                            alignment: .trailing
-                        )
-                }
-                .frame(width: messageRowWidth)
-            } else {
-                bubble
-                    .frame(width: messageRowWidth, alignment: .leading)
+                Spacer(minLength: 48)
             }
+            bubble
+                .frame(
+                    maxWidth: message.role == .user
+                        ? ChatMessageLayoutPolicy.maximumUserBubbleWidth
+                        : .infinity,
+                    alignment: .leading
+                )
         }
         .padding(.horizontal, ChatMessageLayoutPolicy.horizontalPadding)
-    }
-
-    private var messageRowWidth: CGFloat {
-        ChatMessageLayoutPolicy.rowWidth(viewportWidth: viewportWidth)
+        .frame(
+            maxWidth: .infinity,
+            alignment: message.role == .user ? .trailing : .leading
+        )
     }
 
     private var bubble: some View {
@@ -516,10 +501,21 @@ private struct ChatBubble: View {
                     ProgressView()
                         .controlSize(.mini)
                 }
+                Spacer(minLength: 8)
+                if !message.content.isEmpty {
+                    Button {
+                        copyMessage()
+                    } label: {
+                        Image(systemName: "doc.on.doc")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .help("Copy message")
+                    .accessibilityLabel("Copy message")
+                }
             }
             if !message.content.isEmpty {
                 Text(.init(message.content))
-                    .textSelection(.enabled)
                     .lineSpacing(4)
             } else if isStreaming {
                 Text(streamingStatus ?? "Starting the local response…")
@@ -580,21 +576,15 @@ private struct ChatBubble: View {
             in: RoundedRectangle(cornerRadius: 14)
         )
     }
+
+    private func copyMessage() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(message.content, forType: .string)
+    }
 }
 
 enum ChatMessageLayoutPolicy {
     static let horizontalPadding: CGFloat = 24
     static let maximumUserBubbleWidth: CGFloat = 720
-
-    static func rowWidth(viewportWidth: CGFloat) -> CGFloat {
-        max(0, viewportWidth - horizontalPadding * 2)
-    }
-
-    static func userBubbleMaxWidth(viewportWidth: CGFloat) -> CGFloat {
-        min(maximumUserBubbleWidth, rowWidth(viewportWidth: viewportWidth))
-    }
-
-    static func userBubbleTrailingEdge(viewportWidth: CGFloat) -> CGFloat {
-        horizontalPadding + rowWidth(viewportWidth: viewportWidth)
-    }
 }

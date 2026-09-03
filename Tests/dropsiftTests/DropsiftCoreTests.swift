@@ -558,27 +558,9 @@ func copyableTranscriptIncludesTitleTimestampsNamesAndCorrections() {
 }
 
 @Test
-func chatUserMessagesStayPinnedToTheViewportTrailingEdge() {
-    #expect(
-        ChatMessageLayoutPolicy.userBubbleTrailingEdge(
-            viewportWidth: 1_600
-        ) == 1_576
-    )
-    #expect(
-        ChatMessageLayoutPolicy.userBubbleMaxWidth(
-            viewportWidth: 1_600
-        ) == 720
-    )
-    #expect(
-        ChatMessageLayoutPolicy.userBubbleTrailingEdge(
-            viewportWidth: 520
-        ) == 496
-    )
-    #expect(
-        ChatMessageLayoutPolicy.userBubbleMaxWidth(
-            viewportWidth: 520
-        ) == 472
-    )
+func chatUserMessagesUseAReadableMaximumWidth() {
+    #expect(ChatMessageLayoutPolicy.horizontalPadding == 24)
+    #expect(ChatMessageLayoutPolicy.maximumUserBubbleWidth == 720)
 }
 
 @Test
