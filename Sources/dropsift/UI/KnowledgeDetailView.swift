@@ -1,4 +1,5 @@
 import AppKit
+import DropsiftShared
 import PDFKit
 import SwiftUI
 
@@ -55,6 +56,7 @@ struct KnowledgeDetailView: View {
     @State private var notes: String
     @State private var selectedSection: KnowledgeDetailSection
     @State private var showingNotesPanel: Bool
+    @State private var copyConfirmation: String?
 
     init(model: AppModel, item: KnowledgeItem) {
         self.model = model
@@ -218,6 +220,13 @@ struct KnowledgeDetailView: View {
 
                 actionsMenu
 
+                if let copyConfirmation {
+                    Label("\(copyConfirmation) copied", systemImage: "checkmark.circle.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.green)
+                        .transition(.opacity)
+                }
+
                 Spacer()
 
                 if item.kind != .note {
@@ -276,6 +285,12 @@ struct KnowledgeDetailView: View {
                 model.summaryGenerationItemID
                     == "knowledge:\(item.id.uuidString)"
             )
+
+            Menu {
+                copyActions
+            } label: {
+                Label("Copy", systemImage: "doc.on.doc")
+            }
 
             Button {
                 NSWorkspace.shared.activateFileViewerSelecting([
@@ -340,6 +355,15 @@ struct KnowledgeDetailView: View {
                 .opacity(sectionIsAvailable(section) ? 1 : 0.42)
             }
             Spacer()
+            Button {
+                copySelectedSection()
+            } label: {
+                Label("Copy", systemImage: "doc.on.doc")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(!selectedSectionCanBeCopied)
+            .help("Copy \(selectedSection.title.lowercased())")
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 8)
@@ -367,6 +391,145 @@ struct KnowledgeDetailView: View {
 
     private func sectionIsAvailable(_ section: KnowledgeDetailSection) -> Bool {
         section != .summary || item.summary != nil
+    }
+
+    @ViewBuilder
+    private var copyActions: some View {
+        copyAction("Everything", value: copyEverythingContent)
+        Divider()
+        copyAction("Title & description", value: titleAndDescriptionContent)
+        copyAction("Summary", value: summaryCopyContent)
+        if item.kind == .note {
+            copyAction("Note", value: content)
+        } else {
+            Button {
+                copyPreview()
+            } label: {
+                Label("Preview", systemImage: "doc.on.doc")
+            }
+            .disabled(!previewCanBeCopied)
+            copyAction("Extracted text", value: extractedTextCopyContent)
+            copyAction("Notes", value: notes)
+        }
+        copyAction("Insights", value: insightsCopyContent)
+    }
+
+    private func copyAction(_ label: String, value: String) -> some View {
+        Button {
+            copyText(value, label: label)
+        } label: {
+            Label(label, systemImage: "doc.on.doc")
+        }
+        .disabled(value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
+
+    private var titleAndDescriptionContent: String {
+        SharedClipboardContent.titleAndDescription(
+            title: title,
+            description: item.generatedDescription
+        )
+    }
+
+    private var summaryCopyContent: String {
+        guard let summary = item.summary else { return "" }
+        return SharedClipboardContent.summary(
+            title: title,
+            summary: summary,
+            includesParticipants: false
+        )
+    }
+
+    private var extractedTextCopyContent: String {
+        SharedClipboardContent.extractedText(
+            title: title,
+            sections: item.blocks.map { ($0.locator, $0.text) }
+        )
+    }
+
+    private var insightsCopyContent: String {
+        SharedClipboardContent.semanticReview(
+            model.semanticReview(for: "knowledge:\(item.id.uuidString)")
+        )
+    }
+
+    private var copyEverythingContent: String {
+        SharedClipboardContent.everything([
+            titleAndDescriptionContent,
+            summaryCopyContent,
+            item.kind == .note ? content : extractedTextCopyContent,
+            item.kind == .note ? "" : notes,
+            insightsCopyContent,
+        ])
+    }
+
+    private var selectedSectionCanBeCopied: Bool {
+        if selectedSection == .preview { return previewCanBeCopied }
+        return !selectedSectionCopyContent.isEmpty
+    }
+
+    private var selectedSectionCopyContent: String {
+        switch selectedSection {
+        case .summary: summaryCopyContent
+        case .note: content.trimmingCharacters(in: .whitespacesAndNewlines)
+        case .preview:
+            item.isPDF || item.kind == .image ? "" : extractedTextCopyContent
+        case .extractedText: extractedTextCopyContent
+        case .insights: insightsCopyContent
+        }
+    }
+
+    private var previewCanBeCopied: Bool {
+        if item.isPDF || item.kind == .image {
+            return item.assetURL != nil
+        }
+        return !extractedTextCopyContent.isEmpty
+    }
+
+    private func copySelectedSection() {
+        if selectedSection == .preview {
+            copyPreview()
+        } else {
+            copyText(selectedSectionCopyContent, label: selectedSection.title)
+        }
+    }
+
+    private func copyPreview() {
+        if item.kind == .image,
+           let url = item.assetURL,
+           let image = NSImage(contentsOf: url) {
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.writeObjects([image])
+            showCopyConfirmation("Image")
+        } else if item.isPDF, let url = item.assetURL {
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.writeObjects([url as NSURL])
+            showCopyConfirmation("PDF")
+        } else {
+            copyText(extractedTextCopyContent, label: "Preview")
+        }
+    }
+
+    private func copyText(_ value: String, label: String) {
+        let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(value, forType: .string)
+        showCopyConfirmation(label)
+    }
+
+    private func showCopyConfirmation(_ label: String) {
+        withAnimation(.easeInOut(duration: 0.15)) {
+            copyConfirmation = label
+        }
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            withAnimation(.easeInOut(duration: 0.15)) {
+                copyConfirmation = nil
+            }
+        }
     }
 
     @ViewBuilder
@@ -483,6 +646,14 @@ struct KnowledgeDetailView: View {
                 )
                 .font(.headline)
                 Spacer()
+                Button {
+                    copyText(notes, label: "Notes")
+                } label: {
+                    Image(systemName: "doc.on.doc")
+                }
+                .buttonStyle(.borderless)
+                .disabled(notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .help("Copy all item notes")
                 Label("Autosaved", systemImage: "icloud")
                     .font(.caption)
                     .foregroundStyle(.secondary)

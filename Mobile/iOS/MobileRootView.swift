@@ -1,5 +1,6 @@
 import DropsiftShared
 import SwiftUI
+import UIKit
 
 struct MobileRootView: View {
     @ObservedObject var model: MobileAppModel
@@ -748,6 +749,7 @@ private struct MobileEntityEditor: View {
 struct MobileSemanticInsightsView: View {
     @ObservedObject var model: MobileAppModel
     let sourceID: String
+    @State private var copied = false
 
     private var review: SharedSemanticReview? {
         model.semanticReview(for: sourceID)
@@ -759,6 +761,25 @@ struct MobileSemanticInsightsView: View {
                 Label("Tasks & details", systemImage: "wand.and.stars")
                     .font(.headline)
                 Spacer()
+                if let review, !review.candidates.isEmpty {
+                    Button {
+                        let value = SharedClipboardContent.semanticReview(review)
+                        guard !value.isEmpty else { return }
+                        UIPasteboard.general.string = value
+                        withAnimation(.easeInOut(duration: 0.15)) {
+                            copied = true
+                        }
+                        Task {
+                            try? await Task.sleep(for: .seconds(2))
+                            withAnimation(.easeInOut(duration: 0.15)) {
+                                copied = false
+                            }
+                        }
+                    } label: {
+                        Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                    }
+                    .accessibilityLabel("Copy tasks and details")
+                }
                 if model.semanticProcessingSourceID == sourceID {
                     ProgressView()
                         .controlSize(.small)

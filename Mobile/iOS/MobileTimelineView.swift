@@ -479,6 +479,7 @@ private struct MobileKnowledgeDetail: View {
     @State private var title: String
     @State private var content: String
     @State private var notes: String
+    @State private var copyConfirmation: String?
 
     init(model: MobileAppModel, item: SharedKnowledgeItem) {
         self.model = model
@@ -491,8 +492,21 @@ private struct MobileKnowledgeDetail: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                TextField("Title", text: $title)
-                    .font(.title2.bold())
+                HStack {
+                    TextField("Title", text: $title)
+                        .font(.title2.bold())
+                    Menu {
+                        knowledgeCopyActions
+                    } label: {
+                        Label("Copy", systemImage: "doc.on.doc")
+                    }
+                }
+
+                if let copyConfirmation {
+                    Label("\(copyConfirmation) copied", systemImage: "checkmark.circle.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.green)
+                }
 
                 if !item.generatedDescription.isEmpty {
                     Text(item.generatedDescription)
@@ -511,8 +525,12 @@ private struct MobileKnowledgeDetail: View {
 
                 if item.kind == .note {
                     VStack(alignment: .leading, spacing: 7) {
-                        Text("Note")
-                            .font(.headline)
+                        HStack {
+                            Text("Note")
+                                .font(.headline)
+                            Spacer()
+                            copyButton(value: content, label: "Note")
+                        }
                         TextEditor(text: $content)
                             .frame(minHeight: 300)
                             .font(.body.monospaced())
@@ -521,15 +539,26 @@ private struct MobileKnowledgeDetail: View {
                     }
                 } else {
                     DisclosureGroup("Extracted text") {
-                        Text(item.extractedText.isEmpty ? "No text extracted." : item.extractedText)
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.top, 8)
+                        VStack(alignment: .leading, spacing: 8) {
+                            copyButton(
+                                value: extractedTextCopyContent,
+                                label: "Extracted text"
+                            )
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                            Text(item.extractedText.isEmpty ? "No text extracted." : item.extractedText)
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .padding(.top, 8)
                     }
 
                     VStack(alignment: .leading, spacing: 7) {
-                        Text("Additional notes")
-                            .font(.headline)
+                        HStack {
+                            Text("Additional notes")
+                                .font(.headline)
+                            Spacer()
+                            copyButton(value: notes, label: "Notes")
+                        }
                         TextEditor(text: $notes)
                             .frame(minHeight: 150)
                             .padding(8)
@@ -563,8 +592,12 @@ private struct MobileKnowledgeDetail: View {
     private var summaryCard: some View {
         if let summary = item.summary {
             VStack(alignment: .leading, spacing: 12) {
-                Label("Summary", systemImage: "text.page")
-                    .font(.headline)
+                HStack {
+                    Label("Summary", systemImage: "text.page")
+                        .font(.headline)
+                    Spacer()
+                    copyButton(value: summaryCopyContent, label: "Summary")
+                }
                 Text(summary.overview)
                 MobileSummarySection(title: "Topics", values: summary.topics)
                 MobileSummarySection(
@@ -585,6 +618,127 @@ private struct MobileKnowledgeDetail: View {
                 .secondary.opacity(0.07),
                 in: RoundedRectangle(cornerRadius: 14)
             )
+        }
+    }
+
+    @ViewBuilder
+    private var knowledgeCopyActions: some View {
+        copyMenuAction("Everything", value: copyEverythingContent)
+        Divider()
+        copyMenuAction("Title & description", value: titleAndDescriptionContent)
+        copyMenuAction("Summary", value: summaryCopyContent)
+        if item.kind == .note {
+            copyMenuAction("Note", value: content)
+        } else {
+            Button {
+                copyPreview()
+            } label: {
+                Label("Preview", systemImage: "doc.on.doc")
+            }
+            .disabled(!previewCanBeCopied)
+            copyMenuAction("Extracted text", value: extractedTextCopyContent)
+            copyMenuAction("Notes", value: notes)
+        }
+        copyMenuAction("Insights", value: insightsCopyContent)
+    }
+
+    private func copyMenuAction(_ label: String, value: String) -> some View {
+        Button {
+            copyText(value, label: label)
+        } label: {
+            Label(label, systemImage: "doc.on.doc")
+        }
+        .disabled(value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
+
+    private func copyButton(value: String, label: String) -> some View {
+        Button {
+            copyText(value, label: label)
+        } label: {
+            Image(systemName: "doc.on.doc")
+        }
+        .disabled(value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        .accessibilityLabel("Copy \(label.lowercased())")
+    }
+
+    private var titleAndDescriptionContent: String {
+        SharedClipboardContent.titleAndDescription(
+            title: title,
+            description: item.generatedDescription
+        )
+    }
+
+    private var summaryCopyContent: String {
+        guard let summary = item.summary else { return "" }
+        return SharedClipboardContent.summary(
+            title: title,
+            summary: summary,
+            includesParticipants: false
+        )
+    }
+
+    private var extractedTextCopyContent: String {
+        SharedClipboardContent.extractedText(
+            title: title,
+            sections: item.blocks.map { ($0.locator, $0.text) }
+        )
+    }
+
+    private var insightsCopyContent: String {
+        SharedClipboardContent.semanticReview(
+            model.semanticReview(for: "knowledge:\(item.id.uuidString)")
+        )
+    }
+
+    private var copyEverythingContent: String {
+        SharedClipboardContent.everything([
+            titleAndDescriptionContent,
+            summaryCopyContent,
+            item.kind == .note ? content : extractedTextCopyContent,
+            item.kind == .note ? "" : notes,
+            insightsCopyContent,
+        ])
+    }
+
+    private var previewCanBeCopied: Bool {
+        if item.kind == .image
+            || item.assetURL?.pathExtension.lowercased() == "pdf" {
+            return item.assetURL != nil
+        }
+        return !extractedTextCopyContent.isEmpty
+    }
+
+    private func copyPreview() {
+        if item.kind == .image,
+           let url = item.assetURL,
+           let image = UIImage(contentsOfFile: url.path) {
+            UIPasteboard.general.image = image
+            showCopyConfirmation("Image")
+        } else if item.assetURL?.pathExtension.lowercased() == "pdf",
+                  let url = item.assetURL {
+            UIPasteboard.general.url = url
+            showCopyConfirmation("PDF")
+        } else {
+            copyText(extractedTextCopyContent, label: "Preview")
+        }
+    }
+
+    private func copyText(_ value: String, label: String) {
+        let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return }
+        UIPasteboard.general.string = value
+        showCopyConfirmation(label)
+    }
+
+    private func showCopyConfirmation(_ label: String) {
+        withAnimation(.easeInOut(duration: 0.15)) {
+            copyConfirmation = label
+        }
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            withAnimation(.easeInOut(duration: 0.15)) {
+                copyConfirmation = nil
+            }
         }
     }
 
@@ -624,7 +778,7 @@ private struct MobileRecordingDetail: View {
     @State private var speakerNames: [String: String]
     @State private var showingSpeakerEditor = false
     @State private var correctionDraft: MobileTerminologyCorrectionDraft?
-    @State private var transcriptCopied = false
+    @State private var copyConfirmation: String?
     @StateObject private var playback = MobileRecordingPlayer()
 
     init(model: MobileAppModel, recording: SharedRecordingItem) {
@@ -651,6 +805,20 @@ private struct MobileRecordingDetail: View {
                         )
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        Menu {
+                            recordingCopyActions
+                        } label: {
+                            Label("Copy", systemImage: "doc.on.doc")
+                        }
+                        .font(.subheadline)
+                        if let copyConfirmation {
+                            Label(
+                                "\(copyConfirmation) copied",
+                                systemImage: "checkmark.circle.fill"
+                            )
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.green)
+                        }
                     }
 
                     playbackControls
@@ -682,12 +850,11 @@ private struct MobileRecordingDetail: View {
                                 .font(.subheadline)
                             }
                             Menu {
-                                Button {
-                                    copyTranscript()
+                                Menu {
+                                    recordingCopyActions
                                 } label: {
-                                    Label("Copy transcript", systemImage: "doc.on.doc")
+                                    Label("Copy", systemImage: "doc.on.doc")
                                 }
-                                .disabled(recording.copyableTranscript.isEmpty)
 
                                 Divider()
 
@@ -711,12 +878,6 @@ private struct MobileRecordingDetail: View {
                                 Label("Actions", systemImage: "ellipsis.circle")
                             }
                             .font(.subheadline)
-                        }
-                        if transcriptCopied {
-                            Label("Transcript copied", systemImage: "checkmark.circle.fill")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.green)
-                                .transition(.opacity)
                         }
                         if let segments = recording.transcript?.segments,
                            !segments.isEmpty {
@@ -752,8 +913,12 @@ private struct MobileRecordingDetail: View {
                     }
 
                     VStack(alignment: .leading, spacing: 7) {
-                        Text("Additional notes")
-                            .font(.headline)
+                        HStack {
+                            Text("Additional notes")
+                                .font(.headline)
+                            Spacer()
+                            copyButton(value: notes, label: "Notes")
+                        }
                         TextEditor(text: $notes)
                             .frame(minHeight: 150)
                             .padding(8)
@@ -850,8 +1015,12 @@ private struct MobileRecordingDetail: View {
     private var summaryCard: some View {
         if let summary = recording.summary {
             VStack(alignment: .leading, spacing: 12) {
-                Label("Meeting summary", systemImage: "text.page")
-                    .font(.headline)
+                HStack {
+                    Label("Meeting summary", systemImage: "text.page")
+                        .font(.headline)
+                    Spacer()
+                    copyButton(value: summaryCopyContent, label: "Summary")
+                }
                 Text(summary.overview)
                 MobileSummarySection(
                     title: "Participants (\(summary.participantCount))",
@@ -899,17 +1068,79 @@ private struct MobileRecordingDetail: View {
         )
     }
 
-    private func copyTranscript() {
-        let value = recording.copyableTranscript
+    @ViewBuilder
+    private var recordingCopyActions: some View {
+        copyMenuAction("Everything", value: copyEverythingContent)
+        Divider()
+        copyMenuAction("Title & description", value: titleAndDescriptionContent)
+        copyMenuAction("Summary", value: summaryCopyContent)
+        copyMenuAction("Transcript", value: recording.copyableTranscript)
+        copyMenuAction("Notes", value: notes)
+        copyMenuAction("Insights", value: insightsCopyContent)
+    }
+
+    private func copyMenuAction(_ label: String, value: String) -> some View {
+        Button {
+            copyText(value, label: label)
+        } label: {
+            Label(label, systemImage: "doc.on.doc")
+        }
+        .disabled(value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
+
+    private func copyButton(value: String, label: String) -> some View {
+        Button {
+            copyText(value, label: label)
+        } label: {
+            Image(systemName: "doc.on.doc")
+        }
+        .disabled(value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        .accessibilityLabel("Copy \(label.lowercased())")
+    }
+
+    private var titleAndDescriptionContent: String {
+        SharedClipboardContent.titleAndDescription(
+            title: recording.title,
+            description: recording.generatedDescription
+        )
+    }
+
+    private var summaryCopyContent: String {
+        guard let summary = recording.summary else { return "" }
+        return SharedClipboardContent.summary(
+            title: recording.title,
+            summary: summary,
+            includesParticipants: true
+        )
+    }
+
+    private var insightsCopyContent: String {
+        SharedClipboardContent.semanticReview(
+            model.semanticReview(for: "recording:\(recording.id)")
+        )
+    }
+
+    private var copyEverythingContent: String {
+        SharedClipboardContent.everything([
+            titleAndDescriptionContent,
+            summaryCopyContent,
+            recording.copyableTranscript,
+            notes,
+            insightsCopyContent,
+        ])
+    }
+
+    private func copyText(_ value: String, label: String) {
+        let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else { return }
         UIPasteboard.general.string = value
         withAnimation(.easeInOut(duration: 0.15)) {
-            transcriptCopied = true
+            copyConfirmation = label
         }
         Task {
             try? await Task.sleep(for: .seconds(2))
             withAnimation(.easeInOut(duration: 0.15)) {
-                transcriptCopied = false
+                copyConfirmation = nil
             }
         }
     }

@@ -585,6 +585,66 @@ func copyableTranscriptIncludesTitleTimestampsNamesAndCorrections() {
 }
 
 @Test
+func clipboardContentFormatsSummariesExtractedTextAndInsights() {
+    let summary = RecordingSummary(
+        overview: "The team approved the integration plan.",
+        participantCount: 2,
+        participants: ["Davide", "Dario"],
+        topics: ["QVAC integration"],
+        decisions: ["Use the shared schema"],
+        actionItems: ["Davide will schedule validation"],
+        sourceRevision: "revision",
+        model: "Qwen3.5 4B"
+    )
+    let summaryText = SharedClipboardContent.summary(
+        title: "Fineco planning",
+        summary: summary,
+        includesParticipants: true
+    )
+    #expect(summaryText.contains("Participants (2)\n- Davide\n- Dario"))
+    #expect(summaryText.contains("Decisions\n- Use the shared schema"))
+
+    let extracted = SharedClipboardContent.extractedText(
+        title: "Proposal",
+        sections: [
+            ("Page 1", "Executive overview"),
+            ("Page 2", "Commercial terms"),
+        ]
+    )
+    #expect(
+        extracted
+            == "Proposal\n\nPage 1\nExecutive overview\n\nPage 2\nCommercial terms"
+    )
+
+    let source = SharedSemanticSourceReference(
+        itemID: "recording:1",
+        title: "Fineco planning",
+        locator: "Transcript · 2:10",
+        excerpt: "Davide will schedule validation."
+    )
+    let review = SharedSemanticReview(
+        sourceID: source.itemID,
+        sourceRevision: "revision",
+        sourceTitle: source.title,
+        source: source,
+        candidates: [
+            SharedSemanticCandidate(
+                task: SharedTaskDraft(
+                    title: "Schedule validation",
+                    description: "Coordinate with engineering",
+                    priority: .high
+                ),
+                evidence: source.excerpt
+            ),
+        ]
+    )
+    let insights = SharedClipboardContent.semanticReview(review)
+    #expect(insights.contains("Things to do\n- Schedule validation"))
+    #expect(insights.contains("High priority"))
+    #expect(insights.contains("Evidence: Davide will schedule validation."))
+}
+
+@Test
 func chatUserMessagesUseAReadableMaximumWidth() {
     #expect(ChatMessageLayoutPolicy.horizontalPadding == 24)
     #expect(ChatMessageLayoutPolicy.maximumUserBubbleWidth == 720)

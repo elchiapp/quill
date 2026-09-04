@@ -38,7 +38,7 @@ struct RecordingDetailView: View {
     @State private var selectedSection = RecordingDetailSection.transcript
     @State private var splitSegment: TranscriptDocument.Segment?
     @State private var correctionDraft: TerminologyCorrectionDraft?
-    @State private var transcriptCopied = false
+    @State private var copyConfirmation: String?
 
     init(model: AppModel, recording: RecordingItem) {
         self.model = model
@@ -260,8 +260,8 @@ struct RecordingDetailView: View {
                 recordingControl
                 actionsMenu
 
-                if transcriptCopied {
-                    Label("Transcript copied", systemImage: "checkmark.circle.fill")
+                if let copyConfirmation {
+                    Label("\(copyConfirmation) copied", systemImage: "checkmark.circle.fill")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.green)
                         .transition(.opacity)
@@ -388,12 +388,11 @@ struct RecordingDetailView: View {
                 )
             }
 
-            Button {
-                copyTranscript()
+            Menu {
+                copyActions
             } label: {
-                Label("Copy transcript", systemImage: "doc.on.doc")
+                Label("Copy", systemImage: "doc.on.doc")
             }
-            .disabled(recording.copyableTranscript.isEmpty)
 
             Divider()
 
@@ -428,21 +427,73 @@ struct RecordingDetailView: View {
         .help("Recording actions")
     }
 
-    private func copyTranscript() {
-        let value = recording.copyableTranscript
+    @ViewBuilder
+    private var copyActions: some View {
+        copyAction("Everything", value: copyEverythingContent)
+        Divider()
+        copyAction("Title & description", value: titleAndDescriptionContent)
+        copyAction("Summary", value: summaryCopyContent)
+        copyAction("Transcript", value: recording.copyableTranscript)
+        copyAction("Notes", value: notes)
+        copyAction("Insights", value: insightsCopyContent)
+    }
+
+    private func copyAction(_ label: String, value: String) -> some View {
+        Button {
+            copyText(value, label: label)
+        } label: {
+            Label(label, systemImage: "doc.on.doc")
+        }
+        .disabled(value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
+
+    private func copyText(_ value: String, label: String) {
+        let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else { return }
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(value, forType: .string)
         withAnimation(.easeInOut(duration: 0.15)) {
-            transcriptCopied = true
+            copyConfirmation = label
         }
         Task {
             try? await Task.sleep(for: .seconds(2))
             withAnimation(.easeInOut(duration: 0.15)) {
-                transcriptCopied = false
+                copyConfirmation = nil
             }
         }
+    }
+
+    private var titleAndDescriptionContent: String {
+        SharedClipboardContent.titleAndDescription(
+            title: title,
+            description: recording.generatedDescription
+        )
+    }
+
+    private var summaryCopyContent: String {
+        guard let summary = recording.summary else { return "" }
+        return SharedClipboardContent.summary(
+            title: title,
+            summary: summary,
+            includesParticipants: true
+        )
+    }
+
+    private var insightsCopyContent: String {
+        SharedClipboardContent.semanticReview(
+            model.semanticReview(for: "recording:\(recording.id)")
+        )
+    }
+
+    private var copyEverythingContent: String {
+        SharedClipboardContent.everything([
+            titleAndDescriptionContent,
+            summaryCopyContent,
+            recording.copyableTranscript,
+            notes,
+            insightsCopyContent,
+        ])
     }
 
     @ViewBuilder
@@ -524,6 +575,15 @@ struct RecordingDetailView: View {
                 .opacity(sectionIsAvailable(section) ? 1 : 0.42)
             }
             Spacer()
+            Button {
+                copySelectedSection()
+            } label: {
+                Label("Copy", systemImage: "doc.on.doc")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(selectedSectionCopyContent.isEmpty)
+            .help("Copy \(selectedSection.title.lowercased())")
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 8)
@@ -549,6 +609,18 @@ struct RecordingDetailView: View {
 
     private func sectionIsAvailable(_ section: RecordingDetailSection) -> Bool {
         section != .summary || recording.summary != nil
+    }
+
+    private var selectedSectionCopyContent: String {
+        switch selectedSection {
+        case .summary: summaryCopyContent
+        case .transcript: recording.copyableTranscript
+        case .insights: insightsCopyContent
+        }
+    }
+
+    private func copySelectedSection() {
+        copyText(selectedSectionCopyContent, label: selectedSection.title)
     }
 
     private var insightsContent: some View {
@@ -675,6 +747,14 @@ struct RecordingDetailView: View {
                 Label("Notes about this recording", systemImage: "note.text")
                     .font(.headline)
                 Spacer()
+                Button {
+                    copyText(notes, label: "Notes")
+                } label: {
+                    Image(systemName: "doc.on.doc")
+                }
+                .buttonStyle(.borderless)
+                .disabled(notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .help("Copy all recording notes")
                 Label("Autosaved", systemImage: "icloud")
                     .font(.caption)
                     .foregroundStyle(.secondary)
