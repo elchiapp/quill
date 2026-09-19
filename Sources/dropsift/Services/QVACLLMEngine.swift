@@ -77,6 +77,7 @@ actor QVACLLMEngine {
                 "prepareLLM",
                 params: QVACBridgeParams(
                     modelSize: Self.modelSize(selectedPlan.model),
+                    modelID: selectedPlan.model.id,
                     contextTokens: selectedPlan.contextTokens
                 ),
                 onEvent: { event in

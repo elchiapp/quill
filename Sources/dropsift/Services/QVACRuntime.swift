@@ -8,6 +8,7 @@ struct QVACBridgeMessage: Codable, Sendable {
 
 struct QVACBridgeParams: Codable, Sendable {
     var modelSize: String?
+    var modelID: String?
     var contextTokens: Int?
     var systemPrompt: String?
     var messages: [QVACBridgeMessage]?
@@ -18,6 +19,7 @@ struct QVACBridgeParams: Codable, Sendable {
 
     init(
         modelSize: String? = nil,
+        modelID: String? = nil,
         contextTokens: Int? = nil,
         systemPrompt: String? = nil,
         messages: [QVACBridgeMessage]? = nil,
@@ -27,6 +29,7 @@ struct QVACBridgeParams: Codable, Sendable {
         imagePath: String? = nil
     ) {
         self.modelSize = modelSize
+        self.modelID = modelID
         self.contextTokens = contextTokens
         self.systemPrompt = systemPrompt
         self.messages = messages

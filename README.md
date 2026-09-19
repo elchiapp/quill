@@ -209,10 +209,10 @@ finishes with the fallback `them` label and records the failure in
 Inference is part of DropSift itself. Desktop Settings has a persistent,
 hot-swappable **AI backend** control:
 
-- **Apple native** runs current Qwen3.5/Qwen3.6 models with MLX Swift,
+- **Apple native** runs current Qwen3.5/Qwen3.6/Qwen3.8 models with MLX Swift,
   multilingual Parakeet transcription with FluidAudio, offline VBx speaker
   diarization, and Apple Vision OCR.
-- **QVAC** runs Qwen through QVAC's llama.cpp plugin, multilingual Parakeet
+- **QVAC** runs Qwen3.5/Qwen3.6/Qwen3.8 through QVAC's llama.cpp plugin, multilingual Parakeet
   TDT transcription through Metal, Sortformer speaker diarization, and QVAC OCR.
   DropSift starts and stops its packaged Bare/QVAC child runtime itself; no
   terminal command, localhost server, or separately installed QVAC app is
@@ -225,7 +225,8 @@ Models for each backend use separate caches and download on first use.
 
 The conservative language-model default is `Qwen3.5 2B` at 4-bit. DropSift
 detects the chip, CPU count, and unified memory, then offers a stronger 4B, 9B,
-27B, or 35B-A3B model when appropriate.
+27B, or 35B-A3B model when appropriate. The latest Qwen3.8 27B option uses the
+MLX Community 4-bit Apple-silicon conversion.
 
 For every model, DropSift:
 
@@ -299,7 +300,7 @@ dropsift install --uninstall
 - **AVAudioEngine** — mic capture
 - **AVAudioFile** — streaming AAC encode into CAF
 - **FluidAudio / Parakeet** — on-device Core ML transcription
-- **MLX Swift LM / Qwen3.5 + Qwen3.6 4-bit** — hardware-aware, in-process local inference
+- **MLX Swift LM / Qwen3.5 + Qwen3.6 + Qwen3.8 4-bit** — hardware-aware, in-process local inference
 - **PDFKit + Vision** — page-aware PDF extraction and local image OCR
 - **SwiftUI + AppKit** — capture canvas, unified timeline, previews, and chat
 - **NSStatusItem** — quick recording controls alongside the full window

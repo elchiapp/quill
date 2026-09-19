@@ -1152,7 +1152,7 @@ func deviceRecommendationsStayWithinHalfOfUnifiedMemory() {
     let expected = [
         "mlx-community/Qwen3.5-2B-4bit",
         "mlx-community/Qwen3.5-9B-4bit",
-        "mlx-community/Qwen3.6-35B-A3B-4bit",
+        "mlx-community/Qwen3.8-27B-4bit",
     ]
 
     for (profile, expectedID) in zip(profiles, expected) {
@@ -1165,6 +1165,25 @@ func deviceRecommendationsStayWithinHalfOfUnifiedMemory() {
         #expect(recommendation.contextTokens <= recommendation.model.nativeContextTokens)
         #expect(recommendation.contextTokens >= 131_072)
     }
+}
+
+@Test
+func qwenThreeEightUsesOfficialMLXQuantAndFullNativeContext() throws {
+    let model = try #require(
+        AIModelCatalog.models.first { $0.name == "Qwen3.8 27B" }
+    )
+    #expect(model.id == "mlx-community/Qwen3.8-27B-4bit")
+    #expect(model.downloadBytes == 16_074_530_674)
+    #expect(model.nativeContextTokens == 262_144)
+
+    let profile = DeviceProfile(
+        chipName: "Test 128 GB",
+        totalMemoryBytes: 128 * DeviceProfile.gibibyte,
+        processorCount: 16
+    )
+    let plan = AIModelCatalog.plan(for: model, device: profile)
+    #expect(plan.fitsMemoryBudget)
+    #expect(plan.contextTokens == 262_144)
 }
 
 @Test

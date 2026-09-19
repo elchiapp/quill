@@ -5,6 +5,7 @@ import {
   QWEN3_5_9B_MULTIMODAL_Q4_K_M,
   QWEN3_6_27B_MULTIMODAL_Q4_K_XL,
   QWEN3_6_35B_A3B_MULTIMODAL_Q4_K_M,
+  QWEN3_8_27B_MULTIMODAL_UD_Q4_K_XL,
   PARAKEET_TDT_0_6B_V3_Q8_0,
   PARAKEET_SORTFORMER_4SPK_V2_1_Q8_0,
   OCR_LATIN,
@@ -49,6 +50,15 @@ const llmModels = {
   '9B': QWEN3_5_9B_MULTIMODAL_Q4_K_M,
   '27B': QWEN3_6_27B_MULTIMODAL_Q4_K_XL,
   '35B': QWEN3_6_35B_A3B_MULTIMODAL_Q4_K_M
+}
+
+const llmModelsById = {
+  'mlx-community/Qwen3.5-2B-4bit': QWEN3_5_2B_MULTIMODAL_Q4_K_M,
+  'mlx-community/Qwen3.5-4B-4bit': QWEN3_5_4B_MULTIMODAL_Q4_K_M,
+  'mlx-community/Qwen3.5-9B-4bit': QWEN3_5_9B_MULTIMODAL_Q4_K_M,
+  'mlx-community/Qwen3.6-27B-4bit': QWEN3_6_27B_MULTIMODAL_Q4_K_XL,
+  'mlx-community/Qwen3.6-35B-A3B-4bit': QWEN3_6_35B_A3B_MULTIMODAL_Q4_K_M,
+  'mlx-community/Qwen3.8-27B-4bit': QWEN3_8_27B_MULTIMODAL_UD_Q4_K_XL
 }
 
 function send (value) {
@@ -117,7 +127,9 @@ async function unload (kind) {
 }
 
 async function prepareLLM (id, params) {
-  const requested = llmModels[params.modelSize] ?? llmModels['2B']
+  const requested = llmModelsById[params.modelID] ??
+    llmModels[params.modelSize] ??
+    llmModels['2B']
   await prepareModel(
     'llm',
     id,
@@ -301,7 +313,7 @@ async function handle (request) {
   try {
     switch (method) {
       case 'ping':
-        send({ id, type: 'result', text: 'QVAC 0.17.1 ready' })
+        send({ id, type: 'result', text: 'QVAC 0.18.2 ready' })
         break
       case 'prepareLLM':
         await prepareLLM(id, params)

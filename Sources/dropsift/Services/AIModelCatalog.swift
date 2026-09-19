@@ -159,7 +159,17 @@ enum AIModelCatalog {
             nativeContextTokens: 262_144,
             kvBytesPerToken: 12_288,
             minimumDeviceMemoryBytes: 64 * gb,
-            detail: "Current high-end MoE model with strong quality and fast decoding."
+            detail: "High-end MoE model with strong quality and fast decoding."
+        ),
+        BuiltInModel(
+            id: "mlx-community/Qwen3.8-27B-4bit",
+            name: "Qwen3.8 27B",
+            parameterLabel: "27B",
+            downloadBytes: 16_074_530_674,
+            nativeContextTokens: 262_144,
+            kvBytesPerToken: 39_322,
+            minimumDeviceMemoryBytes: 64 * gb,
+            detail: "Latest dense Qwen model, optimized for Apple silicon with MLX."
         ),
     ]
 
