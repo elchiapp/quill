@@ -13,8 +13,8 @@ settings:
     DEVELOPMENT_TEAM: MLH5T4W793
     SWIFT_VERSION: "6.0"
     ENABLE_USER_SCRIPT_SANDBOXING: YES
-    CURRENT_PROJECT_VERSION: 2026091902
-    MARKETING_VERSION: 1.0.53
+    CURRENT_PROJECT_VERSION: 2026091903
+    MARKETING_VERSION: 1.0.54
 packages:
   DropsiftShared:
     path: ../Shared
@@ -26,6 +26,8 @@ targets:
       path: iOS/Info.plist
       properties:
         CFBundleDisplayName: DropSift
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         ITSAppUsesNonExemptEncryption: false
         LSSupportsOpeningDocumentsInPlace: true
         NSMicrophoneUsageDescription: DropSift records voice messages you choose to capture.
@@ -63,6 +65,8 @@ targets:
       path: Watch/Info.plist
       properties:
         CFBundleDisplayName: DropSift
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         ITSAppUsesNonExemptEncryption: false
         NSMicrophoneUsageDescription: DropSift records voice messages you choose to capture.
         UIBackgroundModes:
