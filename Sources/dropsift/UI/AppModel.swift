@@ -1934,12 +1934,9 @@ final class AppModel: ObservableObject {
         aiDownloadSmoothedSpeed = 0
     }
 
-    func keepConservativeModel() {
+    func keepSelectedModel() {
         markRecommendationHandled()
         showingModelRecommendation = false
-        if selectedModelID != AIModelCatalog.defaultModel.id {
-            selectModel(AIModelCatalog.defaultModel.id, downloadAndUse: false)
-        }
     }
 
     private func clearPausedModelDownload() {

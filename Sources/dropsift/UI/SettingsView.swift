@@ -421,6 +421,10 @@ struct ModelRecommendationView: View {
         model.recommendedModelPlan
     }
 
+    private var selectedModelName: String {
+        model.selectedModelPlan.model.name
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             HStack(spacing: 14) {
@@ -435,9 +439,10 @@ struct ModelRecommendationView: View {
                 }
             }
 
-            Text(
-                "DropSift starts conservatively with Qwen3.5 2B. Based on this Mac, the recommended option is \(recommendation.model.name)."
-            )
+            Text(ModelRecommendationCopy.message(
+                selectedModelName: selectedModelName,
+                recommendedModelName: recommendation.model.name
+            ))
 
             HStack(spacing: 12) {
                 metric(
@@ -463,7 +468,11 @@ struct ModelRecommendationView: View {
             HStack {
                 Button("Review all models") { model.reviewModelChoices() }
                 Spacer()
-                Button("Keep Qwen3.5 2B") { model.keepConservativeModel() }
+                Button(ModelRecommendationCopy.keepButtonTitle(
+                    selectedModelName: selectedModelName
+                )) {
+                    model.keepSelectedModel()
+                }
                 Button("Use \(recommendation.model.name)") {
                     model.useRecommendedModel()
                 }
@@ -488,5 +497,18 @@ struct ModelRecommendationView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
         .background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+enum ModelRecommendationCopy {
+    static func message(
+        selectedModelName: String,
+        recommendedModelName: String
+    ) -> String {
+        "DropSift is currently using \(selectedModelName). Based on this Mac, the recommended option is \(recommendedModelName)."
+    }
+
+    static func keepButtonTitle(selectedModelName: String) -> String {
+        "Keep \(selectedModelName)"
     }
 }

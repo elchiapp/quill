@@ -1187,6 +1187,22 @@ func qwenThreeEightUsesOfficialMLXQuantAndFullNativeContext() throws {
 }
 
 @Test
+func modelRecommendationDescribesAndKeepsTheSelectedModel() {
+    #expect(
+        ModelRecommendationCopy.message(
+            selectedModelName: "Qwen3.5 4B",
+            recommendedModelName: "Qwen3.8 27B"
+        )
+            == "DropSift is currently using Qwen3.5 4B. Based on this Mac, the recommended option is Qwen3.8 27B."
+    )
+    #expect(
+        ModelRecommendationCopy.keepButtonTitle(
+            selectedModelName: "Qwen3.5 4B"
+        ) == "Keep Qwen3.5 4B"
+    )
+}
+
+@Test
 func qwenFourBillionModelSupportsFullContextOnThisMac() throws {
     let model = try #require(
         AIModelCatalog.models.first { $0.name == "Qwen3.5 4B" }
