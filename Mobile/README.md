@@ -3,8 +3,11 @@
 ## What is included
 
 - A native SwiftUI iPhone app with Capture, Timeline, and Ask tabs.
-- A native SwiftUI Watch app for one-tap voice-message recording.
+- A native SwiftUI Watch companion with Capture, Timeline, Ask, Tasks, and
+  organized people, places, events, organizations, projects, and topics.
 - Background Watch-to-iPhone file delivery with a durable outgoing queue.
+- Proactive iPhone-to-Watch library sync with a durable cached snapshot, so
+  recent items and summaries remain browsable when the phone is unavailable.
 - One shared on-disk schema used by iPhone, Watch-originated captures, and Mac.
 - On-device iPhone speech recognition, Vision OCR, PDF extraction, playback,
   editing, deletion, filters, local search, local answers, and deep-linked
@@ -74,17 +77,22 @@ reload, a completed sync, and a sync error. Its navigation-bar indicator and
 inline banner expose the current state; empty libraries offer the correct
 Connect or Retry action, and populated timelines support pull-to-refresh.
 
-## Watch delivery lifecycle
+## Watch companion and delivery lifecycle
 
-1. The Watch asynchronously activates a record-only audio session and records
+1. The iPhone publishes recent items, summaries, tasks, and organized entities
+   to the Watch whenever the shared library changes. The Watch caches the most
+   recent snapshot for offline browsing.
+2. Ask requests and task updates use the paired iPhone's local knowledge and AI
+   engine; no private library content is sent to a remote service.
+3. The Watch asynchronously activates an audio session and records
    a mono 16 kHz, 32 kbps AAC `.m4a` in its Application Support directory.
-2. Stopping creates metadata and queues the file with `WCSession.transferFile`.
-3. The iPhone moves the received temporary file into a durable inbox before
+4. Stopping creates metadata and queues the file with `WCSession.transferFile`.
+5. The iPhone moves the received temporary file into a durable inbox before
    the Watch Connectivity callback returns.
-4. The phone imports it as
+6. The phone imports it as
    `Recordings/<timestamp>-mobile-<id>/mic.m4a` plus `meta.json` and
    `title.txt`.
-5. Successful on-device transcription adds the canonical `transcript.json`
+7. Successful on-device transcription adds the canonical `transcript.json`
    and `transcript.md`. Otherwise the Mac detects the unfinished recording and
    completes it with the existing Parakeet pipeline.
 

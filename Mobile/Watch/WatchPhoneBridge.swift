@@ -1,3 +1,4 @@
+import DropsiftShared
 import Foundation
 import WatchConnectivity
 
@@ -5,9 +6,23 @@ import WatchConnectivity
 final class WatchPhoneBridge: NSObject, ObservableObject {
     @Published private(set) var status = "Connecting to iPhone…"
     @Published private(set) var pendingCount = 0
+    @Published private(set) var snapshot = WatchCompanionSnapshot.empty
+    @Published private(set) var isRefreshing = false
+    @Published private(set) var isAsking = false
+    @Published private(set) var answer: WatchCompanionAnswer?
+    @Published private(set) var companionError: String?
+
+    private static let cachedSnapshotKey = "Dropsift.watch.cachedSnapshot"
 
     override init() {
         super.init()
+        if let data = UserDefaults.standard.data(forKey: Self.cachedSnapshotKey),
+           let cached = try? JSONDecoder().decode(
+               WatchCompanionSnapshot.self,
+               from: data
+           ) {
+            snapshot = cached
+        }
         if WCSession.isSupported() {
             WCSession.default.delegate = self
             WCSession.default.activate()
@@ -15,6 +30,101 @@ final class WatchPhoneBridge: NSObject, ObservableObject {
             status = "iPhone transfer unavailable"
         }
         refreshPendingCount()
+    }
+
+    var isPhoneReachable: Bool {
+        WCSession.isSupported() && WCSession.default.isReachable
+    }
+
+    func refreshLibrary() {
+        guard WCSession.default.activationState == .activated else {
+            companionError = "Open DropSift on iPhone to sync."
+            return
+        }
+        guard WCSession.default.isReachable else {
+            companionError = snapshot == .empty
+                ? "Open DropSift on the paired iPhone first."
+                : "Showing the last sync. Open DropSift on iPhone to refresh."
+            return
+        }
+        isRefreshing = true
+        companionError = nil
+        WCSession.default.sendMessage(
+            ["action": "snapshot"],
+            replyHandler: { [weak self] reply in
+                Task { @MainActor in
+                    self?.isRefreshing = false
+                    self?.handleSnapshotReply(reply)
+                }
+            },
+            errorHandler: { [weak self] error in
+                Task { @MainActor in
+                    self?.isRefreshing = false
+                    self?.companionError = error.localizedDescription
+                }
+            }
+        )
+    }
+
+    func ask(_ question: String) {
+        let question = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !question.isEmpty, !isAsking else { return }
+        guard WCSession.default.activationState == .activated,
+              WCSession.default.isReachable
+        else {
+            companionError = "Open DropSift on iPhone to ask your library."
+            return
+        }
+        isAsking = true
+        answer = nil
+        companionError = nil
+        WCSession.default.sendMessage(
+            ["action": "ask", "question": question],
+            replyHandler: { [weak self] reply in
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.isAsking = false
+                    if let data = reply["answer"] as? Data,
+                       let value = try? JSONDecoder().decode(
+                           WatchCompanionAnswer.self,
+                           from: data
+                       ) {
+                        self.answer = value
+                    } else {
+                        self.companionError = reply["error"] as? String
+                            ?? "The iPhone couldn’t answer."
+                    }
+                }
+            },
+            errorHandler: { [weak self] error in
+                Task { @MainActor in
+                    self?.isAsking = false
+                    self?.companionError = error.localizedDescription
+                }
+            }
+        )
+    }
+
+    func toggleTask(_ task: WatchCompanionTask) {
+        guard WCSession.default.activationState == .activated,
+              WCSession.default.isReachable
+        else {
+            companionError = "Open DropSift on iPhone to update tasks."
+            return
+        }
+        WCSession.default.sendMessage(
+            ["action": "toggleTask", "taskID": task.id.uuidString],
+            replyHandler: { [weak self] reply in
+                Task { @MainActor in
+                    self?.handleSnapshotReply(reply)
+                }
+            },
+            errorHandler: { [weak self] error in
+                Task { @MainActor in
+                    self?.companionError = error.localizedDescription
+                }
+            }
+        )
     }
 
     func queue(_ capture: WatchVoiceCapture) {
@@ -76,6 +186,27 @@ final class WatchPhoneBridge: NSObject, ObservableObject {
     private func refreshPendingCount() {
         pendingCount = outgoingFiles().count
     }
+
+    private func handleSnapshotReply(_ reply: [String: Any]) {
+        if let data = reply["snapshot"] as? Data {
+            applySnapshot(data)
+        } else if let error = reply["error"] as? String {
+            companionError = error
+        }
+    }
+
+    private func applySnapshot(_ data: Data) {
+        guard let value = try? JSONDecoder().decode(
+            WatchCompanionSnapshot.self,
+            from: data
+        ) else {
+            companionError = "The iPhone sent an unreadable library update."
+            return
+        }
+        snapshot = value
+        companionError = nil
+        UserDefaults.standard.set(data, forKey: Self.cachedSnapshotKey)
+    }
 }
 
 extension WatchPhoneBridge: WCSessionDelegate {
@@ -90,6 +221,7 @@ extension WatchPhoneBridge: WCSessionDelegate {
                 self?.status = "iPhone unavailable: \(errorMessage)"
             } else {
                 self?.sendPending()
+                self?.refreshLibrary()
             }
         }
     }
@@ -115,6 +247,18 @@ extension WatchPhoneBridge: WCSessionDelegate {
                 status = pendingCount == 0 ? "Saved to iPhone" : "Sending…"
                 sendPending()
             }
+        }
+    }
+
+    nonisolated func session(
+        _ session: WCSession,
+        didReceiveApplicationContext applicationContext: [String: Any]
+    ) {
+        guard let data = applicationContext["dropsiftSnapshot"] as? Data else {
+            return
+        }
+        Task { @MainActor [weak self] in
+            self?.applySnapshot(data)
         }
     }
 }

@@ -19,12 +19,14 @@
 		4E5A4E67556EB50F9FE9B08B /* DropsiftWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1DB96F9353A69E96EDFF9B5 /* DropsiftWatchApp.swift */; };
 		65023D9C5CA7F1FFE84F08E2 /* DropsiftWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 48C4ACBB1476ED1A2EFE4D02 /* DropsiftWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		72EF6FFDF8F0A45C8892579B /* MobileAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AD5C0EB98CB0459FCEC31E6A /* MobileAssets.xcassets */; };
+		81D69ED7F4343E312ABE844D /* WatchRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4312A7EEAFEA731620424C4 /* WatchRootView.swift */; };
 		887E463A622AA0EEC1AF55D1 /* DropsiftShared in Frameworks */ = {isa = PBXBuildFile; productRef = AFE74BFD80735036C7F37703 /* DropsiftShared */; };
 		899129CD94403F09E7FCF061 /* MobileTimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 043B4E5FC47977A5FE7F87BC /* MobileTimelineView.swift */; };
 		A6545AE2492BE5137E2F9FBE /* DropsiftMobileApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09B6825A0A2AE36A42D792F0 /* DropsiftMobileApp.swift */; };
 		BF67C6C67328D70E19A6C9DB /* WatchCaptureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 780BC3C7FDFA7E39BFD5EF32 /* WatchCaptureView.swift */; };
 		C40E57A5204E06580CC2D8F5 /* WatchVoiceRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51D11D50BD257F871DF79FAD /* WatchVoiceRecorder.swift */; };
 		D29D65A5DCE2B868596E8804 /* MobileRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEAE561439C22776E4937DC4 /* MobileRootView.swift */; };
+		DC9A1D4D0AFBB31C5FC9613A /* DropsiftShared in Frameworks */ = {isa = PBXBuildFile; productRef = 4D2AC039978FF6622795E0E8 /* DropsiftShared */; };
 		E068C3D658638A3D5B80EE31 /* MobileCaptureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A603868526502532B50B1C9 /* MobileCaptureView.swift */; };
 		E14C18FFD94093995162E95D /* PhoneWatchBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CE6C79170C18EDCED785668 /* PhoneWatchBridge.swift */; };
 		E3D8E41025EA87304D5AC0E5 /* MobileModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61E8183CE1D9EAA348FE0990 /* MobileModels.swift */; };
@@ -77,6 +79,7 @@
 		9878483958FDF497873FC1C6 /* MobileLibraryLocator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileLibraryLocator.swift; sourceTree = "<group>"; };
 		A68D3AC1D731AB7DE0BB5A1F /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		AD5C0EB98CB0459FCEC31E6A /* MobileAssets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = MobileAssets.xcassets; sourceTree = "<group>"; };
+		B4312A7EEAFEA731620424C4 /* WatchRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchRootView.swift; sourceTree = "<group>"; };
 		BEAE561439C22776E4937DC4 /* MobileRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileRootView.swift; sourceTree = "<group>"; };
 		CEAA175C2EE4D7B95AF9FA9C /* MobileAskView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileAskView.swift; sourceTree = "<group>"; };
 		E1DB96F9353A69E96EDFF9B5 /* DropsiftWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DropsiftWatchApp.swift; sourceTree = "<group>"; };
@@ -84,6 +87,14 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		25F478F64A2B6F6EB866FEE4 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				DC9A1D4D0AFBB31C5FC9613A /* DropsiftShared in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		E613A142C8147D60679B1DC3 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -144,6 +155,7 @@
 				58FA61DAC6B36125D19217CA /* Info.plist */,
 				780BC3C7FDFA7E39BFD5EF32 /* WatchCaptureView.swift */,
 				166B851846212B78B402B1E5 /* WatchPhoneBridge.swift */,
+				B4312A7EEAFEA731620424C4 /* WatchRootView.swift */,
 				51D11D50BD257F871DF79FAD /* WatchVoiceRecorder.swift */,
 			);
 			path = Watch;
@@ -175,6 +187,7 @@
 			buildPhases = (
 				38C113F6BA8469B432B1E740 /* Sources */,
 				A76265FEF8E864D167762AB0 /* Resources */,
+				25F478F64A2B6F6EB866FEE4 /* Frameworks */,
 			);
 			buildRules = (
 			);
@@ -182,6 +195,7 @@
 			);
 			name = DropsiftWatch;
 			packageProductDependencies = (
+				4D2AC039978FF6622795E0E8 /* DropsiftShared */,
 			);
 			productName = DropsiftWatch;
 			productReference = 48C4ACBB1476ED1A2EFE4D02 /* DropsiftWatch.app */;
@@ -297,6 +311,7 @@
 				4E5A4E67556EB50F9FE9B08B /* DropsiftWatchApp.swift in Sources */,
 				BF67C6C67328D70E19A6C9DB /* WatchCaptureView.swift in Sources */,
 				0C0FB86358B55E92D1C39611 /* WatchPhoneBridge.swift in Sources */,
+				81D69ED7F4343E312ABE844D /* WatchRootView.swift in Sources */,
 				C40E57A5204E06580CC2D8F5 /* WatchVoiceRecorder.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -347,7 +362,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 2026091903;
+				CURRENT_PROJECT_VERSION = 2026091904;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = MLH5T4W793;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -368,7 +383,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
-				MARKETING_VERSION = 1.0.54;
+				MARKETING_VERSION = 1.0.55;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -486,7 +501,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 2026091903;
+				CURRENT_PROJECT_VERSION = 2026091904;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = MLH5T4W793;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -501,7 +516,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
-				MARKETING_VERSION = 1.0.54;
+				MARKETING_VERSION = 1.0.55;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -552,6 +567,10 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		4D2AC039978FF6622795E0E8 /* DropsiftShared */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = DropsiftShared;
+		};
 		AFE74BFD80735036C7F37703 /* DropsiftShared */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = DropsiftShared;

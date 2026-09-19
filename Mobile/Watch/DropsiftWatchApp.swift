@@ -7,7 +7,7 @@ struct DropsiftWatchApp: App {
 
     var body: some Scene {
         WindowGroup {
-            WatchCaptureView(recorder: recorder, bridge: bridge)
+            WatchRootView(recorder: recorder, bridge: bridge)
         }
     }
 }

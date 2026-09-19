@@ -1,3 +1,4 @@
+import DropsiftShared
 import Foundation
 import WatchConnectivity
 
@@ -7,12 +8,28 @@ struct WatchInboxEntry: Sendable {
     let metadata: [String: String]
 }
 
+private final class WatchReplyHandler: @unchecked Sendable {
+    private let handler: ([String: Any]) -> Void
+
+    init(_ handler: @escaping ([String: Any]) -> Void) {
+        self.handler = handler
+    }
+
+    func callAsFunction(_ reply: [String: Any]) {
+        handler(reply)
+    }
+}
+
 @MainActor
 final class PhoneWatchBridge: NSObject, ObservableObject {
     @Published private(set) var status = "Looking for Apple Watch…"
     @Published private(set) var pendingCount = 0
 
     var onInboxChanged: (() -> Void)?
+
+    private var snapshotProvider: (() -> WatchCompanionSnapshot)?
+    private var answerProvider: ((String) async -> WatchCompanionAnswer)?
+    private var taskToggleHandler: ((UUID) -> WatchCompanionSnapshot)?
 
     private nonisolated let inboxRoot: URL
 
@@ -33,6 +50,32 @@ final class PhoneWatchBridge: NSObject, ObservableObject {
             WCSession.default.activate()
         } else {
             status = "Watch Connectivity unavailable"
+        }
+    }
+
+    func configureCompanion(
+        snapshot: @escaping () -> WatchCompanionSnapshot,
+        answer: @escaping (String) async -> WatchCompanionAnswer,
+        toggleTask: @escaping (UUID) -> WatchCompanionSnapshot
+    ) {
+        snapshotProvider = snapshot
+        answerProvider = answer
+        taskToggleHandler = toggleTask
+        publishCurrentSnapshot()
+    }
+
+    func publishCurrentSnapshot() {
+        guard WCSession.isSupported(),
+              WCSession.default.activationState == .activated,
+              let snapshot = snapshotProvider?(),
+              let data = try? JSONEncoder().encode(snapshot)
+        else { return }
+        do {
+            try WCSession.default.updateApplicationContext([
+                "dropsiftSnapshot": data,
+            ])
+        } catch {
+            status = "Watch sync pending: \(error.localizedDescription)"
         }
     }
 
@@ -120,6 +163,7 @@ extension PhoneWatchBridge: WCSessionDelegate {
                 self?.status = "Watch unavailable: \(errorMessage)"
             } else if watchReady {
                 self?.status = "Apple Watch connected"
+                self?.publishCurrentSnapshot()
             } else {
                 self?.status = "Install DropSift on your Apple Watch"
             }
@@ -134,5 +178,63 @@ extension PhoneWatchBridge: WCSessionDelegate {
 
     nonisolated func session(_ session: WCSession, didReceive file: WCSessionFile) {
         receive(file)
+    }
+
+    nonisolated func session(
+        _ session: WCSession,
+        didReceiveMessage message: [String: Any],
+        replyHandler: @escaping ([String: Any]) -> Void
+    ) {
+        let action = message["action"] as? String
+        let question = message["question"] as? String
+        let taskID = (message["taskID"] as? String).flatMap(UUID.init(uuidString:))
+        let reply = WatchReplyHandler(replyHandler)
+        Task { @MainActor [weak self] in
+            guard let self else {
+                reply(["error": "DropSift is unavailable on iPhone."])
+                return
+            }
+            switch action {
+            case "snapshot":
+                reply(encodedSnapshotReply())
+            case "ask":
+                guard let question,
+                      !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                      let answerProvider
+                else {
+                    reply(["error": "Enter a question first."])
+                    return
+                }
+                let answer = await answerProvider(question)
+                if let data = try? JSONEncoder().encode(answer) {
+                    reply(["answer": data])
+                } else {
+                    reply(["error": "Couldn’t prepare the answer."])
+                }
+            case "toggleTask":
+                guard let taskID, let taskToggleHandler else {
+                    reply(["error": "Couldn’t update that task."])
+                    return
+                }
+                let snapshot = taskToggleHandler(taskID)
+                publishCurrentSnapshot()
+                if let data = try? JSONEncoder().encode(snapshot) {
+                    reply(["snapshot": data])
+                } else {
+                    reply(["error": "Couldn’t refresh tasks."])
+                }
+            default:
+                reply(["error": "Unknown Watch request."])
+            }
+        }
+    }
+
+    private func encodedSnapshotReply() -> [String: Any] {
+        guard let snapshot = snapshotProvider?(),
+              let data = try? JSONEncoder().encode(snapshot)
+        else {
+            return ["error": "The DropSift library isn’t ready yet."]
+        }
+        return ["snapshot": data]
     }
 }

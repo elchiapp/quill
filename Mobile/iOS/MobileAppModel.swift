@@ -94,6 +94,23 @@ final class MobileAppModel: ObservableObject {
         watchBridge.onInboxChanged = { [weak self] in
             self?.processWatchInbox()
         }
+        watchBridge.configureCompanion(
+            snapshot: { [weak self] in
+                self?.watchCompanionSnapshot() ?? .empty
+            },
+            answer: { [weak self] question in
+                guard let self else {
+                    return WatchCompanionAnswer(
+                        text: "DropSift is unavailable on iPhone.",
+                        sources: []
+                    )
+                }
+                return await self.answerForWatch(question)
+            },
+            toggleTask: { [weak self] taskID in
+                self?.toggleTaskFromWatch(taskID) ?? .empty
+            }
+        )
         reload()
         processWatchInbox()
     }
@@ -246,6 +263,7 @@ final class MobileAppModel: ObservableObject {
                 }
                 semanticReviews = SharedSemanticStore(root: root)
                     .loadPendingReviews()
+                watchBridge.publishCurrentSnapshot()
                 scanForSemanticCandidates()
             case .failure(let error):
                 librarySyncState = .failed(error.localizedDescription)
@@ -744,6 +762,103 @@ final class MobileAppModel: ObservableObject {
             }
             isAnswering = false
         }
+    }
+
+    private func watchCompanionSnapshot() -> WatchCompanionSnapshot {
+        let items = timeline.prefix(60).map { item in
+            let summary: String
+            switch item {
+            case .recording(let recording):
+                summary = recording.summary?.overview ?? ""
+            case .knowledge(let knowledge):
+                summary = knowledge.summary?.overview ?? ""
+            }
+            return WatchCompanionItem(
+                id: item.id,
+                title: item.title,
+                kind: item.kind.rawValue.capitalized,
+                date: item.date,
+                description: item.listDescription,
+                summary: summary
+            )
+        }
+        let tasks = snapshot.tasks
+            .sorted { lhs, rhs in
+                if lhs.isCompleted != rhs.isCompleted { return !lhs.isCompleted }
+                if lhs.priority != rhs.priority { return lhs.priority > rhs.priority }
+                return (lhs.dueDate ?? .distantFuture)
+                    < (rhs.dueDate ?? .distantFuture)
+            }
+            .prefix(100)
+            .map {
+                WatchCompanionTask(
+                    id: $0.id,
+                    title: $0.title,
+                    description: $0.description,
+                    dueDate: $0.dueDate,
+                    priority: $0.priority.displayName,
+                    isCompleted: $0.isCompleted
+                )
+            }
+        let entities = snapshot.entities
+            .sorted { $0.updatedAt > $1.updatedAt }
+            .prefix(100)
+            .map {
+                WatchCompanionEntity(
+                    id: $0.id,
+                    name: $0.name,
+                    kind: $0.kind.displayName,
+                    summary: $0.summary,
+                    date: $0.startDate
+                )
+            }
+        return WatchCompanionSnapshot(
+            items: Array(items),
+            tasks: Array(tasks),
+            entities: Array(entities)
+        )
+    }
+
+    private func answerForWatch(_ question: String) async -> WatchCompanionAnswer {
+        let root = locator.rootURL
+        let sources = await Task.detached(priority: .userInitiated) {
+            SharedLibraryStore(root: root).search(question, limit: 6)
+        }.value
+        do {
+            let answer = try await MobileAnswerService.answer(
+                question: question,
+                sources: sources,
+                model: selectedAnswerModel
+            )
+            return WatchCompanionAnswer(
+                text: answer,
+                sources: sources.map(\.title)
+            )
+        } catch {
+            return WatchCompanionAnswer(
+                text: "I couldn’t answer that locally: \(error.localizedDescription)",
+                sources: sources.map(\.title)
+            )
+        }
+    }
+
+    private func toggleTaskFromWatch(_ taskID: UUID) -> WatchCompanionSnapshot {
+        guard var task = snapshot.tasks.first(where: { $0.id == taskID }) else {
+            return watchCompanionSnapshot()
+        }
+        task.isCompleted.toggle()
+        task.completedAt = task.isCompleted ? Date() : nil
+        task.updatedAt = Date()
+        do {
+            let root = locator.rootURL
+            try SharedSemanticStore(root: root).saveTask(task)
+            snapshot = SharedLibraryStore(root: root).loadSnapshot(
+                refreshGeneratedTitles: false
+            )
+        } catch {
+            errorMessage = "Couldn’t update the Watch task: \(error.localizedDescription)"
+        }
+        return watchCompanionSnapshot()
     }
 
     func openSource(_ source: SharedSearchResult) {
