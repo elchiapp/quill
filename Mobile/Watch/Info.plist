@@ -35,5 +35,7 @@
 	</array>
 	<key>WKCompanionAppBundleIdentifier</key>
 	<string>com.elchiapp.dropsift.mobile</string>
+	<key>WKApplication</key>
+	<true/>
 </dict>
 </plist>
