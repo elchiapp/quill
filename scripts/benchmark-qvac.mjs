@@ -4,6 +4,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { parseArgs } from 'node:util'
 import { performance } from 'node:perf_hooks'
+import { StringDecoder } from 'node:string_decoder'
 
 const { values } = parseArgs({ options: {
   'runtime-root': { type: 'string' },
@@ -12,6 +13,8 @@ const { values } = parseArgs({ options: {
   'model-path': { type: 'string' },
   'audio-root': { type: 'string' },
   'prompts-file': { type: 'string' },
+  'samples-file': { type: 'string' },
+  'chunk-seconds': { type: 'string', default: '60' },
   action: { type: 'string', default: 'smoke' },
   repeat: { type: 'string', default: '3' },
   label: { type: 'string', default: 'QVAC' }
@@ -53,13 +56,14 @@ const resourceTimer = setInterval(() => {
 }, 500)
 resourceTimer.unref()
 let output = ''
+const decoder = new StringDecoder('utf8')
 let readyResolve
 let readyReject
 const ready = new Promise((resolve, reject) => { readyResolve = resolve; readyReject = reject })
 child.on('error', error => { readyReject(error) })
 child.stderr.on('data', data => { void fs.appendFile(path.join(workDir, 'engine.log'), data) })
 child.stdout.on('data', data => {
-  output += data.toString()
+  output += decoder.write(data)
   while (output.includes('\n')) {
     const newline = output.indexOf('\n')
     const line = output.slice(0, newline)
@@ -156,6 +160,70 @@ try {
       await fs.writeFile(path.join(workDir, `private-transcript-${run + 1}.txt`), text, { mode: 0o600 })
       console.log(`${values.label}: run ${run + 1} completed in ${seconds.toFixed(3)}s, ${metric.wordCount} words`)
       await fs.writeFile(path.join(workDir, 'result.json'), JSON.stringify(report, null, 2))
+    }
+    report.unloadSeconds = (await request('unloadTranscription')).seconds
+  }
+  if (values.action === 'samples') {
+    const manifest = JSON.parse(await fs.readFile(values['samples-file'], 'utf8'))
+    const chunkSeconds = Number(values['chunk-seconds'])
+    if (!Number.isFinite(chunkSeconds) || chunkSeconds <= 0 || chunkSeconds > 600) throw new Error('Invalid chunk size')
+    const chunkBytes = Math.round(chunkSeconds * 16000) * 2
+    report.chunkSeconds = chunkSeconds
+    const modelPath = path.resolve(values['model-path'])
+    report.modelPath = modelPath
+    report.modelSHA256 = createHash('sha256').update(await fs.readFile(modelPath)).digest('hex')
+    const prepared = await request('prepareTranscription', { speechModelPath: modelPath }, 600)
+    report.prepareSeconds = prepared.seconds
+    report.loadedModelID = prepared.event.model
+    const mapped = await new Promise((resolve, reject) => execFile('/usr/sbin/lsof',
+      ['-p', String(child.pid), '-Fn'], (error, stdout) => error ? reject(error) : resolve(stdout)))
+    report.mappedModelFiles = mapped.split('\n').filter(line => line.startsWith('n') && line.endsWith('.gguf')).map(line => line.slice(1))
+    // GPU backends can upload weights and close/unmap their source file.
+    // An empty lsof list is not evidence of a model load failure. Preserve the
+    // requested path, SHA256, returned model ID and actual backend statistics.
+    report.modelIdentityEvidence = 'Local GGUF SHA256, explicit modelSrc path, SDK loaded-model ID; file mappings are advisory only.'
+    const first = manifest.samples.find(sample => sample.condition === 'clean')
+    const warmup = await request('transcribe', { audioPath: first.pcm,
+      audioDurationMs: Math.round(first.durationSeconds * 1000) }, 180)
+    report.warmupSeconds = warmup.seconds
+    report.warmupDiagnostics = warmup.event.diagnostics
+    report.warmupStats = warmup.event.stats
+    const chunks = new Map()
+    for (const sample of manifest.samples) {
+      if (sample.durationSeconds <= chunkSeconds) { chunks.set(sample.id, [sample.pcm]); continue }
+      const bytes = await fs.readFile(sample.pcm)
+      const files = []
+      for (let offset = 0; offset < bytes.length; offset += chunkBytes) {
+        const file = path.join(workDir, `${sample.id}-${files.length}.pcm`)
+        await fs.writeFile(file, bytes.subarray(offset, offset + chunkBytes))
+        files.push(file)
+      }
+      chunks.set(sample.id, files)
+    }
+    for (let run = 1; run <= Number(values.repeat); run++) {
+      // Identical deterministic order across lanes. Rotate each repetition.
+      const offset = (run - 1) * 17 % manifest.samples.length
+      const ordered = [...manifest.samples.slice(offset), ...manifest.samples.slice(0, offset)]
+      for (const sample of ordered) {
+        let seconds = 0
+        const segments = []
+        const engineStats = []
+        let error
+        for (const file of chunks.get(sample.id)) {
+          try {
+            const response = await request('transcribe', { audioPath: file,
+              audioDurationMs: Math.round((await fs.stat(file)).size / 32) }, 180)
+            seconds += response.seconds
+            segments.push(...(response.event.segments ?? []))
+            engineStats.push({ stats: response.event.stats, diagnostics: response.event.diagnostics })
+          } catch (failure) { error = String(failure); break }
+        }
+        const text = segments.map(segment => segment.text).join(' ').trim()
+        report.runs.push({ sampleID: sample.id, run, seconds, text, error,
+          durationSeconds: sample.durationSeconds, engineStats })
+        await fs.writeFile(path.join(workDir, 'result.json'), JSON.stringify(report, null, 2))
+        console.log(`${values.label}: ${sample.id} run=${run} seconds=${seconds.toFixed(3)} ${error ? 'FAILED' : 'done'}`)
+      }
     }
     report.unloadSeconds = (await request('unloadTranscription')).seconds
   }

@@ -243,6 +243,25 @@ job, while new chat and ingestion work switches immediately. This makes it safe
 to change providers while the background queue is finishing an earlier item.
 Models for each backend use separate caches and download on first use.
 
+### Reference-backed ASR benchmark
+
+`scripts/asr-accuracy-data.py` prepares a fixed FLEURS test sample with published
+references: 20 English and 20 Italian utterances, matched 10 dB noise and
+telephone-bandwidth variants, long composites, and silence. Keep its output in
+a local workspace outside iCloud. Python dependencies are pinned in
+`scripts/asr-accuracy-requirements.txt`.
+
+Build the release tests, then run `scripts/run-asr-accuracy.mjs` with that
+workspace, the local TranscribePsy GGUF, the Parakeet TDT GGUF, and optionally
+the installed QVAC runtime directory. It runs three repetitions sequentially.
+The native path uses the production FluidAudio engine through an opt-in test;
+both QVAC paths use the installed bridge. The scorer reports first-pass corpus
+WER, raw and integer-normalized spelling, confidence intervals, and median
+warm latency. `scripts/asr-accuracy-report.mjs` creates the reviewable report
+after the provenance record is supplied. Inspect the documented long-form and
+silence limitations before making a backend recommendation. These tools do not
+change app settings or user recordings.
+
 The conservative language-model default is `Qwen3.5 2B` at 4-bit. DropSift
 detects the chip, CPU count, and unified memory, then offers a stronger 4B, 9B,
 27B, or 35B-A3B model when appropriate. The latest Qwen3.8 27B option uses the

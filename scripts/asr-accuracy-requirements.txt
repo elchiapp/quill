@@ -1,0 +1,7 @@
+numpy==2.5.4
+scipy==1.18.1
+soundfile==0.14.0
+requests==2.34.2
+jiwer==4.0.0
+num2words==0.5.14
+rapidfuzz==3.14.6
