@@ -21,6 +21,12 @@ struct MeetingDetectionTracker: Sendable {
     private var missingSince: Date?
     private var alreadySuggested = false
 
+    var nextCheckDate: Date? {
+        if let missingSince { return missingSince.addingTimeInterval(Self.endDelay) }
+        guard !alreadySuggested, let candidate, let candidateSince else { return nil }
+        return candidateSince.addingTimeInterval(candidate.isBrowser ? 12 : 4)
+    }
+
     mutating func update(
         current: DetectedMeeting?,
         now: Date = Date()
@@ -72,41 +78,113 @@ struct MeetingDetectionTracker: Sendable {
 }
 
 actor MeetingDetector {
-    private var monitorTask: Task<Void, Never>?
+    private var confirmationTask: Task<Void, Never>?
     private var tracker = MeetingDetectionTracker()
+    private var running = false
+    private var processListListener: AudioObjectPropertyListenerBlock?
+    private var inputListeners: [AudioObjectID: AudioObjectPropertyListenerBlock] = [:]
+    private let listenerQueue = DispatchQueue(label: "dropsift.meeting-audio-events", qos: .utility)
+    private var onDetected: (@MainActor @Sendable (DetectedMeeting) -> Void)?
+    private var onEnded: (@MainActor @Sendable (DetectedMeeting) -> Void)?
 
     func start(
         onDetected: @escaping @MainActor @Sendable (DetectedMeeting) -> Void,
         onEnded: @escaping @MainActor @Sendable (DetectedMeeting) -> Void
-    ) {
-        guard monitorTask == nil else { return }
-        monitorTask = Task { [weak self] in
-            while !Task.isCancelled {
-                guard let self else { return }
-                await self.poll(onDetected: onDetected, onEnded: onEnded)
-                try? await Task.sleep(for: .seconds(2))
+    ) async {
+        guard !running else { return }
+        running = true
+        self.onDetected = onDetected
+        self.onEnded = onEnded
+        let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+            Task { await self?.audioChanged() }
+        }
+        var address = Self.address(kAudioHardwarePropertyProcessObjectList)
+        if AudioObjectAddPropertyListenerBlock(
+            AudioObjectID(kAudioObjectSystemObject), &address, listenerQueue, listener
+        ) == noErr {
+            processListListener = listener
+        }
+        await audioChanged()
+    }
+
+    func stop() {
+        running = false
+        confirmationTask?.cancel()
+        confirmationTask = nil
+        if let processListListener {
+            var address = Self.address(kAudioHardwarePropertyProcessObjectList)
+            AudioObjectRemovePropertyListenerBlock(
+                AudioObjectID(kAudioObjectSystemObject), &address,
+                listenerQueue, processListListener
+            )
+        }
+        processListListener = nil
+        for (objectID, listener) in inputListeners {
+            var address = Self.address(kAudioProcessPropertyIsRunningInput)
+            AudioObjectRemovePropertyListenerBlock(objectID, &address, listenerQueue, listener)
+        }
+        inputListeners.removeAll()
+        onDetected = nil
+        onEnded = nil
+        tracker.reset()
+    }
+
+    private func audioChanged() async {
+        guard running else { return }
+        updateInputListeners()
+        let event = tracker.update(current: Self.activeMeetingCandidate())
+        confirmationTask?.cancel()
+        confirmationTask = nil
+        // A single deadline confirms a meeting start or its ten-second end delay.
+        // A stable meeting or no candidate leaves no scheduled work.
+        if let deadline = tracker.nextCheckDate {
+            let delay = max(0.01, deadline.timeIntervalSinceNow)
+            confirmationTask = Task { [weak self] in
+                do { try await Task.sleep(for: .seconds(delay)) }
+                catch { return }
+                await self?.audioChanged()
+            }
+        }
+        switch event {
+        case .detected(let meeting):
+            await onDetected?(meeting)
+        case .ended(let meeting):
+            await onEnded?(meeting)
+        case nil:
+            break
+        }
+    }
+
+    private func updateInputListeners() {
+        let objects = Set(Self.audioProcessObjects().filter { Self.readPID($0) != getpid() })
+        for objectID in inputListeners.keys where !objects.contains(objectID) {
+            if let listener = inputListeners.removeValue(forKey: objectID) {
+                var address = Self.address(kAudioProcessPropertyIsRunningInput)
+                AudioObjectRemovePropertyListenerBlock(
+                    objectID, &address, listenerQueue, listener
+                )
+            }
+        }
+        for objectID in objects where inputListeners[objectID] == nil {
+            let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+                Task { await self?.audioChanged() }
+            }
+            var address = Self.address(kAudioProcessPropertyIsRunningInput)
+            if AudioObjectAddPropertyListenerBlock(
+                objectID, &address, listenerQueue, listener
+            ) == noErr {
+                inputListeners[objectID] = listener
             }
         }
     }
 
-    func stop() {
-        monitorTask?.cancel()
-        monitorTask = nil
-        tracker.reset()
-    }
-
-    private func poll(
-        onDetected: @escaping @MainActor @Sendable (DetectedMeeting) -> Void,
-        onEnded: @escaping @MainActor @Sendable (DetectedMeeting) -> Void
-    ) async {
-        switch tracker.update(current: Self.activeMeetingCandidate()) {
-        case .detected(let meeting):
-            await onDetected(meeting)
-        case .ended(let meeting):
-            await onEnded(meeting)
-        case nil:
-            break
-        }
+    private nonisolated static func address(
+        _ selector: AudioObjectPropertySelector
+    ) -> AudioObjectPropertyAddress {
+        AudioObjectPropertyAddress(
+            mSelector: selector, mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
     }
 
     private nonisolated static func activeMeetingCandidate() -> DetectedMeeting? {

@@ -102,11 +102,6 @@ final class AppModel: ObservableObject {
         let expectedTitle: String
     }
 
-    private struct LibrarySnapshot: Sendable {
-        let recordings: [RecordingItem]
-        let knowledgeItems: [KnowledgeItem]
-    }
-
     enum DeletionRequest: Identifiable, Equatable {
         case thread(id: UUID, title: String)
         case recording(id: String, title: String)
@@ -252,7 +247,8 @@ final class AppModel: ObservableObject {
     private var titleSaveTask: Task<Void, Never>?
     private var notesSaveTask: Task<Void, Never>?
     private var knowledgeSaveTasks: [UUID: Task<Void, Never>] = [:]
-    private var libraryRefreshTask: Task<Void, Never>?
+    private var libraryChangeMonitor: LibraryChangeMonitor?
+    private let libraryLoader: LibrarySnapshotLoader
     private var libraryLoadTask: Task<Void, Never>?
     private var libraryRefreshQueued = false
     private var queuedRefreshGeneratesTitles = false
@@ -378,8 +374,16 @@ final class AppModel: ObservableObject {
         )
         RecordingLibrary.copyLegacyRecordingsIfNeeded(to: root)
         RecordingSession.clearStaleActiveMarkers(in: root)
-        recordings = RecordingLibrary.load(from: root)
-        knowledgeItems = KnowledgeLibrary.load(from: knowledgeRoot)
+        let initialRecordings = RecordingLibrary.load(from: root, refreshGeneratedTitles: false)
+        let initialKnowledge = KnowledgeLibrary.load(from: knowledgeRoot, refreshGeneratedTitles: false)
+        recordings = initialRecordings
+        knowledgeItems = initialKnowledge
+        libraryLoader = LibrarySnapshotLoader(
+            root: root,
+            knowledgeRoot: knowledgeRoot,
+            recordings: initialRecordings,
+            knowledge: initialKnowledge
+        )
         tasks = semanticStore.loadTasks()
         entities = semanticStore.loadEntities()
         semanticReviews = semanticStore.loadPendingReviews()
@@ -538,15 +542,23 @@ final class AppModel: ObservableObject {
                 )
             }
         }
-        if libraryRefreshTask == nil {
-            libraryRefreshTask = Task { [weak self, transcription, root] in
-                while !Task.isCancelled {
-                    try? await Task.sleep(for: .seconds(8))
-                    guard let self, !Task.isCancelled else { return }
-                    await transcription.resumePending(root: root)
-                    self.refreshLibrary()
+        if libraryChangeMonitor == nil {
+            let monitor = LibraryChangeMonitor(
+                recordingRoot: root,
+                knowledgeRoot: knowledgeRoot
+            ) { [weak self, transcription, root] changes in
+                guard let self else { return }
+                if changes.content { self.refreshLibrary() }
+                if changes.semantics {
+                    self.refreshSemantics()
+                    self.scanForSemanticCandidates()
+                }
+                if changes.pendingTranscription {
+                    Task { await transcription.resumePending(root: root) }
                 }
             }
+            libraryChangeMonitor = monitor
+            monitor.start()
         }
         scanForSemanticCandidates()
     }
@@ -557,8 +569,8 @@ final class AppModel: ObservableObject {
         }
         isPreparingRecording = false
         Task { [meetingDetector] in await meetingDetector.stop() }
-        libraryRefreshTask?.cancel()
-        libraryRefreshTask = nil
+        libraryChangeMonitor?.stop()
+        libraryChangeMonitor = nil
         libraryLoadTask?.cancel()
         libraryLoadTask = nil
         libraryRefreshQueued = false
@@ -702,25 +714,13 @@ final class AppModel: ObservableObject {
             return
         }
 
-        let root = root
-        let knowledgeRoot = knowledgeRoot
+        let loader = libraryLoader
         libraryLoadTask = Task { [weak self] in
-            let snapshot = await Task.detached(priority: .utility) {
-                LibrarySnapshot(
-                    recordings: RecordingLibrary.load(
-                        from: root,
-                        refreshGeneratedTitles: refreshGeneratedTitles
-                    ),
-                    knowledgeItems: KnowledgeLibrary.load(
-                        from: knowledgeRoot,
-                        refreshGeneratedTitles: refreshGeneratedTitles
-                    )
-                )
-            }.value
+            let snapshot = await loader.load(refreshGeneratedTitles: refreshGeneratedTitles)
             guard let self, !Task.isCancelled else { return }
 
             libraryLoadTask = nil
-            applyLibrarySnapshot(snapshot)
+            if snapshot.changed { applyLibrarySnapshot(snapshot) }
 
             if libraryRefreshQueued {
                 let generatesTitles = queuedRefreshGeneratesTitles
@@ -2259,6 +2259,13 @@ final class AppModel: ObservableObject {
             return
         }
 
+        guard !requestedSemanticSourceIDs.isEmpty
+                || !requestedPresentationSourceIDs.isEmpty
+                || !requestedSummarySourceIDs.isEmpty
+                || !automaticPresentationSourceIDs.isEmpty
+                || !automaticSummarySourceIDs.isEmpty
+                || !automaticSemanticSourceIDs.isEmpty
+        else { return }
         let sources = semanticSources()
         let manuallyRequestedSource = requestedSemanticSourceIDs
             .compactMap { requestedID in

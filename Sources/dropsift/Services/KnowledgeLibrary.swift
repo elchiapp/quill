@@ -12,19 +12,22 @@ enum KnowledgeLibrary {
             includingPropertiesForKeys: [.isDirectoryKey],
             options: [.skipsHiddenFiles]
         ) else { return [] }
+        return entries
+            .compactMap { loadItem(from: $0, refreshGeneratedTitles: refreshGeneratedTitles) }
+            .sorted { $0.createdAt > $1.createdAt }
+    }
+
+    static func loadItem(from directory: URL, refreshGeneratedTitles: Bool) -> KnowledgeItem? {
+        guard let item = KnowledgeItem.load(from: directory) else { return nil }
         if refreshGeneratedTitles {
-            for directory in entries {
-                guard var metadata = KnowledgeItem.load(from: directory)?.metadata
-                else { continue }
-                if (try? refreshGeneratedTitle(&metadata, in: directory)) == true {
-                    metadata.updatedAt = Date()
-                    try? write(metadata, to: directory)
-                }
+            var metadata = item.metadata
+            if (try? refreshGeneratedTitle(&metadata, in: directory)) == true {
+                metadata.updatedAt = Date()
+                try? write(metadata, to: directory)
+                return KnowledgeItem.load(from: directory) ?? item
             }
         }
-        return entries
-            .compactMap(KnowledgeItem.load(from:))
-            .sorted { $0.createdAt > $1.createdAt }
+        return item
     }
 
     static func createNote(in root: URL) throws -> KnowledgeItem {

@@ -277,25 +277,27 @@ struct RecordingItem: Identifiable, Sendable {
 
         let transcript: TranscriptDocument? = {
             let url = directory.appendingPathComponent("transcript.json")
-            guard let data = try? Data(contentsOf: url) else { return nil }
-            guard let document = try? decoder.decode(
-                TranscriptDocument.self,
-                from: data
-            ) else { return nil }
-            let deduplicated = TranscriptEchoDeduplicator.removeEchoes(
-                from: document.segments
-            )
-            guard deduplicated.count != document.segments.count else {
-                return document
+            return TranscriptFileCache.shared.load(from: url) { url in
+                guard let data = try? Data(contentsOf: url) else { return nil }
+                guard let document = try? decoder.decode(
+                    TranscriptDocument.self,
+                    from: data
+                ) else { return nil }
+                let deduplicated = TranscriptEchoDeduplicator.removeEchoes(
+                    from: document.segments
+                )
+                guard deduplicated.count != document.segments.count else {
+                    return document
+                }
+                return TranscriptDocument(
+                    engine: document.engine,
+                    model: document.model,
+                    createdAt: document.createdAt,
+                    segments: deduplicated,
+                    languageCode: document.languageCode,
+                    diarization: document.diarization
+                )
             }
-            return TranscriptDocument(
-                engine: document.engine,
-                model: document.model,
-                createdAt: document.createdAt,
-                segments: deduplicated,
-                languageCode: document.languageCode,
-                diarization: document.diarization
-            )
         }()
 
         guard metadata != nil || transcript != nil else { return nil }
