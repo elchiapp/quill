@@ -4,8 +4,8 @@ import Foundation
 actor QVACTranscriptionEngine: TranscriptionEngine {
     nonisolated let name = "qvac-parakeet"
     nonisolated let model = "parakeet-tdt-0.6b-v3-q8_0-metal"
-    // QVAC's public Parakeet API currently returns text without word timing
-    // metadata. One-minute batches preserve useful, bounded source anchors.
+    // Bounded batches cap encoder memory and provide progress/cancellation
+    // checkpoints. The SDK supplies segment timestamps within each batch.
     nonisolated static let chunkDuration: TimeInterval = 60
 
     private let runtime: QVACRuntime
@@ -184,13 +184,17 @@ actor QVACSpeakerDiarizationEngine: SpeakerDiarization {
 
     func diarize(_ audio: URL) async throws -> [DetectedSpeakerTurn] {
         try await prepare()
+        let duration = try await QVACAudioConverter.duration(of: audio)
         let converted = try await QVACAudioConverter.convertToPCM(audio)
         defer { try? FileManager.default.removeItem(at: converted) }
         let response: QVACBridgeResponse
         do {
             response = try await runtime.request(
                 "diarize",
-                params: QVACBridgeParams(audioPath: converted.path),
+                params: QVACBridgeParams(
+                    audioPath: converted.path,
+                    audioDurationMs: Int((duration * 1000).rounded())
+                ),
                 timeout: Self.operationTimeout
             )
         } catch QVACRuntime.RuntimeError.requestTimedOut {

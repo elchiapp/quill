@@ -16,6 +16,8 @@ struct QVACBridgeParams: Codable, Sendable {
     var audioPath: String?
     var audioDurationMs: Int?
     var imagePath: String?
+    var speechModelPath: String?
+    var responseFormat: String?
 
     init(
         modelSize: String? = nil,
@@ -26,7 +28,9 @@ struct QVACBridgeParams: Codable, Sendable {
         maxTokens: Int? = nil,
         audioPath: String? = nil,
         audioDurationMs: Int? = nil,
-        imagePath: String? = nil
+        imagePath: String? = nil,
+        speechModelPath: String? = nil,
+        responseFormat: String? = nil
     ) {
         self.modelSize = modelSize
         self.modelID = modelID
@@ -37,6 +41,8 @@ struct QVACBridgeParams: Codable, Sendable {
         self.audioPath = audioPath
         self.audioDurationMs = audioDurationMs
         self.imagePath = imagePath
+        self.speechModelPath = speechModelPath
+        self.responseFormat = responseFormat
     }
 }
 
@@ -58,6 +64,15 @@ struct QVACBridgeBlock: Codable, Sendable {
     let confidence: Double?
 }
 
+struct QVACBridgeSpeechStats: Codable, Sendable {
+    let encoderUsedCoreml: Int?
+}
+
+struct QVACBridgeDiagnostics: Codable, Sendable {
+    let selectedBackend: String?
+    let selectedDevice: String?
+}
+
 struct QVACBridgeResponse: Codable, Sendable {
     let id: String
     let type: String
@@ -70,6 +85,8 @@ struct QVACBridgeResponse: Codable, Sendable {
     let segments: [QVACBridgeSegment]?
     let turns: [QVACBridgeTurn]?
     let blocks: [QVACBridgeBlock]?
+    let stats: QVACBridgeSpeechStats?
+    let diagnostics: QVACBridgeDiagnostics?
     let error: String?
 }
 
@@ -117,18 +134,31 @@ actor QVACRuntime {
 
     private var process: Process?
     private var input: FileHandle?
-    private var outputBuffer = ""
+    private var outputBuffer = Data()
     private var pending: [String: PendingRequest] = [:]
     private var operationIsActive = false
-    private var operationWaiters: [CheckedContinuation<Void, Never>] = []
+    private struct OperationWaiter {
+        let id: UUID
+        let continuation: CheckedContinuation<Void, Error>
+    }
+    private var operationWaiters: [OperationWaiter] = []
     private var processGeneration = 0
+    private let runtimeRoot: URL?
+    private let cacheRoot: URL?
+    private let executableOverride: URL?
+
+    init(runtimeRoot: URL? = nil, cacheRoot: URL? = nil, executable: URL? = nil) {
+        self.runtimeRoot = runtimeRoot
+        self.cacheRoot = cacheRoot
+        executableOverride = executable
+    }
 
     func request(
         _ method: String,
         params: QVACBridgeParams = QVACBridgeParams(),
         onEvent: EventHandler? = nil
     ) async throws -> QVACBridgeResponse {
-        await acquireOperation()
+        try await acquireOperation()
         do {
             try Task.checkCancellation()
             let response = try await performRequest(
@@ -195,11 +225,16 @@ actor QVACRuntime {
                     continuation: continuation,
                     eventHandler: onEvent
                 )
-                do {
-                    try input?.write(contentsOf: data)
-                } catch {
+                guard let writer = input else {
                     pending.removeValue(forKey: id)
-                    continuation.resume(throwing: error)
+                    continuation.resume(throwing: RuntimeError.bridgeUnavailable)
+                    return
+                }
+                // A stalled child must not block this actor on a full stdin pipe.
+                // Cancellation and timeout can still close the pipe and stop it.
+                Task.detached(priority: .userInitiated) { [weak self] in
+                    do { try writer.write(contentsOf: data) }
+                    catch { await self?.failRequest(id, error: error) }
                 }
             }
         } onCancel: {
@@ -207,31 +242,32 @@ actor QVACRuntime {
         }
     }
 
-    func shutdown() async {
+    func shutdown(gracePeriod: Duration = .seconds(5)) async {
         if process?.isRunning == true {
-            await withTaskGroup(of: Void.self) { group in
-                group.addTask { [weak self] in
-                    guard let self else { return }
-                    _ = try? await self.performRequest("shutdown")
-                }
-                group.addTask {
-                    try? await Task.sleep(for: .seconds(5))
-                }
-                _ = await group.next()
-                group.cancelAll()
-            }
+            _ = try? await request("shutdown", timeout: gracePeriod)
         }
         await stopProcess()
     }
 
-    private func acquireOperation() async {
+    private func acquireOperation() async throws {
+        try Task.checkCancellation()
         guard operationIsActive else {
             operationIsActive = true
             return
         }
-        await withCheckedContinuation { continuation in
-            operationWaiters.append(continuation)
+        let id = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                operationWaiters.append(OperationWaiter(id: id, continuation: continuation))
+            }
+        } onCancel: {
+            Task { await self.cancelOperationWaiter(id) }
         }
+    }
+
+    private func cancelOperationWaiter(_ id: UUID) {
+        guard let index = operationWaiters.firstIndex(where: { $0.id == id }) else { return }
+        operationWaiters.remove(at: index).continuation.resume(throwing: CancellationError())
     }
 
     private func releaseOperation() {
@@ -239,13 +275,15 @@ actor QVACRuntime {
             operationIsActive = false
             return
         }
-        operationWaiters.removeFirst().resume()
+        operationWaiters.removeFirst().continuation.resume()
     }
 
     private func startIfNeeded() throws {
         if process?.isRunning == true { return }
-        let layout = try Self.runtimeLayout()
-        let configURL = try Self.writeConfiguration()
+        let layout = try runtimeLayout()
+        let configURL = try writeConfiguration()
+        processGeneration += 1
+        let generation = processGeneration
 
         let task = Process()
         task.executableURL = layout.executable
@@ -253,10 +291,14 @@ actor QVACRuntime {
         task.currentDirectoryURL = layout.root
         var environment = ProcessInfo.processInfo.environment
         environment["QVAC_CONFIG_PATH"] = configURL.path
+        // Keep SDK registry identity/locks separate from other QVAC applications.
+        // Both SDK generations honor SNAP_USER_COMMON as their data-home override.
+        environment["SNAP_USER_COMMON"] = configURL.deletingLastPathComponent()
+            .appendingPathComponent("RuntimeHome", isDirectory: true).path
         if let isolatedHome = environment[
             "DROPSIFT_QVAC_HOME_OVERRIDE"
         ], !isolatedHome.isEmpty {
-            environment["HOME"] = isolatedHome
+            environment["SNAP_USER_COMMON"] = isolatedHome
         }
         task.environment = environment
 
@@ -271,7 +313,7 @@ actor QVACRuntime {
             [weak self] handle in
             let data = handle.availableData
             guard !data.isEmpty else { return }
-            Task { await self?.consume(data) }
+            Task { await self?.consume(data, generation: generation) }
         }
         standardError.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
@@ -279,7 +321,7 @@ actor QVACRuntime {
             FileHandle.standardError.write(data)
         }
         task.terminationHandler = { [weak self] terminated in
-            Task { await self?.processTerminated(terminated.terminationStatus) }
+            Task { await self?.processTerminated(terminated.terminationStatus, generation: generation) }
         }
 
         do {
@@ -291,16 +333,18 @@ actor QVACRuntime {
         }
         process = task
         input = standardInput.fileHandleForWriting
-        processGeneration += 1
     }
 
-    private func consume(_ data: Data) {
-        guard let chunk = String(data: data, encoding: .utf8) else { return }
-        outputBuffer += chunk
-        while let newline = outputBuffer.firstIndex(of: "\n") {
-            let line = String(outputBuffer[..<newline])
+    private func consume(_ data: Data, generation: Int) {
+        guard generation == processGeneration else { return }
+        // Pipe reads can end inside a multibyte character. Decode only complete
+        // lines so accented/non-Latin transcripts cannot lose an entire response.
+        outputBuffer.append(data)
+        while let newline = outputBuffer.firstIndex(of: 0x0a) {
+            let bytes = outputBuffer[..<newline]
+            let line = String(data: bytes, encoding: .utf8)
             outputBuffer.removeSubrange(...newline)
-            consume(line: line)
+            if let line { consume(line: line) }
         }
     }
 
@@ -338,25 +382,44 @@ actor QVACRuntime {
         request.continuation.resume(throwing: CancellationError())
     }
 
-    private func processTerminated(_ status: Int32) {
-        let requests = pending.values
+    private func failRequest(_ id: String, error: Error) {
+        pending.removeValue(forKey: id)?.continuation.resume(throwing: error)
+    }
+
+    private func failPending(_ error: Error) {
+        let requests = Array(pending.values)
         pending.removeAll()
         for request in requests {
-            request.continuation.resume(
-                throwing: RuntimeError.bridgeExited(status)
-            )
+            request.continuation.resume(throwing: error)
         }
+        let waiters = operationWaiters
+        operationWaiters.removeAll()
+        for waiter in waiters {
+            waiter.continuation.resume(throwing: error)
+        }
+    }
+
+    private func processTerminated(_ status: Int32, generation: Int) {
+        guard generation == processGeneration else { return }
+        failPending(RuntimeError.bridgeExited(status))
         process = nil
         input = nil
-        outputBuffer = ""
+        outputBuffer = Data()
     }
 
     private func stopProcess() async {
         guard let process else {
             input = nil
-            outputBuffer = ""
+            outputBuffer = Data()
             return
         }
+        self.process = nil
+        try? input?.close()
+        input = nil
+        outputBuffer = Data()
+        (process.standardOutput as? Pipe)?.fileHandleForReading.readabilityHandler = nil
+        (process.standardError as? Pipe)?.fileHandleForReading.readabilityHandler = nil
+        failPending(CancellationError())
         if process.isRunning {
             process.terminate()
             for _ in 0..<20 where process.isRunning {
@@ -366,9 +429,6 @@ actor QVACRuntime {
                 kill(process.processIdentifier, SIGKILL)
             }
         }
-        self.process = nil
-        input = nil
-        outputBuffer = ""
     }
 
     private struct RuntimeLayout {
@@ -377,20 +437,23 @@ actor QVACRuntime {
         let bridge: URL
     }
 
-    private static func runtimeLayout() throws -> RuntimeLayout {
-        let candidates = [
+    private func runtimeLayout() throws -> RuntimeLayout {
+        let override = runtimeRoot ?? ProcessInfo.processInfo.environment[
+            "DROPSIFT_QVAC_RUNTIME_ROOT"
+        ].map { URL(fileURLWithPath: $0, isDirectory: true) }
+        let candidates = override.map { [$0] } ?? [
             Bundle.main.resourceURL?.appendingPathComponent(
                 "QVACRuntime",
                 isDirectory: true
             ),
-            sourceProjectRoot.appendingPathComponent(
+            Self.sourceProjectRoot.appendingPathComponent(
                 "QVACBridge",
                 isDirectory: true
             ),
         ].compactMap { $0 }
 
         for root in candidates {
-            let executable = root.appendingPathComponent(
+            let executable = executableOverride ?? root.appendingPathComponent(
                 "node_modules/bare-runtime-darwin-arm64/bin/bare"
             )
             let bridge = root.appendingPathComponent("bootstrap.cjs")
@@ -414,8 +477,10 @@ actor QVACRuntime {
             .deletingLastPathComponent()
     }
 
-    private static func writeConfiguration() throws -> URL {
-        let root = Config.qvacCacheRoot
+    private func writeConfiguration() throws -> URL {
+        let root = cacheRoot ?? ProcessInfo.processInfo.environment[
+            "DROPSIFT_QVAC_CACHE_ROOT"
+        ].map { URL(fileURLWithPath: $0, isDirectory: true) } ?? Config.qvacCacheRoot
         let modelRoot = root.appendingPathComponent("Models", isDirectory: true)
         try FileManager.default.createDirectory(
             at: modelRoot,

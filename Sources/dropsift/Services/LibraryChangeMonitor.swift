@@ -72,6 +72,7 @@ final class LibraryChangeMonitor {
     private var stream: FSEventStreamRef?
     private var deliveryTask: Task<Void, Never>?
     private var pending = LibraryChanges()
+    private var knownAssetIdentities: [String: String] = [:]
     private let recordingRoot: URL
     private let knowledgeRoot: URL
     private let onChange: @MainActor (LibraryChanges) -> Void
@@ -88,6 +89,17 @@ final class LibraryChangeMonitor {
 
     func start() {
         guard stream == nil else { return }
+        // FSEvents can retain ItemCreated in a later modification event. Snapshot
+        // existing asset identities once, so appending audio is not an arrival.
+        for root in [recordingRoot, knowledgeRoot] {
+            let files = FileManager.default.enumerator(
+                at: root, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
+            )
+            while let url = files?.nextObject() as? URL {
+                guard Self.isAsset(url), let identity = Self.assetIdentity(url) else { continue }
+                knownAssetIdentities[url.resolvingSymlinksInPath().standardizedFileURL.path] = identity
+            }
+        }
         var context = FSEventStreamContext(
             version: 0,
             info: Unmanaged.passUnretained(self).toOpaque(),
@@ -130,6 +142,7 @@ final class LibraryChangeMonitor {
         deliveryTask?.cancel()
         deliveryTask = nil
         pending = LibraryChanges()
+        knownAssetIdentities.removeAll()
         if let stream {
             FSEventStreamStop(stream)
             FSEventStreamInvalidate(stream)
@@ -142,14 +155,21 @@ final class LibraryChangeMonitor {
         let dropped = flags & FSEventStreamEventFlags(
             kFSEventStreamEventFlagMustScanSubDirs | kFSEventStreamEventFlagRootChanged
         ) != 0
+        var arrived = flags & FSEventStreamEventFlags(
+            kFSEventStreamEventFlagItemCreated | kFSEventStreamEventFlagItemRenamed
+                | kFSEventStreamEventFlagItemRemoved
+        ) != 0
+        let url = URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL
+        if Self.isAsset(url) {
+            let identity = Self.assetIdentity(url)
+            if let identity, knownAssetIdentities[url.path] == identity { arrived = false }
+            knownAssetIdentities[url.path] = identity
+        }
         pending.merge(dropped
             ? LibraryChanges(content: true, semantics: true, pendingTranscription: true)
             : LibraryChanges.classify(
                 path: path, recordingRoot: recordingRoot, knowledgeRoot: knowledgeRoot,
-                fileArrived: flags & FSEventStreamEventFlags(
-                    kFSEventStreamEventFlagItemCreated | kFSEventStreamEventFlagItemRenamed
-                        | kFSEventStreamEventFlagItemRemoved
-                ) != 0
+                fileArrived: arrived
             ))
         guard !pending.isEmpty else { return }
         // One bounded delivery per burst; continuous audio writes cannot postpone it.
@@ -163,5 +183,20 @@ final class LibraryChangeMonitor {
             self.deliveryTask = nil
             self.onChange(changes)
         }
+    }
+
+    private static func isAsset(_ url: URL) -> Bool {
+        ["caf", "m4a", "wav", "mp3", "aac", "flac", "aiff", "mp4"]
+            .contains(url.pathExtension.lowercased()) || url.lastPathComponent.hasPrefix("asset.")
+    }
+
+    private static func assetIdentity(_ url: URL) -> String? {
+        // Do not count a cloud placeholder as an already hydrated asset.
+        if let values = try? url.resourceValues(forKeys: [.ubiquitousItemDownloadingStatusKey]),
+           values.ubiquitousItemDownloadingStatus == .notDownloaded { return nil }
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let device = attributes[.systemNumber] as? NSNumber,
+              let inode = attributes[.systemFileNumber] as? NSNumber else { return nil }
+        return "\(device):\(inode)"
     }
 }

@@ -77,12 +77,13 @@ APP_BUNDLE="$PACKAGE_WORK/DropSift.app"
 # only the Apple-silicon addon prebuilds; npm packages otherwise include native
 # binaries for every desktop, mobile, and server platform.
 QVAC_EXECUTABLE="$QVAC_SOURCE/node_modules/bare-runtime-darwin-arm64/bin/bare"
-if [[ ! -f "$QVAC_SOURCE/bootstrap.cjs" \
-    || ! -f "$QVAC_SOURCE/bridge.mjs" \
-    || ! -f "$QVAC_SOURCE/package-lock.json" ]]; then
-    print -u2 "Missing QVAC bridge sources in $QVAC_SOURCE"
-    exit 1
-fi
+for BRIDGE_FILE in bootstrap.cjs bridge.mjs speech-models.mjs structured-output.mjs diarization.mjs package-lock.json
+do
+    if [[ ! -f "$QVAC_SOURCE/$BRIDGE_FILE" ]]; then
+        print -u2 "Missing QVAC bridge source: $QVAC_SOURCE/$BRIDGE_FILE"
+        exit 1
+    fi
+done
 if [[ ! -x "$QVAC_EXECUTABLE" ]]; then
     /usr/bin/env npm ci --omit=dev --prefix "$QVAC_SOURCE"
     /bin/chmod 755 "$QVAC_EXECUTABLE"
@@ -95,6 +96,9 @@ fi
 /bin/mkdir -p "$QVAC_RUNTIME"
 /usr/bin/ditto "$QVAC_SOURCE/bootstrap.cjs" "$QVAC_RUNTIME/bootstrap.cjs"
 /usr/bin/ditto "$QVAC_SOURCE/bridge.mjs" "$QVAC_RUNTIME/bridge.mjs"
+/usr/bin/ditto "$QVAC_SOURCE/speech-models.mjs" "$QVAC_RUNTIME/speech-models.mjs"
+/usr/bin/ditto "$QVAC_SOURCE/structured-output.mjs" "$QVAC_RUNTIME/structured-output.mjs"
+/usr/bin/ditto "$QVAC_SOURCE/diarization.mjs" "$QVAC_RUNTIME/diarization.mjs"
 /usr/bin/ditto "$QVAC_SOURCE/package.json" "$QVAC_RUNTIME/package.json"
 /usr/bin/ditto "$QVAC_SOURCE/package-lock.json" "$QVAC_RUNTIME/package-lock.json"
 /usr/bin/rsync -a --exclude='prebuilds/*' \

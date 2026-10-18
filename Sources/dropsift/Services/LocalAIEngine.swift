@@ -128,7 +128,8 @@ actor LocalAIEngine {
     func complete(
         systemPrompt: String,
         messages: [ChatMessage],
-        maxTokens: Int? = nil
+        maxTokens: Int? = nil,
+        responseFormat: LocalAIResponseFormat? = nil
     ) async throws -> String {
         switch backend {
         case .native:
@@ -144,7 +145,8 @@ actor LocalAIEngine {
             return try await qvac.complete(
                 systemPrompt: systemPrompt,
                 messages: messages,
-                maxTokens: maxTokens
+                maxTokens: maxTokens,
+                responseFormat: responseFormat
             )
         }
     }

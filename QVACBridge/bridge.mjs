@@ -11,10 +11,14 @@ import {
   OCR_LATIN,
   close,
   plugins
-} from '@qvac/bare-sdk'
-import { llmPlugin } from '@qvac/bare-sdk/llamacpp-completion/plugin'
-import { parakeetPlugin } from '@qvac/bare-sdk/parakeet-transcription/plugin'
-import { ocrPlugin } from '@qvac/bare-sdk/ggml-ocr/plugin'
+} from '@qvac/inference'
+import { llmPlugin } from '@qvac/inference/llamacpp-completion/plugin'
+import { parakeetPlugin } from '@qvac/inference/parakeet-transcription/plugin'
+import { ocrPlugin } from '@qvac/inference/ggml-ocr/plugin'
+import { stream as engineStream } from '@qvac/inference/engine'
+import { stageParakeetCoreML } from './speech-models.mjs'
+import { structuredResponseFormat } from './structured-output.mjs'
+import { parseSpeakerTurns } from './diarization.mjs'
 
 globalThis.process = bareProcess
 
@@ -143,6 +147,7 @@ async function prepareLLM (id, params) {
         top_p: 0.8,
         top_k: 20,
         repeat_penalty: 1.05,
+        gpu_layers: 999,
         reasoning_budget: 0
       },
       onProgress
@@ -153,7 +158,7 @@ async function prepareLLM (id, params) {
 async function complete (id, params) {
   if (!loaded.llm) throw new Error('QVAC language model is not loaded.')
   const history = [
-    { role: 'system', content: params.systemPrompt ?? '' },
+    { role: 'system', content: (params.systemPrompt ?? '') + '\n/no_think' },
     ...(params.messages ?? []).map(message => ({
       role: message.role,
       content: message.content
@@ -165,14 +170,14 @@ async function complete (id, params) {
     stream: true,
     captureThinking: true,
     toolDialect: 'qwen35',
+    responseFormat: structuredResponseFormat(params.responseFormat),
     generationParams: {
       predict: params.maxTokens ?? 2048,
       temp: 0.4,
       top_p: 0.8,
       top_k: 20,
       repeat_penalty: 1.05,
-      reasoning_budget: 0,
-      remove_thinking_from_context: true
+      reasoning_budget: 0
     }
   })
   let text = ''
@@ -187,22 +192,29 @@ async function complete (id, params) {
   send({ id, type: 'result', text: content })
 }
 
-async function prepareTranscription (id) {
+async function prepareTranscription (id, params = {}) {
   await prepareModel(
     'transcription',
     id,
     'Downloading QVAC Parakeet speech model',
-    onProgress => loadModel({
-      modelSrc: PARAKEET_TDT_0_6B_V3_Q8_0,
-      modelType: 'parakeet-transcription',
-      modelConfig: {
-        useGPU: true,
-        maxThreads: 8,
-        timestampsEnabled: true,
-        streaming: false
-      },
-      onProgress
-    })
+    async onProgress => {
+      // Registry downloads can include Core ML companions automatically. Do not
+      // let cache contents silently override the measured Metal default.
+      bareProcess.env.PARAKEET_COREML_DISABLE = params.speechCoreML ? '0' : '1'
+      return loadModel({
+        modelSrc: params.speechCoreML
+          ? await stageParakeetCoreML({ modelPath: params.speechModelPath, onProgress })
+          : params.speechModelPath ?? PARAKEET_TDT_0_6B_V3_Q8_0,
+        modelType: 'parakeet-transcription',
+        modelConfig: {
+          useGPU: true,
+          maxThreads: 8,
+          timestampsEnabled: true,
+          streaming: false
+        },
+        onProgress
+      })
+    }
   )
 }
 
@@ -210,21 +222,32 @@ async function transcribeAudio (id, params) {
   if (!loaded.transcription) {
     throw new Error('QVAC transcription model is not loaded.')
   }
-  const text = await transcribe({
+  const segments = []
+  let stats
+  let diagnostics
+  for await (const event of engineStream({
+    type: 'transcribe',
     modelId: loaded.transcription,
-    audioChunk: params.audioPath
-  })
-  const normalized = text.trim()
+    audioChunk: { type: 'filePath', value: params.audioPath },
+    metadata: true,
+    requestId: id
+  })) {
+    if (event.segment?.text?.trim()) {
+      segments.push({
+        startMs: Math.round(event.segment.startMs ?? 0),
+        endMs: Math.round(event.segment.endMs ?? params.audioDurationMs ?? 0),
+        text: event.segment.text
+      })
+    }
+    if (event.stats) stats = event.stats
+    if (event.diagnostics) diagnostics = event.diagnostics
+  }
   send({
     id,
     type: 'result',
-    segments: normalized
-      ? [{
-          startMs: 0,
-          endMs: params.audioDurationMs ?? 0,
-          text: normalized
-        }]
-      : []
+    segments,
+    stats,
+    diagnostics
   })
 }
 
@@ -255,18 +278,11 @@ async function diarizeAudio (id, params) {
     modelId: loaded.diarization,
     audioChunk: params.audioPath
   })
-  const turns = []
-  for (const line of result.split('\n')) {
-    const match = line.match(/Speaker (\d+): ([\d.]+)s - ([\d.]+)s/)
-    if (!match) continue
-    turns.push({
-      speaker: `speaker_${Number(match[1])}`,
-      startMs: Math.round(Number(match[2]) * 1000),
-      endMs: Math.round(Number(match[3]) * 1000),
-      confidence: 1
-    })
+  const turns = parseSpeakerTurns(result, params.audioDurationMs ?? Infinity)
+  if (!turns.length && /Speaker\s+\d+:/i.test(result)) {
+    throw new Error('QVAC returned an unrecognized speaker timeline; no speaker labels were changed.')
   }
-  send({ id, type: 'result', turns })
+  send({ id, type: 'result', turns, text: result })
 }
 
 async function prepareOCR (id) {
@@ -313,7 +329,7 @@ async function handle (request) {
   try {
     switch (method) {
       case 'ping':
-        send({ id, type: 'result', text: 'QVAC 0.18.2 ready' })
+        send({ id, type: 'result', text: 'QVAC inference 0.21.1 ready' })
         break
       case 'prepareLLM':
         await prepareLLM(id, params)
@@ -322,8 +338,13 @@ async function handle (request) {
         await complete(id, params)
         break
       case 'prepareTranscription':
-        await prepareTranscription(id)
+        await prepareTranscription(id, params)
         break
+      case 'prepareSpeechAssets': {
+        const model = await stageParakeetCoreML({ modelPath: params.speechModelPath })
+        send({ id, type: 'result', model })
+        break
+      }
       case 'transcribe':
         await transcribeAudio(id, params)
         break

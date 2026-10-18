@@ -1,5 +1,10 @@
 import Foundation
 
+enum LocalAIResponseFormat: String, Sendable {
+    case presentation
+    case summary
+}
+
 enum AIBackend: String, CaseIterable, Identifiable, Sendable {
     case native
     case qvac

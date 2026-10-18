@@ -2431,7 +2431,8 @@ final class AppModel: ObservableObject {
                                 )
                             ),
                         ],
-                        maxTokens: 512
+                        maxTokens: 512,
+                        responseFormat: .presentation
                     )
                     try Task.checkCancellation()
                     guard let presentation = ContentPresentationGenerator.parse(
@@ -2491,7 +2492,8 @@ final class AppModel: ObservableObject {
                                 )
                             ),
                         ],
-                        maxTokens: 1_536
+                        maxTokens: 1_536,
+                        responseFormat: .summary
                     )
                     try Task.checkCancellation()
                     guard let summary = ContentSummaryGenerator.parse(

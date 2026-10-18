@@ -115,9 +115,20 @@ func libraryMonitorDeliversFileChangesAndDoesNoIdleRefresh() async throws {
     // Longer than the former eight-second timer. No writes means no refreshes.
     try await Task.sleep(for: .seconds(9))
     #expect(deliveries.isEmpty)
-    try Data(repeating: 0, count: 4096).write(to: call.appendingPathComponent("mic.caf"))
+    // Match the recorder's open-file append. Data.write can replace the file,
+    // which is correctly treated as newly arrived audio rather than a tick.
+    let audio = try FileHandle(forWritingTo: call.appendingPathComponent("mic.caf"))
+    try audio.seekToEnd()
+    try audio.write(contentsOf: Data(repeating: 0, count: 4096))
+    try audio.close()
     try await Task.sleep(for: .seconds(1))
     #expect(deliveries.isEmpty)
+    try Data(repeating: 1, count: 2048).write(to: call.appendingPathComponent("new.wav"))
+    for _ in 0..<80 {
+        if deliveries.contains(where: { $0.pendingTranscription }) { break }
+        try await Task.sleep(for: .milliseconds(50))
+    }
+    #expect(deliveries.contains(where: { $0.pendingTranscription }))
 }
 
 @Test

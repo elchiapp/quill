@@ -171,12 +171,14 @@ actor QVACLLMEngine {
     func complete(
         systemPrompt: String,
         messages: [ChatMessage],
-        maxTokens: Int? = nil
+        maxTokens: Int? = nil,
+        responseFormat: LocalAIResponseFormat? = nil
     ) async throws -> String {
         let stream = try await stream(
             systemPrompt: systemPrompt,
             messages: messages,
-            maxTokens: maxTokens
+            maxTokens: maxTokens,
+            responseFormat: responseFormat
         )
         var response = ""
         for try await token in stream { response += token }
@@ -190,7 +192,8 @@ actor QVACLLMEngine {
     func stream(
         systemPrompt: String,
         messages: [ChatMessage],
-        maxTokens: Int? = nil
+        maxTokens: Int? = nil,
+        responseFormat: LocalAIResponseFormat? = nil
     ) async throws -> AsyncThrowingStream<String, Error> {
         guard messages.last?.role == .user else {
             throw BuiltInLLMEngine.EngineError.emptyConversation
@@ -206,7 +209,8 @@ actor QVACLLMEngine {
             maxTokens: maxTokens ?? min(
                 2_048,
                 max(900, selectedPlan.contextTokens / 64)
-            )
+            ),
+            responseFormat: responseFormat?.rawValue
         )
 
         return AsyncThrowingStream { continuation in

@@ -218,6 +218,26 @@ hot-swappable **AI backend** control:
   terminal command, localhost server, or separately installed QVAC app is
   required.
 
+The desktop QVAC bridge uses the current `@qvac/inference` engine surface
+(the successor to `@qvac/bare-sdk`), ASR 0.10.0 / Speech Fabric, and Fabric
+0.22.0 through the LLM and OCR addons. The SDK's published optional peer
+ranges lag these addons; narrow, exact overrides in `QVACBridge/package.json`
+are checked by the opt-in speech/OCR/LLM integration tests. Bare is bundled
+with the app. No separate QVAC installation is needed.
+
+Parakeet explicitly uses Metal by default, even when a registry download includes
+Core ML companions. The SDK also supports a staged Core ML encoder
+through `speech-models.mjs`; acceleration must be verified with the per-run
+`encoderUsedCoreml` statistic rather than inferred from a requested setting.
+On the tested M4 Max, Metal is faster than the hybrid Core ML path. TranscribePsy
+is an experimental benchmark candidate, not the app's default: its released
+on-device model covers eight languages rather than Parakeet's 25.
+
+The bridge preserves timed transcript metadata and requires JSON-schema output
+for generated titles and summaries. Its cancellation gate, shutdown deadline,
+and UTF-8 pipe framing have dedicated regressions. SDK identity/lock files stay
+inside DropSift's local cache, separate from other QVAC applications.
+
 The backend selected when a transcription job starts stays attached to that
 job, while new chat and ingestion work switches immediately. This makes it safe
 to change providers while the background queue is finishing an earlier item.

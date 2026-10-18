@@ -4,11 +4,20 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@qvac/asr-ggml": "0.1.0",
-    "@qvac/bare-sdk": "0.18.2",
-    "@qvac/llm-llamacpp": "0.53.2",
-    "@qvac/ocr-ggml": "0.13.1",
-    "bare": "1.31.2",
+    "@qvac/asr-ggml": "0.10.0",
+    "@qvac/inference": "0.21.1",
+    "@qvac/llm-llamacpp": "0.62.0",
+    "@qvac/ocr-ggml": "0.29.1",
+    "bare": "1.35.1",
+    "bare-fs": "4.8.4",
+    "bare-path": "3.1.2",
     "bare-process": "4.5.1"
+  },
+  "overrides": {
+    "@qvac/inference": {
+      "@qvac/asr-ggml": "$@qvac/asr-ggml",
+      "@qvac/llm-llamacpp": "$@qvac/llm-llamacpp",
+      "@qvac/ocr-ggml": "$@qvac/ocr-ggml"
+    }
   }
 }
