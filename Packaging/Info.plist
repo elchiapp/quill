@@ -19,9 +19,9 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.58</string>
+    <string>1.0.59</string>
     <key>CFBundleVersion</key>
-    <string>2026101802</string>
+    <string>2026101803</string>
     <key>LSMinimumSystemVersion</key>
     <string>15.0</string>
     <key>NSHighResolutionCapable</key>
@@ -34,8 +34,8 @@
         <true/>
     </dict>
     <key>NSMicrophoneUsageDescription</key>
-    <string>DropSift records your microphone during meetings so you can transcribe them locally. Audio never leaves this Mac.</string>
+    <string>DropSift records your microphone for local transcription. Saved recordings may sync through your iCloud Drive library.</string>
     <key>NSAudioCaptureUsageDescription</key>
-    <string>DropSift records system audio from meetings so it can transcribe the other side locally. Audio never leaves this Mac.</string>
+    <string>DropSift records audio from your Mac for local transcription. Saved recordings may sync through your iCloud Drive library.</string>
 </dict>
 </plist>

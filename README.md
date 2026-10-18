@@ -11,7 +11,7 @@ threads sync through the user's iCloud Drive; inference never leaves the Mac.
 
 ## Install
 
-Build a signed, double-clickable app bundle and a distributable disk image:
+Build a double-clickable development app and disk image:
 
 ```sh
 scripts/package-macos.sh
@@ -19,9 +19,40 @@ open dist/DropSift.dmg
 ```
 
 The generated artifacts are `dist/DropSift.app.zip` and `dist/DropSift.dmg`. By
-default, the app is ad-hoc signed for local use. Set `SIGN_IDENTITY` to a
-Developer ID or Apple Development signing identity when a persistent identity
-is required.
+default, the app is ad-hoc signed for local use. It is **not share-ready**.
+Apple Development signing is not a replacement for Developer ID notarization.
+
+For a friends build, use one existing, explicitly approved **Developer ID
+Application** signing identity and an existing notarytool profile:
+
+```sh
+DROPSIFT_RELEASE=1 SIGN_IDENTITY='Developer ID Application: exact identity' \
+  DROPSIFT_DIST_DIR='/absolute/local/workspace/artifacts' scripts/package-macos.sh
+SIGN_IDENTITY='Developer ID Application: exact identity' \
+  scripts/notarize-macos.sh '/absolute/local/workspace/artifacts' 'exact-notary-profile'
+```
+
+These commands do not import keys, create credential profiles, or change
+Keychain settings. Do not run credential-backed steps without approval for
+the named identity and profile. The final `release-status.json` must say
+`shareReady: true`. That state requires Developer ID signatures, secure
+timestamps, hardened executables, notarization tickets, and Gatekeeper
+acceptance. The app and disk image both carry stapled tickets.
+This is a platform-distribution gate, not a full QA, security, or legal
+certification. Start with private testers and validate on another clean Mac
+before a wider release.
+
+New artifacts and legal-source caches can be kept outside iCloud with
+`DROPSIFT_DIST_DIR` and `DROPSIFT_LEGAL_CACHE`. The package includes getting
+started and privacy pages, third-party notices, and FFmpeg source/rebuild
+material. The Help menu and Settings expose those documents. No recordings,
+downloaded model weights, credentials, or user settings are included.
+The packager applies two narrow, documented resource-location compatibility
+edits to the pinned Swift dependencies. It preserves their existing checkout
+flags and other changes. Resource bundles ship in `Contents/Resources`, not
+the app root. `DropSift.app/Contents/MacOS/dropsift doctor --package-resources`
+checks the real fallback-tokenizer and speech-table loaders without reading
+the user's library or requesting recording permissions.
 
 Every distributable update uses the same semantic version and build number on
 macOS, iPhone, and Apple Watch. Before packaging a new update, run:
@@ -363,8 +394,8 @@ dropsift install --uninstall
 
 ## License status
 
-The original upstream Quill repository currently has no explicit software license. Public
-GitHub visibility permits viewing and forking through GitHub, but does not
-grant general commercial-use or redistribution rights. See
-[`LICENSE_STATUS.md`](LICENSE_STATUS.md) and resolve the legal blocker in
-[`TODO.md`](TODO.md) before commercial use.
+Upstream Quill now publishes an MIT license, copyright Humanitas Labs. Its
+notice is preserved in `Packaging/Licenses/Quill-MIT.txt`. Bundled dependencies
+retain their own licenses. This packaging work does not choose a new public
+license for all DropSift-specific contributions. See
+[`LICENSE_STATUS.md`](LICENSE_STATUS.md) before a public or commercial release.

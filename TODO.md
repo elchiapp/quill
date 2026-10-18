@@ -2,14 +2,16 @@
 
 This file is the product and engineering backlog. Keep it current as work lands.
 
-## Legal blocker
+## Distribution and license status
 
-- [ ] Obtain an explicit license or written commercial-use permission from
-  Digimata. The upstream `digimata/quill` repository has no detected license,
-  so public visibility and GitHub forking do not grant general commercial-use,
-  redistribution, or sublicensing rights.
-- [ ] After upstream permission is resolved, choose and add a license for the
-  new Dropsift work owned by this fork's contributors.
+- [x] Verify upstream's current MIT license and preserve the Humanitas Labs
+  copyright and license in binary distributions. See LICENSE_STATUS.md.
+- [ ] Choose an explicit public license for DropSift-specific contributions
+  before describing the entire fork as open source under that license.
+- [ ] Complete Developer ID signing and notarization before sharing the
+  friends beta. `shareReady` is a platform-distribution gate, not a full QA or
+  legal certification.
+- [ ] Validate on a second clean Mac before a wider public release.
 
 ## Dropsift product foundation
 

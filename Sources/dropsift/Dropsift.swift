@@ -7,6 +7,12 @@ struct Dropsift: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "dropsift",
         abstract: "Private local meeting workspace with recording, transcription, and local-AI chat.",
+        version: {
+            let info = Bundle.main.infoDictionary ?? [:]
+            let version = info["CFBundleShortVersionString"] as? String ?? "development"
+            let build = info["CFBundleVersion"] as? String ?? "local"
+            return "\(version) (\(build))"
+        }(),
         subcommands: [Run.self, Doctor.self, Install.self],
         defaultSubcommand: Run.self
     )
@@ -37,7 +43,7 @@ struct Run: ParsableCommand {
         if !DoctorReport.allOK(checks) {
             FileHandle.standardError.write(Data("startup checks failed:\n".utf8))
             DoctorReport.print(checks)
-            throw ExitCode(1)
+            if !DoctorReport.canLaunchInterface(checks) { throw ExitCode(1) }
         }
 
         let app = NSApplication.shared
@@ -66,7 +72,14 @@ struct Doctor: ParsableCommand {
         abstract: "Check microphone, system audio, and recordings folder."
     )
 
+    @Flag(name: .long, help: "Verify bundled tokenizer and speech resources without reading the user library.")
+    var packageResources = false
+
     func run() throws {
+        if packageResources {
+            try PackageResourceCheck.run()
+            return
+        }
         let checks = DoctorReport.run(recordingsRoot: Config.resolveRoot(cliOverride: nil))
         DoctorReport.print(checks)
         if !DoctorReport.allOK(checks) {
@@ -184,6 +197,10 @@ final class AppController: NSObject, NSApplicationDelegate {
     @objc private func quitFromMenu(_ sender: Any?) {
         shutdown()
     }
+
+    @objc private func openBetaGuide(_ sender: Any?) { AppDocument.betaGuide.open() }
+    @objc private func openPrivacy(_ sender: Any?) { AppDocument.privacy.open() }
+    @objc private func openNotices(_ sender: Any?) { AppDocument.notices.open() }
 
     private func installMainMenu() {
         let mainMenu = NSMenu(title: "Main Menu")
@@ -357,6 +374,15 @@ final class AppController: NSObject, NSApplicationDelegate {
         helpMenuItem.submenu = helpMenu
         mainMenu.addItem(helpMenuItem)
         NSApp.helpMenu = helpMenu
+        for (title, action) in [
+            ("DropSift Getting Started", #selector(openBetaGuide(_:))),
+            ("Privacy & Data", #selector(openPrivacy(_:))),
+            ("Open-source Licenses", #selector(openNotices(_:))),
+        ] {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = self
+            helpMenu.addItem(item)
+        }
 
         NSApp.mainMenu = mainMenu
     }

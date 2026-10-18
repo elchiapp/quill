@@ -12,8 +12,8 @@
         <true/>
     </dict>
     <key>NSMicrophoneUsageDescription</key>
-    <string>DropSift records your microphone during meetings so you can transcribe them later. Audio never leaves this Mac.</string>
+    <string>DropSift records your microphone for local transcription. Saved recordings may sync through your iCloud Drive library.</string>
     <key>NSAudioCaptureUsageDescription</key>
-    <string>DropSift records system audio—the other side of your meetings—so you can transcribe it later. Audio never leaves this Mac.</string>
+    <string>DropSift records audio from your Mac for local transcription. Saved recordings may sync through your iCloud Drive library.</string>
 </dict>
 </plist>

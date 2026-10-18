@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct SettingsView: View {
@@ -5,7 +6,7 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(spacing: 0) {
             HStack {
                 Text("DropSift settings")
                     .font(.title2.weight(.semibold))
@@ -13,140 +14,163 @@ struct SettingsView: View {
                 Button("Done") { dismiss() }
                     .keyboardShortcut(.defaultAction)
             }
-
-            VStack(alignment: .leading, spacing: 5) {
-                Label(model.deviceProfile.summary, systemImage: "memorychip")
-                    .font(.body.weight(.semibold))
-                Text(
-                    model.aiBackend == .qvac
-                        ? "QVAC model selection is limited to \(model.recommendedModelPlan.budgetLabel), leaving at least 50% of unified memory available."
-                        : "MLX is hard-limited to \(model.recommendedModelPlan.budgetLabel), leaving at least 50% of unified memory available."
-                )
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
+            .padding(.horizontal, 24)
+            .padding(.top, 20)
+            .padding(.bottom, 14)
 
             Divider()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
 
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: "video.badge.checkmark")
-                    .font(.title3)
-                    .foregroundStyle(.tint)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Meeting detection")
-                        .font(.headline)
-                    Text(
-                        "Watch locally for known meeting apps or browsers using microphone input, then ask before recording. DropSift never starts automatically."
-                    )
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Toggle(
-                    "",
-                    isOn: Binding(
-                        get: { model.meetingDetectionEnabled },
-                        set: { model.setMeetingDetectionEnabled($0) }
-                    )
-                )
-                .labelsHidden()
-            }
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("AI backend")
-                    .font(.headline)
-                Picker(
-                    "AI backend",
-                    selection: Binding(
-                        get: { model.aiBackend },
-                        set: { model.selectAIBackend($0) }
-                    )
-                ) {
-                    ForEach(AIBackend.allCases) { backend in
-                        Text(backend.name).tag(backend)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .disabled(model.isAnswering || model.isAITransitioning)
-                Text(model.aiBackend.shortDetail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Divider()
-
-            HStack {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(
-                        model.aiBackend == .qvac
-                            ? "QVAC local AI"
-                            : "Apple-native local AI"
-                    )
-                        .font(.headline)
-                    Text(
-                        model.aiBackend == .qvac
-                            ? "Managed in-app QVAC runtime · GGUF · context up to 262K tokens"
-                            : "In-process Apple MLX · native context up to 262K tokens"
-                    )
+                    VStack(alignment: .leading, spacing: 5) {
+                        Label(model.deviceProfile.summary, systemImage: "memorychip")
+                            .font(.body.weight(.semibold))
+                        Text(
+                            model.aiBackend == .qvac
+                                ? "QVAC model selection is limited to \(model.recommendedModelPlan.budgetLabel), leaving at least 50% of unified memory available."
+                                : "MLX is hard-limited to \(model.recommendedModelPlan.budgetLabel), leaving at least 50% of unified memory available."
+                        )
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    }
+
+                    Divider()
+
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: "video.badge.checkmark")
+                            .font(.title3)
+                            .foregroundStyle(.tint)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Meeting detection")
+                                .font(.headline)
+                            Text(
+                                "Watch locally for known meeting apps or browsers using microphone input, then ask before recording. DropSift never starts automatically."
+                            )
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Toggle(
+                            "",
+                            isOn: Binding(
+                                get: { model.meetingDetectionEnabled },
+                                set: { model.setMeetingDetectionEnabled($0) }
+                            )
+                        )
+                        .labelsHidden()
+                    }
+
+                    Divider()
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("AI backend")
+                            .font(.headline)
+                        Picker(
+                            "AI backend",
+                            selection: Binding(
+                                get: { model.aiBackend },
+                                set: { model.selectAIBackend($0) }
+                            )
+                        ) {
+                            ForEach(AIBackend.allCases) { backend in
+                                Text(backend.name).tag(backend)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .disabled(model.isAnswering || model.isAITransitioning)
+                        Text(model.aiBackend.shortDetail)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        if model.aiBackend == .qvac {
+                            Text(
+                                "Experimental: review transcripts carefully. Native transcription is recommended for important long recordings."
+                            )
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                        }
+                    }
+
+                    Divider()
+
+                    HStack {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(
+                                model.aiBackend == .qvac
+                                    ? "QVAC local AI"
+                                    : "Apple-native local AI"
+                            )
+                            .font(.headline)
+                            Text(
+                                model.aiBackend == .qvac
+                                    ? "Managed in-app QVAC runtime · GGUF · context up to 262K tokens"
+                                    : "In-process Apple MLX · native context up to 262K tokens"
+                            )
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        status
+                    }
+
+                    ForEach(model.modelPlans, id: \.model.id) { plan in
+                        Divider()
+                        modelRow(plan)
+                    }
+
+                    Divider()
+
+                    HStack {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Model storage")
+                                .font(.caption.weight(.semibold))
+                            Text(model.modelCacheRoot.path)
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                        Spacer()
+                        Button("Show model files") { model.openModelFolder() }
+                    }
+
+                    Divider()
+
+                    HStack {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Knowledge library · \(model.storageLabel)")
+                                .font(.caption.weight(.semibold))
+                            Text(model.root.path)
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                        Spacer()
+                        Button("Open in Finder") { model.openRecordingsFolder() }
+                    }
+
+                    Divider()
+
+                    HStack {
+                        Text("DropSift version")
+                            .font(.caption.weight(.semibold))
+                        Spacer()
+                        Text(versionLabel)
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                    HStack {
+                        Button("Getting started") { AppDocument.betaGuide.open() }
+                        Button("Privacy & data") { AppDocument.privacy.open() }
+                        Button("Open-source licenses") { AppDocument.notices.open() }
+                    }
+                    .font(.caption)
                 }
-                Spacer()
-                status
+                .padding(24)
             }
-
-            ForEach(model.modelPlans, id: \.model.id) { plan in
-                Divider()
-                modelRow(plan)
-            }
-
-            Divider()
-
-            HStack {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Model storage")
-                        .font(.caption.weight(.semibold))
-                    Text(model.modelCacheRoot.path)
-                        .font(.caption2.monospaced())
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-                Spacer()
-                Button("Show model files") { model.openModelFolder() }
-            }
-
-            Divider()
-
-            HStack {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Knowledge library · \(model.storageLabel)")
-                        .font(.caption.weight(.semibold))
-                    Text(model.root.path)
-                        .font(.caption2.monospaced())
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-                Spacer()
-                Button("Open in Finder") { model.openRecordingsFolder() }
-            }
-
-            Divider()
-
-            HStack {
-                Text("DropSift version")
-                    .font(.caption.weight(.semibold))
-                Spacer()
-                Text(versionLabel)
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-            }
+            .frame(maxHeight: Self.scrollHeight(screenHeight: NSScreen.main?.visibleFrame.height ?? 900))
         }
-        .padding(24)
         .frame(width: 740)
         .confirmationDialog(
             model.modelDeletionRequest.map {
@@ -171,6 +195,10 @@ struct SettingsView: View {
                     + "Your recordings, notes, and conversations will not be affected."
             )
         }
+    }
+
+    static func scrollHeight(screenHeight: CGFloat) -> CGFloat {
+        max(240, min(660, screenHeight - 170))
     }
 
     private var versionLabel: String {

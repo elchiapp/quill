@@ -120,4 +120,14 @@ enum DoctorReport {
             return true
         }
     }
+
+    /// Recording permission is not required to browse, import, or ask questions.
+    /// Keep the CLI doctor strict, but do not close the entire desktop UI when
+    /// a user has denied microphone access. Recording retains its own checks.
+    static func canLaunchInterface(_ checks: [Check]) -> Bool {
+        checks.allSatisfy {
+            if case .fail = $0.status { return $0.name == "microphone" }
+            return true
+        }
+    }
 }
