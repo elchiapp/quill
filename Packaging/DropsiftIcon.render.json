@@ -1,9 +1,9 @@
 {
-  "renderer": "@resvg/resvg-js@2.6.2",
+  "renderer": "Apple Core Graphics; built-in imagegen master",
   "sha256": {
-    "Packaging/DropsiftIcon.svg": "bfabac783d7e7292f487b190c6335b35b6a5cf301eb608e1019ec0168dafdc41",
-    "Packaging/DropsiftIcon.png": "bdd4557165740319f68cb9c49ea2dc2c73d8e2bb2d8f0c6483b781f6d07cc0e8",
-    "Mobile/Assets/MobileAssets.xcassets/AppIcon.appiconset/AppIcon-1024.png": "788523601972f318fd352145cafb0ea806a598fa8f93205321f6648b33b39749",
-    "Mobile/Assets/WatchAssets.xcassets/AppIcon.appiconset/WatchIcon-1024.png": "788523601972f318fd352145cafb0ea806a598fa8f93205321f6648b33b39749"
+    "Packaging/DropsiftIconMaster.png": "56ea197b76087a22fe99715e228c3a7980e1c8c00d76783740c3041ac93e2da8",
+    "Packaging/DropsiftIcon.png": "47324ac07214a93ac95ad539c00ea675c389e297ec19c7a7f98433c27dd4e488",
+    "Mobile/Assets/MobileAssets.xcassets/AppIcon.appiconset/AppIcon-1024.png": "8947c439125d19485a38da6598570dd4dab50844636e9d92744bcab8f1212a61",
+    "Mobile/Assets/WatchAssets.xcassets/AppIcon.appiconset/WatchIcon-1024.png": "8947c439125d19485a38da6598570dd4dab50844636e9d92744bcab8f1212a61"
   }
 }

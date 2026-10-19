@@ -107,12 +107,13 @@ Appearance follows the system by default. On Mac, open **Settings → Appearance
 to choose System, Light, or Dark. On iPhone, use **Organize → Appearance**.
 The choice stays local to each app and does not change OS appearance. Watch
 keeps its native dark interface. All three apps use the same QVAC-inspired
-recall icon: a teal Q and layered saved information on charcoal.
+second-brain icon: a sculpted teal Q with folded-memory surfaces on obsidian.
 
-Icon exports are checked against `Packaging/DropsiftIcon.svg`. To regenerate,
-install `@resvg/resvg-js@2.6.2` in a local build-tool directory outside iCloud,
-then run `node scripts/render-app-icons.mjs /absolute/build-tool-directory`.
-The renderer is build-only; it is not included in the app.
+Icon exports are checked against `Packaging/DropsiftIconMaster.png`. The master
+was created with the built-in image-generation tool; its exact brief is saved
+in `Packaging/DropsiftIcon.prompt.txt`. To regenerate the 1024px exports, run
+`node scripts/render-app-icons.mjs /absolute/local/compiler-cache-directory`.
+The build-only exporter preserves Mac transparency and removes mobile alpha.
 
 1. Open `DropSift.app` on **Capture**. The uncluttered capture canvas provides
    five actions: **Add note**, **Add doc**, **Add image**, **Add recording**,

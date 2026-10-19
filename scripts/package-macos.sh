@@ -167,7 +167,7 @@ ICON_WORK=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/dropsift-icon.XXXXXX")
 /usr/bin/env node "$SCRIPT_DIR/render-app-icons.mjs" --check
 ICON_SOURCE="$PROJECT_ROOT/Packaging/DropsiftIcon.png"
 if [[ ! -f "$ICON_SOURCE" ]]; then
-    print -u2 "Missing vector-derived app icon. Run scripts/render-app-icons.mjs."
+    print -u2 "Missing master-derived app icon. Run scripts/render-app-icons.mjs."
     exit 1
 fi
 

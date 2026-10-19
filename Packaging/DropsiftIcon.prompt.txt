@@ -1,0 +1,15 @@
+Tool: built-in imagegen. Raster master, not a vector drawing.
+Edit target: the rejected flat DropSift icon.
+Brand reference: the three QVAC family icons supplied by the user.
+
+Use case: stylized-concept / logo-brand.
+Asset type: final premium 3D macOS app icon for DropSift, a private QVAC-powered second brain that captures and recalls conversations, notes, and knowledge.
+Image 1 is the existing icon to REPLACE, not a shape to preserve. Image 2 is the user's actual QVAC brand reference. Follow the distinctive wide QVAC Q silhouette from the marks in Image 2: horizontally elongated rounded/angular loop, sloped right shoulder, short diagonal lower-right Q tail. Do NOT reuse the R-shaped glyph or loose bars from Image 1.
+
+Remake the artwork as one elegant, tactile, sculpted 3D QVAC Q acting as a second brain. The Q itself is the brain: its thick body has two smoothly interlocking curved lobes and just two or three restrained sculptural grooves, suggesting folded memory and intelligence. Keep the Q's recognizable central opening. This is a unified emblem, not a separate anatomical brain placed in or above a letter. Elegant product design, not a medical brain illustration or a sci-fi game badge.
+
+Material: satin teal/turquoise glass-ceramic with convincing thickness, rounded machined bevels, deep jade shaded sidewalls, subtle polished highlights. Controlled soft studio lighting, realistic ambient occlusion, a soft contact shadow, restrained dimensional depth. A mostly front-facing view with slight elevation to show the top bevel. Strong, readable silhouette at small Dock sizes. Use the mint/cyan family of the QVAC reference, no rainbow iridescence.
+
+Place the centered emblem on one luxurious dark charcoal/obsidian macOS squircle tile with a very subtle physical bevel. Balanced generous negative space, emblem occupying about 65% of tile width. Square 1024x1024 composition; tile inset about 6% on each side, all four rounded corners completely visible. Transparent canvas outside the tile, actual alpha, not a white or checkerboard backdrop. The tile is opaque and dark.
+
+No text, lettering other than the Q emblem, wordmark, tiny labels, outer strokes, decorative horizontal bars, circuit nodes, sparkles, funnel, target symbol, extra objects, multiple options, contact sheet, presentation mockup, or surrounding scene. Deliver one coherent finished app icon.

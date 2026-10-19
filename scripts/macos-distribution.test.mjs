@@ -27,9 +27,9 @@ test('release mode never falls back to ad-hoc signing', () => {
   assert.ok(args.includes('runtime'))
   assert.equal(args.includes('--deep'), false)
 })
-test('all icon exports match the shared vector artwork', () => {
+test('all icon exports match the shared master artwork', () => {
   const output = execFileSync(process.execPath, [new URL('./render-app-icons.mjs', import.meta.url).pathname, '--check'], { encoding: 'utf8' })
-  assert.match(output, /match the SVG source/)
+  assert.match(output, /match the master artwork/)
   for (const [file, colorType] of [
     ['../Packaging/DropsiftIcon.png', 6],
     ['../Mobile/Assets/MobileAssets.xcassets/AppIcon.appiconset/AppIcon-1024.png', 2],
