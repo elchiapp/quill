@@ -87,11 +87,50 @@ struct SettingsView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         if model.aiBackend == .qvac {
+                            Picker("Speech route", selection: Binding(
+                                get: { model.qvacSpeechSettings.route },
+                                set: { var value = model.qvacSpeechSettings; value.route = $0; model.selectQVACSpeechSettings(value) }
+                            )) {
+                                ForEach(QVACSpeechSettings.Route.allCases) { Text($0.title).tag($0) }
+                            }
+                            .accessibilityIdentifier("qvac-speech-route")
+                            Picker("Speech model", selection: Binding(
+                                get: { model.qvacSpeechSettings.model },
+                                set: { var value = model.qvacSpeechSettings; value.model = $0; model.selectQVACSpeechSettings(value) }
+                            )) {
+                                ForEach(QVACSpeechSettings.Model.allCases) { Text($0.title).tag($0) }
+                            }
+                            .accessibilityIdentifier("qvac-speech-model")
+                            Picker("Speech acceleration", selection: Binding(
+                                get: { model.qvacSpeechSettings.acceleration },
+                                set: { var value = model.qvacSpeechSettings; value.acceleration = $0; model.selectQVACSpeechSettings(value) }
+                            )) {
+                                ForEach(QVACSpeechSettings.Acceleration.allCases) { acceleration in
+                                    if model.qvacSpeechSettings.model == .parakeet || acceleration != .coreml {
+                                        Text(acceleration.title).tag(acceleration)
+                                    }
+                                }
+                            }
+                            .accessibilityIdentifier("qvac-speech-acceleration")
+                            Text("Changes apply to the next transcription. Direct uses the Fabric Speech native addon; model downloads, LLM and OCR stay SDK-managed. Core ML permits CPU/ANE encoder execution, not a guarantee of NPU use. Speaker diarization uses CPU for CPU-only, otherwise Metal. TranscribePsy Core ML is not available in this addon.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                             Text(
                                 "Experimental: review transcripts carefully. Native transcription is recommended for important long recordings."
                             )
                             .font(.caption)
                             .foregroundStyle(.orange)
+                            Text("Review quiet or noisy recordings. These speech models can produce invented text when no speech is present.")
+                                .font(.caption)
+                                .foregroundStyle(.orange)
+                            Button("Show speech performance logs") {
+                                let directory = model.qvacSpeechSettings.performanceDirectory
+                                try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                                NSWorkspace.shared.open(directory)
+                            }
+                            Text("Local timing and backend metadata only. No audio or transcript text. Logs update when speech work completes; there is no idle polling.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
                     }
 

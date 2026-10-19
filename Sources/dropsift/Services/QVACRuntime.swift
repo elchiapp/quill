@@ -17,6 +17,9 @@ struct QVACBridgeParams: Codable, Sendable {
     var audioDurationMs: Int?
     var imagePath: String?
     var speechModelPath: String?
+    var speechRoute: String?
+    var speechModel: String?
+    var speechAcceleration: String?
     var responseFormat: String?
 
     init(
@@ -30,7 +33,10 @@ struct QVACBridgeParams: Codable, Sendable {
         audioDurationMs: Int? = nil,
         imagePath: String? = nil,
         speechModelPath: String? = nil,
-        responseFormat: String? = nil
+        responseFormat: String? = nil,
+        speechRoute: String? = nil,
+        speechModel: String? = nil,
+        speechAcceleration: String? = nil
     ) {
         self.modelSize = modelSize
         self.modelID = modelID
@@ -43,6 +49,9 @@ struct QVACBridgeParams: Codable, Sendable {
         self.imagePath = imagePath
         self.speechModelPath = speechModelPath
         self.responseFormat = responseFormat
+        self.speechRoute = speechRoute
+        self.speechModel = speechModel
+        self.speechAcceleration = speechAcceleration
     }
 }
 
@@ -66,11 +75,28 @@ struct QVACBridgeBlock: Codable, Sendable {
 
 struct QVACBridgeSpeechStats: Codable, Sendable {
     let encoderUsedCoreml: Int?
+    let encoderOnCoreml: Int?
+    let backendId: Int?
+    let backendDevice: Int?
+    let totalTime: Double?
+    let totalWallMs: Double?
+    let encoderTime: Double?
+    let decoderTime: Double?
+    let melSpecTime: Double?
+    let encoderMs: Double?
+    let decoderMs: Double?
+    let modelLoadMs: Double?
+    let totalSamples: Int?
+    let totalTokens: Int?
 }
 
 struct QVACBridgeDiagnostics: Codable, Sendable {
     let selectedBackend: String?
     let selectedDevice: String?
+    let speechRoute: String?
+    let requestedAcceleration: String?
+    let npuHardwareVerified: Bool?
+    let bypassReason: String?
 }
 
 struct QVACBridgeResponse: Codable, Sendable {
@@ -351,12 +377,19 @@ actor QVACRuntime {
     private func consume(line: String) {
         guard let marker = line.range(of: Self.protocolPrefix) else { return }
         let payload = String(line[marker.upperBound...])
-        guard let data = payload.data(using: .utf8),
-              let response = try? JSONDecoder().decode(
-                  QVACBridgeResponse.self,
-                  from: data
-              )
-        else { return }
+        guard let data = payload.data(using: .utf8) else { return }
+        let response: QVACBridgeResponse
+        do { response = try JSONDecoder().decode(QVACBridgeResponse.self, from: data) }
+        catch {
+            // A valid JSON envelope with an invalid typed field belongs to a
+            // known request. Fail it now instead of silently waiting 75 seconds.
+            if let envelope = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let id = envelope["id"] as? String,
+               let request = pending.removeValue(forKey: id) {
+                request.continuation.resume(throwing: RuntimeError.invalidResponse)
+            }
+            return
+        }
         guard let request = pending[response.id] else { return }
 
         switch response.type {

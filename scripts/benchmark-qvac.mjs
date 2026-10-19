@@ -15,11 +15,17 @@ const { values } = parseArgs({ options: {
   'prompts-file': { type: 'string' },
   'samples-file': { type: 'string' },
   'chunk-seconds': { type: 'string', default: '60' },
+  'speech-route': { type: 'string', default: 'sdk' },
+  'speech-model': { type: 'string', default: 'parakeet' },
+  acceleration: { type: 'string', default: 'metal' },
   action: { type: 'string', default: 'smoke' },
   repeat: { type: 'string', default: '3' },
+  'long-repeat': { type: 'string' },
   label: { type: 'string', default: 'QVAC' }
 } })
 const runtimeRoot = path.resolve(values['runtime-root'])
+const speechParams = modelPath => ({ speechRoute: values['speech-route'], speechModel: values['speech-model'],
+  speechAcceleration: values.acceleration, ...(modelPath && { speechModelPath: path.resolve(modelPath) }) })
 const workDir = path.resolve(values['work-dir'])
 await fs.mkdir(workDir, { recursive: true })
 const cacheDir = path.join(workDir, 'model-cache')
@@ -112,7 +118,8 @@ function request(method, params = {}, timeoutSeconds = 300) {
   })
 }
 const report = { label: values.label, startedAt: new Date().toISOString(),
-  runtimeRoot, executableHash, action: values.action, runs: [] }
+  runtimeRoot, executableHash, action: values.action, speechRoute: values['speech-route'],
+  speechModel: values['speech-model'], acceleration: values.acceleration, runs: [] }
 try {
   await Promise.race([ready, new Promise((_, reject) => {
     setTimeout(() => reject(new Error('No ready message')), 15000).unref()
@@ -125,17 +132,57 @@ try {
     }, 900)).event.model
     console.log(`Core ML assets ready: ${report.speechModelPath}`)
   }
+  if (values.action === 'speech-switch') {
+    const options = speechParams(values['model-path'])
+    report.prepareSeconds = (await request('prepareTranscription', options, 900)).seconds
+    const audioPath = path.join(values['audio-root'], 'system-000.pcm')
+    const params = { audioPath, audioDurationMs: (await fs.stat(audioPath)).size / 32 }
+    report.first = (await request('transcribe', params, 60)).event
+    // Same runtime, different route. No app restart is needed.
+    options.speechRoute = options.speechRoute === 'sdk' ? 'fabricDirect' : 'sdk'
+    report.switchedPrepareSeconds = (await request('prepareTranscription', options, 900)).seconds
+    report.switched = (await request('transcribe', params, 60)).event
+    try {
+      await request('prepareTranscription', { ...options, speechModelPath: path.join(workDir, 'missing-model.gguf') }, 30)
+      throw new Error('Missing model unexpectedly loaded')
+    } catch (error) {
+      if (String(error).includes('unexpectedly loaded')) throw error
+      report.missingModelError = String(error)
+    }
+    report.recoveryPrepareSeconds = (await request('prepareTranscription', options, 900)).seconds
+    report.recovered = (await request('transcribe', params, 60)).event
+    if (!report.first.segments?.length || !report.switched.segments?.length || !report.recovered.segments?.length) {
+      throw new Error('Switch/recovery returned no fixture speech')
+    }
+    await request('unloadTranscription')
+  }
+  if (values.action === 'compute-switch') {
+    const audioPath = path.join(values['audio-root'], 'system-000.pcm')
+    const duration = (await fs.stat(audioPath)).size / 32
+    for (const acceleration of ['cpu','coreml','metal']) {
+      const options = { ...speechParams(values['model-path']), speechAcceleration: acceleration }
+      await request('prepareTranscription', options, 900)
+      const response = await request('transcribe', { audioPath, audioDurationMs: duration }, 60)
+      const actual = response.event.diagnostics?.selectedBackend
+      if (actual !== acceleration) throw new Error(`Requested ${acceleration}, reported ${actual}`)
+      if (!response.event.segments?.length) throw new Error('No fixture speech after compute switch')
+      report.runs.push({ acceleration, seconds: response.seconds, stats: response.event.stats, diagnostics: response.event.diagnostics })
+    }
+    await request('unloadTranscription')
+  }
   if (values.action === 'diarize') {
-    report.prepareSeconds = (await request('prepareDiarization', {}, 300)).seconds
+    report.prepareSeconds = (await request('prepareDiarization', speechParams(), 600)).seconds
+    const audioPath = path.join(values['audio-root'], 'system-000.pcm')
     const result = await request('diarize', {
-      audioPath: path.join(values['audio-root'], 'system-000.pcm'), audioDurationMs: 11157
+      audioPath, audioDurationMs: Math.round((await fs.stat(audioPath)).size / 32)
     }, 120)
     report.diarization = result.event
+    if (!result.event.turns?.length) throw new Error('No speaker turn returned for the public speech fixture')
     console.log(`Diarization: ${result.event.turns?.length ?? 0} turns`)
     await request('unloadDiarization')
   }
   if (values.action === 'asr') {
-    const params = values['model-path'] ? { speechModelPath: path.resolve(values['model-path']) } : {}
+    const params = speechParams(values['model-path'])
     report.prepareSeconds = (await request('prepareTranscription', params, 600)).seconds
     const names = (await fs.readdir(values['audio-root'])).filter(name => /^(system|mic)-\d+\.pcm$/.test(name)).sort()
     if (!names.length) throw new Error('No normalized speech chunks')
@@ -172,7 +219,7 @@ try {
     const modelPath = path.resolve(values['model-path'])
     report.modelPath = modelPath
     report.modelSHA256 = createHash('sha256').update(await fs.readFile(modelPath)).digest('hex')
-    const prepared = await request('prepareTranscription', { speechModelPath: modelPath }, 600)
+    const prepared = await request('prepareTranscription', speechParams(modelPath), 600)
     report.prepareSeconds = prepared.seconds
     report.loadedModelID = prepared.event.model
     const mapped = await new Promise((resolve, reject) => execFile('/usr/sbin/lsof',
@@ -205,6 +252,8 @@ try {
       const offset = (run - 1) * 17 % manifest.samples.length
       const ordered = [...manifest.samples.slice(offset), ...manifest.samples.slice(0, offset)]
       for (const sample of ordered) {
+        if (sample.durationSeconds > 300 && run > Number(values['long-repeat'] ?? values.repeat)) continue
+        const sampleStart = performance.now()
         let seconds = 0
         const segments = []
         const engineStats = []
@@ -219,7 +268,16 @@ try {
           } catch (failure) { error = String(failure); break }
         }
         const text = segments.map(segment => segment.text).join(' ').trim()
-        report.runs.push({ sampleID: sample.id, run, seconds, text, error,
+        const backendMismatches = engineStats.flatMap(({ stats, diagnostics }) => {
+          if (diagnostics?.bypassReason === 'digital-silence') return []
+          const actual = stats?.encoderUsedCoreml === 1 ? 'coreml' : diagnostics?.selectedBackend
+          const expected = values.acceleration
+          return actual === expected ? [] : [`Requested ${expected}; reported ${actual ?? 'unknown'}`]
+        })
+        const invalidTimestamps = segments.filter(s => !Number.isFinite(s.startMs) || !Number.isFinite(s.endMs)
+          || s.startMs < 0 || s.endMs < s.startMs || s.endMs > chunkSeconds * 1000 + 1).length
+        report.runs.push({ sampleID: sample.id, run, seconds, wallSeconds: (performance.now() - sampleStart) / 1000,
+          text, error, backendMismatches, invalidTimestamps,
           durationSeconds: sample.durationSeconds, engineStats })
         await fs.writeFile(path.join(workDir, 'result.json'), JSON.stringify(report, null, 2))
         console.log(`${values.label}: ${sample.id} run=${run} seconds=${seconds.toFixed(3)} ${error ? 'FAILED' : 'done'}`)
@@ -258,6 +316,13 @@ try {
     }
     report.unloadSeconds = (await request('unloadLLM')).seconds
   }
+  try {
+    const cpu = await new Promise((resolve, reject) => execFile('/bin/ps', ['-p', String(child.pid), '-o', 'time='],
+      (error, stdout) => error ? reject(error) : resolve(stdout.trim())))
+    const match = cpu.match(/(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+(?:\.\d+)?)/)
+    if (match) report.engineCPUSeconds = Number(match[1] ?? 0) * 86400 + Number(match[2] ?? 0) * 3600
+      + Number(match[3]) * 60 + Number(match[4])
+  } catch { report.cpuSamplingUnavailable = true }
   report.shutdownSeconds = (await request('shutdown', {}, 10)).seconds
   report.peakEngineRSSBytes = peakRSSBytes
   report.finishedAt = new Date().toISOString()

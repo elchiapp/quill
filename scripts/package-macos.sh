@@ -93,7 +93,7 @@ done
 # only the Apple-silicon addon prebuilds; npm packages otherwise include native
 # binaries for every desktop, mobile, and server platform.
 QVAC_EXECUTABLE="$QVAC_SOURCE/node_modules/bare-runtime-darwin-arm64/bin/bare"
-for BRIDGE_FILE in bootstrap.cjs bridge.mjs speech-models.mjs structured-output.mjs diarization.mjs package-lock.json
+for BRIDGE_FILE in bootstrap.cjs bridge.mjs speech-models.mjs speech-options.mjs fabric-speech.mjs structured-output.mjs diarization.mjs package-lock.json
 do
     if [[ ! -f "$QVAC_SOURCE/$BRIDGE_FILE" ]]; then
         print -u2 "Missing QVAC bridge source: $QVAC_SOURCE/$BRIDGE_FILE"
@@ -113,6 +113,8 @@ fi
 /usr/bin/ditto "$QVAC_SOURCE/bootstrap.cjs" "$QVAC_RUNTIME/bootstrap.cjs"
 /usr/bin/ditto "$QVAC_SOURCE/bridge.mjs" "$QVAC_RUNTIME/bridge.mjs"
 /usr/bin/ditto "$QVAC_SOURCE/speech-models.mjs" "$QVAC_RUNTIME/speech-models.mjs"
+/usr/bin/ditto "$QVAC_SOURCE/speech-options.mjs" "$QVAC_RUNTIME/speech-options.mjs"
+/usr/bin/ditto "$QVAC_SOURCE/fabric-speech.mjs" "$QVAC_RUNTIME/fabric-speech.mjs"
 /usr/bin/ditto "$QVAC_SOURCE/structured-output.mjs" "$QVAC_RUNTIME/structured-output.mjs"
 /usr/bin/ditto "$QVAC_SOURCE/diarization.mjs" "$QVAC_RUNTIME/diarization.mjs"
 /usr/bin/ditto "$QVAC_SOURCE/package.json" "$QVAC_RUNTIME/package.json"

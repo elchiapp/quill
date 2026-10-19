@@ -30,6 +30,9 @@ actor TranscriptionCoordinator {
     private var activeSession: URL?
     private var engine: TranscriptionEngine?
     private var engineBackend: AIBackend?
+    private var speechSettings = QVACSpeechSettings()
+    private var engineSpeechSettings: QVACSpeechSettings?
+    private var diarizerSpeechSettings: QVACSpeechSettings?
     private var diarizer: (any SpeakerDiarization)?
     private var diarizerBackend: AIBackend?
     private var aiBackend: AIBackend = .native
@@ -60,6 +63,30 @@ actor TranscriptionCoordinator {
             diarizer = nil
             diarizerBackend = nil
         }
+    }
+
+    func configureSpeechSettings(_ settings: QVACSpeechSettings) async {
+        speechSettings = settings.validated
+        // Capture each job's selection. Never tear down an active model.
+        guard activeSession == nil else { return }
+        let resetEngine = engineBackend == .qvac && engineSpeechSettings != speechSettings
+        let resetDiarizer = diarizerBackend == .qvac && diarizerSpeechSettings != speechSettings
+        let previousEngine = resetEngine ? engine : nil
+        let previousDiarizer = resetDiarizer ? diarizer : nil
+        // Detach both caches before either await. A new job can enter the
+        // actor while old models unload; do not touch its new cache afterward.
+        if resetEngine {
+            engine = nil
+            engineBackend = nil
+            engineSpeechSettings = nil
+        }
+        if resetDiarizer {
+            diarizer = nil
+            diarizerBackend = nil
+            diarizerSpeechSettings = nil
+        }
+        await previousEngine?.release()
+        await previousDiarizer?.release()
     }
 
     /// Queue a finished session. With transcription disabled in config, the
@@ -227,9 +254,11 @@ actor TranscriptionCoordinator {
     private func transcribe(_ dir: URL) async throws -> TranscriptionOutcome {
         let manifestSnapshot = try SessionMeta.read(from: dir)
         let selectedBackend = aiBackend
+        let selectedSpeechSettings = speechSettings
         let engine = try await preparedEngine(
             session: dir.lastPathComponent,
-            backend: selectedBackend
+            backend: selectedBackend,
+            speechSettings: selectedSpeechSettings
         )
         publish(.transcribing(session: dir.lastPathComponent, queued: queue.count))
 
@@ -272,7 +301,8 @@ actor TranscriptionCoordinator {
                 log(dir, "diarizing \(track.file) (\(Config.diarizationEngine()))")
                 do {
                     let diarizer = try await preparedDiarizer(
-                        backend: selectedBackend
+                        backend: selectedBackend,
+                        speechSettings: selectedSpeechSettings
                     )
                     speakerTurns = try await diarizer.diarize(audio)
                     detectedRemoteSpeakers.formUnion(speakerTurns.map(\.speaker))
@@ -444,14 +474,18 @@ actor TranscriptionCoordinator {
 
     private func preparedEngine(
         session: String,
-        backend: AIBackend
+        backend: AIBackend,
+        speechSettings: QVACSpeechSettings
     ) async throws -> TranscriptionEngine {
-        if let engine, engineBackend == backend { return engine }
+        if let engine, engineBackend == backend,
+           backend != .qvac || engineSpeechSettings == speechSettings { return engine }
         await engine?.release()
         self.engine = nil
         engineBackend = nil
         if backend == .qvac {
             let engine = QVACTranscriptionEngine(
+                settings: speechSettings,
+                onPerformance: { metric in await SpeechPerformanceLog.shared.append(metric) },
                 onPreparationProgress: { [weak self] progress, detail in
                     Task {
                         await self?.publish(.preparingModel(
@@ -474,6 +508,7 @@ actor TranscriptionCoordinator {
             try await engine.prepare()
             self.engine = engine
             engineBackend = backend
+            engineSpeechSettings = speechSettings
             return engine
         }
         let configured = Config.transcriptionEngine()
@@ -508,17 +543,20 @@ actor TranscriptionCoordinator {
     }
 
     private func preparedDiarizer(
-        backend: AIBackend
+        backend: AIBackend,
+        speechSettings: QVACSpeechSettings
     ) async throws -> any SpeakerDiarization {
-        if let diarizer, diarizerBackend == backend { return diarizer }
+        if let diarizer, diarizerBackend == backend,
+           backend != .qvac || diarizerSpeechSettings == speechSettings { return diarizer }
         await diarizer?.release()
         diarizer = nil
         diarizerBackend = nil
         if backend == .qvac {
-            let diarizer = QVACSpeakerDiarizationEngine()
+            let diarizer = QVACSpeakerDiarizationEngine(settings: speechSettings)
             try await diarizer.prepare()
             self.diarizer = diarizer
             diarizerBackend = backend
+            diarizerSpeechSettings = speechSettings
             return diarizer
         }
         let configured = Config.diarizationEngine()

@@ -1,4 +1,5 @@
 import Foundation
+import CoreML
 import Testing
 @testable import dropsift
 
@@ -24,7 +25,14 @@ func benchmarkNativeASRAccuracySamples() async throws {
     #expect(!manifest.samples.isEmpty)
     try FileManager.default.createDirectory(at: output.deletingLastPathComponent(), withIntermediateDirectories: true)
     let repeats = Int(environment["DROPSIFT_BENCHMARK_REPEATS"] ?? "3") ?? 3
-    let engine = ParakeetEngine()
+    let compute = environment["DROPSIFT_NATIVE_COMPUTE"] ?? "default"
+    let units: MLComputeUnits? = switch compute {
+    case "cpu": .cpuOnly
+    case "gpu": .cpuAndGPU
+    case "ane": .cpuAndNeuralEngine
+    default: nil
+    }
+    let engine = ParakeetEngine(computeUnits: units)
     func seconds(_ start: ContinuousClock.Instant) -> Double {
         let value = start.duration(to: .now).components
         return Double(value.seconds) + Double(value.attoseconds) / 1e18
@@ -32,6 +40,7 @@ func benchmarkNativeASRAccuracySamples() async throws {
     var report: [String: Any] = ["label": "Native FluidAudio / Parakeet TDT Core ML",
         "startedAt": ISO8601DateFormatter().string(from: Date()),
         "model": engine.model, "hardware": DeviceProfile.current.summary,
+        "requestedCompute": compute, "npuHardwareVerified": false,
         "sourceRevision": environment["DROPSIFT_BENCHMARK_SHA"] ?? "working-tree"]
     var rows: [[String: Any]] = []
     func save() throws {
@@ -51,6 +60,8 @@ func benchmarkNativeASRAccuracySamples() async throws {
             let offset = (run - 1) * 17 % manifest.samples.count
             let samples = Array(manifest.samples[offset...]) + Array(manifest.samples[..<offset])
             for sample in samples {
+                if sample.durationSeconds > 300,
+                   run > (Int(environment["DROPSIFT_BENCHMARK_LONG_REPEATS"] ?? "1") ?? 1) { continue }
                 let start = ContinuousClock.now
                 do {
                     let result = try await engine.transcribe(URL(fileURLWithPath: sample.wav))
@@ -61,8 +72,13 @@ func benchmarkNativeASRAccuracySamples() async throws {
                     print("NATIVE_ACCURACY \(sample.id) run=\(run) seconds=\(elapsed)")
                 } catch {
                     rows.append(["sampleID": sample.id, "run": run, "seconds": seconds(start),
-                                 "durationSeconds": sample.durationSeconds, "error": error.localizedDescription])
-                    Issue.record("Native ASR failed for \(sample.id): \(error)")
+                                 "durationSeconds": sample.durationSeconds, "error": error.localizedDescription,
+                                 "expectedInputRejection": sample.durationSeconds < 0.3])
+                    // FluidAudio requires at least 300 ms. Sub-minimum fixtures
+                    // are negative controls, not supported-domain ASR failures.
+                    if sample.durationSeconds >= 0.3 {
+                        Issue.record("Native ASR failed for \(sample.id): \(error)")
+                    }
                 }
                 try save()
             }

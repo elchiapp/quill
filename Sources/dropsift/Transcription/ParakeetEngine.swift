@@ -1,11 +1,12 @@
 import AVFoundation
+import CoreML
 import FluidAudio
 import Foundation
 
 /// Parakeet TDT 0.6B v3 (25 European languages) via FluidAudio's Core ML port. Models
 /// download once into FluidAudio's managed cache (~600 MB); after that,
-/// transcription runs entirely on-device at roughly 20 seconds per hour of
-/// audio on Apple Silicon.
+/// transcription runs entirely on-device. Speed depends on hardware, compute
+/// policy, audio length, and the selected model components.
 actor ParakeetEngine: TranscriptionEngine {
     enum EngineError: Error, CustomStringConvertible {
         case notPrepared
@@ -25,19 +26,29 @@ actor ParakeetEngine: TranscriptionEngine {
     nonisolated let model = "parakeet-tdt-0.6b-v3-coreml"
 
     private let onPreparationProgress: (@Sendable (Double, String) -> Void)?
+    private let computeUnits: MLComputeUnits?
     private var manager: AsrManager?
 
     init(
+        computeUnits: MLComputeUnits? = nil,
         onPreparationProgress: (@Sendable (Double, String) -> Void)? = nil
     ) {
+        self.computeUnits = computeUnits
         self.onPreparationProgress = onPreparationProgress
     }
 
     func prepare() async throws {
         guard manager == nil else { return }
         onPreparationProgress?(0, "Preparing multilingual speech model")
+        let configuration = computeUnits.map { units in
+            let value = MLModelConfiguration()
+            value.computeUnits = units
+            return value
+        }
         let models = try await AsrModels.downloadAndLoad(
+            configuration: configuration,
             version: .v3,
+            encoderComputeUnits: computeUnits,
             progressHandler: { [onPreparationProgress] progress in
                 let detail: String
                 switch progress.phase {

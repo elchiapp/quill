@@ -1,0 +1,56 @@
+{
+  "date": "2026-10-19",
+  "release": "1.0.63",
+  "build": "2026101902",
+  "verdict": "Experimental route controls are functional. Accuracy is not universally qualified.",
+  "hardware": "Apple M4 Max, 16 logical CPUs, 128 GiB unified memory",
+  "packages": { "qvacInference": "0.21.1", "asrGGML": "0.10.0", "bare": "1.35.1" },
+  "sources": {
+    "fabricSpeech": "1cf60941455f5571b453ff5c91f743f01bac0010",
+    "ggml": "d85713dab3b98c298cba3b3668af48417510fb69",
+    "transcribepsy": "364ec36130dc87d2cd46e596598268a6e3313751"
+  },
+  "corpus": {
+    "dataset": "google/fleurs",
+    "revision": "70bb2e84b976b7e960aa89f1c648e09c59f894dd",
+    "languages": ["English", "Italian"],
+    "cleanUtterances": 40,
+    "fixtures": 171,
+    "maximumSeconds": 7200,
+    "accuracyPass": "First measured pass; never best of three",
+    "performance": "Median of three warm runs through 300 s; one run above 300 s",
+    "publishedTargetComparable": false
+  },
+  "completedMatrix": { "lanes": 17, "measuredRuns": 8517, "allFixturesExercised": true },
+  "cleanWERPercent": {
+    "nativeDefault": { "English": 4.81, "Italian": 5.03 },
+    "qvacSDKParakeetMetal": { "English": 5.23, "Italian": 4.40 },
+    "fabricDirectParakeetMetal": { "English": 5.23, "Italian": 4.40 },
+    "qvacSDKTranscribePsyMetal": { "English": 8.79, "Italian": 6.29 },
+    "fabricDirectTranscribePsyMetal": { "English": 8.79, "Italian": 6.29 }
+  },
+  "warmCleanSpeedMultiple": {
+    "nativeDefault": { "English": 168, "Italian": 124 },
+    "qvacSDKParakeetMetal": { "English": 256, "Italian": 275 },
+    "fabricDirectParakeetMetal": { "English": 260, "Italian": 282 },
+    "qvacSDKTranscribePsyMetal": { "English": 357, "Italian": 391 },
+    "fabricDirectTranscribePsyMetal": { "English": 373, "Italian": 416 }
+  },
+  "fixedBaselineWERRegression": false,
+  "appEngineConversion": { "cases": 20, "failuresAfterFix": 0, "includesStereoAAC44100": true, "includesTwoHours": true },
+  "computeSwitch": { "sdk": "passed CPU/CoreML/Metal", "fabricDirect": "passed CPU/CoreML/Metal" },
+  "noiseOnly": { "runsPerLane": 36, "parakeetFalseSpeechRuns": 6, "transcribepsyFalseSpeechRuns": 27 },
+  "limitations": [
+    "Native minimum input is 300 ms. Shorter fixtures are rejected safely.",
+    "Long English composites show omissions, especially in QVAC/CoreML. Completion is not an accuracy pass.",
+    "Published MLS/OpenASR rates use different corpora and normalization.",
+    "CoreML encoder routing was observed. Physical ANE utilization was not measured.",
+    "TranscribePsy CoreML was tested in its standalone C++ engine, not the packaged addon.",
+    "Repeated-reference composites receive no population confidence interval.",
+    "Physical iPhone/Watch, diarization DER, and long Sortformer limits are not certified.",
+    "Raw matrix preceded the final timestamp/file-stream adapter fixes. The final app-engine conversion rerun passed 20/20. Per-run local provenance is retained."
+  ],
+  "localEvidenceDirectory": "dropsift-speech-matrix-20261019",
+  "userAudioUploaded": false,
+  "credentialsRead": false
+}

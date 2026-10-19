@@ -256,8 +256,8 @@ hot-swappable **AI backend** control:
 - **Apple native** runs current Qwen3.5/Qwen3.6/Qwen3.8 models with MLX Swift,
   multilingual Parakeet transcription with FluidAudio, offline VBx speaker
   diarization, and Apple Vision OCR.
-- **QVAC** runs Qwen3.5/Qwen3.6/Qwen3.8 through QVAC's llama.cpp plugin, multilingual Parakeet
-  TDT transcription through Metal, Sortformer speaker diarization, and QVAC OCR.
+- **QVAC** runs Qwen3.5/Qwen3.6/Qwen3.8 through QVAC's llama.cpp plugin, selectable
+  Parakeet TDT or TranscribePsy transcription, Sortformer speaker diarization, and QVAC OCR.
   DropSift starts and stops its packaged Bare/QVAC child runtime itself; no
   terminal command, localhost server, or separately installed QVAC app is
   required.
@@ -273,9 +273,25 @@ Parakeet explicitly uses Metal by default, even when a registry download include
 Core ML companions. The SDK also supports a staged Core ML encoder
 through `speech-models.mjs`; acceleration must be verified with the per-run
 `encoderUsedCoreml` statistic rather than inferred from a requested setting.
-On the tested M4 Max, Metal is faster than the hybrid Core ML path. TranscribePsy
-is an experimental benchmark candidate, not an in-app model option: its released
-on-device model covers eight languages rather than Parakeet's 25.
+Desktop Settings also selects **QVAC SDK** or **Fabric Speech direct**, and
+**CPU**, **Metal**, or Parakeet's **Core ML · ANE eligible** path. Direct calls
+the packaged `@qvac/asr-ggml` native binding without SDK inference dispatch.
+It uses the same Fabric Speech engine as the SDK plugin, not a separately
+installed server. Downloads and checksums remain SDK-managed; a first direct
+load may stage assets through the SDK before unloading its temporary instance.
+LLM and OCR are not changed by the speech-route selector.
+
+TranscribePsy's released on-device model covers eight languages rather than
+Parakeet's 25. Its standalone Core ML engine is a separate upstream project and
+is not supported by this addon; the UI therefore offers CPU and Metal only for
+TranscribePsy. Core ML selection and encoder routing do not prove physical
+Neural Engine utilization. Unsupported selections are never labeled as NPU
+execution. Each queued job retains its route/model/compute snapshot.
+
+**Show speech performance logs** opens local daily JSONL files with preparation
+and per-chunk wall times, audio duration, route, model, and reported backend
+statistics. No transcript, audio, item title, or recording path is stored.
+Logging happens only after speech work. There is no idle polling or timer.
 
 The bridge preserves timed transcript metadata and requires JSON-schema output
 for generated titles and summaries. Its cancellation gate, shutdown deadline,
@@ -305,6 +321,16 @@ warm latency. `scripts/asr-accuracy-report.mjs` creates the reviewable report
 after the provenance record is supplied. Inspect the documented long-form and
 silence limitations before making a backend recommendation. These tools do not
 change app settings or user recordings.
+
+`scripts/speech-matrix-data.mjs` extends that fixed corpus with partial inputs,
+digital silence, 30/60/120-second boundaries, and whole-utterance composites up
+to two hours. `scripts/run-speech-matrix.mjs` runs SDK/direct CPU/Metal/Core ML
+and native compute-policy lanes sequentially, using explicit local weights.
+`scripts/speech-matrix-score.py` retains first-pass WER and coverage failures.
+`scripts/speech-matrix-native.cpp` supports separately identified upstream C++
+comparison lanes. Keep generated audio, compiled drivers, and reports outside
+iCloud. These finite tests do not certify every recording length or reproduce
+published MLS/OpenASR scores from a different corpus and normalizer.
 
 The conservative language-model default is `Qwen3.5 2B` at 4-bit. DropSift
 detects the chip, CPU count, and unified memory, then offers a stronger 4B, 9B,

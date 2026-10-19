@@ -9,6 +9,12 @@ private func stubQVACRuntime() throws -> (QVACRuntime, URL) {
     import json, sys, time
     for line in sys.stdin:
         request = json.loads(line)
+        if request['method'] == 'invalid-timestamp':
+            print('__DROPSIFT_QVAC__' + json.dumps({
+                'id': request['id'], 'type': 'result',
+                'segments': [{'startMs': 0, 'endMs': 14880.75, 'text': 'AAC'}]
+            }), flush=True)
+            continue
         if request['method'] == 'unicode':
             value = ('__DROPSIFT_QVAC__' + json.dumps({
                 'id': request['id'], 'type': 'result', 'text': 'Caffè Müller — résumé'
@@ -90,5 +96,19 @@ func qvacPreservesUTF8WhenPipeReadsSplitAnAccentedCharacter() async throws {
     defer { try? FileManager.default.removeItem(at: root) }
     let response = try await runtime.request("unicode", timeout: .seconds(2))
     #expect(response.text == "Caffè Müller — résumé")
+    await runtime.shutdown(gracePeriod: .milliseconds(50))
+}
+
+@Test func qvacMalformedTypedResponseFailsPromptlyAndReleasesTheGate() async throws {
+    let (runtime, root) = try stubQVACRuntime()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let start = ContinuousClock.now
+    do {
+        _ = try await runtime.request("invalid-timestamp", timeout: .seconds(2))
+        Issue.record("Fractional timestamp unexpectedly decoded as an integer")
+    } catch QVACRuntime.RuntimeError.invalidResponse {
+        #expect(start.duration(to: .now) < .seconds(1))
+    }
+    #expect(try await runtime.request("ping", timeout: .seconds(2)).text == "ok")
     await runtime.shutdown(gracePeriod: .milliseconds(50))
 }

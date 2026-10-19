@@ -220,6 +220,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var aiDownloadTotalBytes: Int64 = 0
     @Published private(set) var aiDownloadBytesPerSecond = 0.0
     @Published var aiBackend: AIBackend
+    @Published private(set) var qvacSpeechSettings: QVACSpeechSettings
     @Published var selectedModelID: String
     @Published var selectedModelPlan: BuiltInModelPlan
     @Published var showingSettings = false
@@ -328,6 +329,7 @@ final class AppModel: ObservableObject {
         selectedModelID = selectedModel.id
         selectedModelPlan = modelPlan
         aiBackend = selectedBackend
+        qvacSpeechSettings = QVACSpeechSettings.load()
         aiDownloadIsPaused = selectedDownloadIsPaused
         if selectedDownloadIsPaused {
             aiDownloadProgress = UserDefaults.standard.double(
@@ -490,6 +492,7 @@ final class AppModel: ObservableObject {
     func startServices() {
         let model = self
         Task { [transcription, root, model] in
+            await transcription.configureSpeechSettings(model.qvacSpeechSettings)
             await transcription.configureBackend(model.aiBackend)
             await transcription.setStatusHandler { status in
                 Task { @MainActor in model.apply(status) }
@@ -1753,6 +1756,16 @@ final class AppModel: ObservableObject {
                 self.aiPreparationID = nil
             }
         }
+    }
+
+    func selectQVACSpeechSettings(_ value: QVACSpeechSettings) {
+        let settings = value.validated
+        guard settings != qvacSpeechSettings else { return }
+        qvacSpeechSettings = settings
+        if let data = try? JSONEncoder().encode(settings) {
+            UserDefaults.standard.set(data, forKey: QVACSpeechSettings.defaultsKey)
+        }
+        Task { [transcription] in await transcription.configureSpeechSettings(settings) }
     }
 
     func selectAIBackend(_ backend: AIBackend) {

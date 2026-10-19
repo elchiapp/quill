@@ -2,13 +2,16 @@ import AVFoundation
 import Foundation
 
 actor QVACTranscriptionEngine: TranscriptionEngine {
-    nonisolated let name = "qvac-parakeet"
-    nonisolated let model = "parakeet-tdt-0.6b-v3-q8_0-metal"
+    nonisolated let name: String
+    nonisolated let model: String
     // Bounded batches cap encoder memory and provide progress/cancellation
     // checkpoints. The SDK supplies segment timestamps within each batch.
     nonisolated static let chunkDuration: TimeInterval = 60
 
     private let runtime: QVACRuntime
+    private let settings: QVACSpeechSettings
+    private let explicitModelPath: String?
+    private let onPerformance: (@Sendable (SpeechPerformanceMetric) async -> Void)?
     private let onPreparationProgress: (@Sendable (Double, String) -> Void)?
     private let onTranscriptionProgress: (@Sendable (Double, String) -> Void)?
     private var prepared = false
@@ -16,10 +19,18 @@ actor QVACTranscriptionEngine: TranscriptionEngine {
 
     init(
         runtime: QVACRuntime = .shared,
+        settings: QVACSpeechSettings = QVACSpeechSettings(),
+        explicitModelPath: String? = nil,
+        onPerformance: (@Sendable (SpeechPerformanceMetric) async -> Void)? = nil,
         onPreparationProgress: (@Sendable (Double, String) -> Void)? = nil,
         onTranscriptionProgress: (@Sendable (Double, String) -> Void)? = nil
     ) {
         self.runtime = runtime
+        self.settings = settings.validated
+        self.explicitModelPath = explicitModelPath
+        self.onPerformance = onPerformance
+        self.name = settings.route == .sdk ? "qvac-\(settings.model.rawValue)" : "qvac-fabric-direct-\(settings.model.rawValue)"
+        self.model = settings.model.modelID + "-" + settings.validated.acceleration.rawValue
         self.onPreparationProgress = onPreparationProgress
         self.onTranscriptionProgress = onTranscriptionProgress
     }
@@ -29,9 +40,13 @@ actor QVACTranscriptionEngine: TranscriptionEngine {
         guard !prepared || preparedGeneration != generation else { return }
         prepared = false
         preparedGeneration = nil
-        onPreparationProgress?(0, "Preparing QVAC Parakeet speech model")
+        onPreparationProgress?(0, "Preparing QVAC \(settings.model.rawValue) speech model")
+        let started = ProcessInfo.processInfo.systemUptime
+        var params = settings.bridgeParams
+        params.speechModelPath = explicitModelPath
         _ = try await runtime.request(
             "prepareTranscription",
+            params: params,
             onEvent: { [onPreparationProgress] event in
                 guard event.type == "progress" else { return }
                 onPreparationProgress?(
@@ -42,12 +57,15 @@ actor QVACTranscriptionEngine: TranscriptionEngine {
         )
         prepared = true
         preparedGeneration = await runtime.currentGeneration()
-        onPreparationProgress?(1, "QVAC Parakeet model ready")
+        await onPerformance?(SpeechPerformanceMetric(phase: "prepare", settings: settings,
+            audioSeconds: 0, wallSeconds: ProcessInfo.processInfo.systemUptime - started, succeeded: true, stats: nil, diagnostics: nil))
+        onPreparationProgress?(1, "QVAC \(settings.model.rawValue) model ready")
     }
 
     func transcribe(_ audio: URL) async throws -> [TranscriptSegment] {
-        try await prepare()
         let duration = try await QVACAudioConverter.duration(of: audio)
+        guard duration.isFinite, duration > 0 else { return [] }
+        try await prepare()
         let chunks = QVACAudioChunkPlan.make(
             duration: duration,
             maximumDuration: Self.chunkDuration
@@ -100,8 +118,9 @@ actor QVACTranscriptionEngine: TranscriptionEngine {
         totalDuration: TimeInterval,
         totalChunks: Int
     ) async throws -> QVACBridgeResponse {
+        let started = ProcessInfo.processInfo.systemUptime
         do {
-            return try await runtime.request(
+            let response = try await runtime.request(
                 "transcribe",
                 params: QVACBridgeParams(
                     audioPath: audio.path,
@@ -116,11 +135,23 @@ actor QVACTranscriptionEngine: TranscriptionEngine {
                     )
                 }
             )
+            await onPerformance?(SpeechPerformanceMetric(phase: "normalized-chunk", settings: settings,
+                audioSeconds: chunk.duration, wallSeconds: ProcessInfo.processInfo.systemUptime - started, succeeded: true,
+                stats: response.stats, diagnostics: response.diagnostics))
+            return response
         } catch QVACRuntime.RuntimeError.requestTimedOut {
+            await onPerformance?(SpeechPerformanceMetric(phase: "normalized-chunk", settings: settings,
+                audioSeconds: chunk.duration, wallSeconds: ProcessInfo.processInfo.systemUptime - started, succeeded: false,
+                stats: nil, diagnostics: nil))
             await runtime.restart()
             prepared = false
             preparedGeneration = nil
             throw QVACRuntime.RuntimeError.requestTimedOut("transcription")
+        } catch {
+            await onPerformance?(SpeechPerformanceMetric(phase: "normalized-chunk", settings: settings,
+                audioSeconds: chunk.duration, wallSeconds: ProcessInfo.processInfo.systemUptime - started, succeeded: false,
+                stats: nil, diagnostics: nil))
+            throw error
         }
     }
 
@@ -165,11 +196,13 @@ actor QVACSpeakerDiarizationEngine: SpeakerDiarization {
     nonisolated static let operationTimeout: Duration = .seconds(300)
 
     private let runtime: QVACRuntime
+    private let settings: QVACSpeechSettings
     private var prepared = false
     private var preparedGeneration: Int?
 
-    init(runtime: QVACRuntime = .shared) {
+    init(runtime: QVACRuntime = .shared, settings: QVACSpeechSettings = QVACSpeechSettings()) {
         self.runtime = runtime
+        self.settings = settings
     }
 
     func prepare() async throws {
@@ -177,7 +210,7 @@ actor QVACSpeakerDiarizationEngine: SpeakerDiarization {
         guard !prepared || preparedGeneration != generation else { return }
         prepared = false
         preparedGeneration = nil
-        _ = try await runtime.request("prepareDiarization")
+        _ = try await runtime.request("prepareDiarization", params: settings.bridgeParams)
         prepared = true
         preparedGeneration = await runtime.currentGeneration()
     }

@@ -1,4 +1,6 @@
 import bareProcess from 'bare-process'
+import fs from 'bare-fs'
+import path from 'bare-path'
 import {
   QWEN3_5_2B_MULTIMODAL_Q4_K_M,
   QWEN3_5_4B_MULTIMODAL_Q4_K_M,
@@ -9,6 +11,8 @@ import {
   PARAKEET_TDT_0_6B_V3_Q8_0,
   PARAKEET_SORTFORMER_4SPK_V2_1_Q8_0,
   OCR_LATIN,
+  getLoadedModelInfo,
+  getModelInfo,
   close,
   plugins
 } from '@qvac/inference'
@@ -19,6 +23,8 @@ import { stream as engineStream } from '@qvac/inference/engine'
 import { stageParakeetCoreML } from './speech-models.mjs'
 import { structuredResponseFormat } from './structured-output.mjs'
 import { parseSpeakerTurns } from './diarization.mjs'
+import { FabricSpeech } from './fabric-speech.mjs'
+import { speechOptions, speechConfiguration, speechFingerprint, pcmSummary, speechStatsDelta, speechDiagnostics, configureSpeechEnvironment, TRANSCRIBEPSY_SOURCE } from './speech-options.mjs'
 
 globalThis.process = bareProcess
 
@@ -46,6 +52,40 @@ const loading = {
   transcription: null,
   diarization: null,
   ocr: null
+}
+const directSpeech = { transcription: null, diarization: null }
+const speechKeys = { transcription: null, diarization: null }
+const preparedSpeechOptions = { transcription: null, diarization: null }
+const preparingSpeechKeys = { transcription: null, diarization: null }
+const resolvedSpeechSources = new Map()
+let previousSDKSpeechStats
+
+function applySpeechEnvironment (options) {
+  // Eligible Core ML encoder stages can use CPU/ANE; this does not prove ANE
+  // execution. Decoder execution remains CPU. No global OS setting is changed.
+  configureSpeechEnvironment(bareProcess.env, options)
+}
+
+async function localSpeechSource (source, name, config, onProgress) {
+  if (typeof source === 'string' && source.startsWith('/')) return source
+  const key = JSON.stringify(source)
+  const remembered = resolvedSpeechSources.get(key)
+  if (remembered && fs.existsSync(remembered)) return remembered
+  if (name) {
+    const info = await getModelInfo({ name })
+    const file = info.cacheFiles.find(file => file.isCached && file.path.endsWith('.gguf'))
+    if (file) { resolvedSpeechSources.set(key, file.path); return file.path }
+  }
+  // Public SDK asset management is still used to stage/checksum downloads.
+  // Inference below uses the addon directly. This one-time staging cost is
+  // separate from measured warm direct-addon inference in the benchmark.
+  const temporary = await loadModel({ modelSrc: source, modelType: 'parakeet-transcription', modelConfig: config, onProgress })
+  try {
+    const info = await getLoadedModelInfo({ modelId: temporary })
+    if (!info.path) throw new Error('The speech download has no local model path')
+    resolvedSpeechSources.set(key, info.path)
+    return info.path
+  } finally { await unloadModel({ modelId: temporary, clearStorage: false }) }
 }
 
 const llmModels = {
@@ -127,7 +167,16 @@ async function unload (kind) {
   const modelId = loaded[kind]
   if (!modelId) return
   loaded[kind] = null
+  if (kind === 'transcription') previousSDKSpeechStats = undefined
+  if (directSpeech[kind]) {
+    const model = directSpeech[kind]
+    directSpeech[kind] = null
+    speechKeys[kind] = null
+    await model.destroy()
+    return
+  }
   await unloadModel({ modelId, clearStorage: false })
+  if (kind in speechKeys) speechKeys[kind] = null
 }
 
 async function prepareLLM (id, params) {
@@ -193,34 +242,61 @@ async function complete (id, params) {
 }
 
 async function prepareTranscription (id, params = {}) {
-  await prepareModel(
-    'transcription',
-    id,
-    'Downloading QVAC Parakeet speech model',
-    async onProgress => {
-      // Registry downloads can include Core ML companions automatically. Do not
-      // let cache contents silently override the measured Metal default.
-      bareProcess.env.PARAKEET_COREML_DISABLE = params.speechCoreML ? '0' : '1'
-      return loadModel({
-        modelSrc: params.speechCoreML
-          ? await stageParakeetCoreML({ modelPath: params.speechModelPath, onProgress })
-          : params.speechModelPath ?? PARAKEET_TDT_0_6B_V3_Q8_0,
-        modelType: 'parakeet-transcription',
-        modelConfig: {
-          useGPU: true,
-          maxThreads: 8,
-          timestampsEnabled: true,
-          streaming: false
-        },
-        onProgress
-      })
-    }
-  )
+  const options = speechOptions(params)
+  const key = speechFingerprint(options)
+  if (preparingSpeechKeys.transcription && preparingSpeechKeys.transcription !== key) {
+    throw new Error('Another speech configuration is still loading. Retry after preparation completes.')
+  }
+  preparingSpeechKeys.transcription = key
+  try {
+    if (loaded.transcription && speechKeys.transcription !== key) await unload('transcription')
+    applySpeechEnvironment(options)
+    await prepareModel(
+      'transcription',
+      id,
+      options.model === 'transcribepsy' ? 'Downloading QVAC TranscribePsy speech model' : 'Downloading QVAC Parakeet speech model',
+      async onProgress => {
+        // Registry downloads can include Core ML companions automatically. Do not
+        // let cache contents silently override the measured Metal default.
+        const hasLocalSidecar = options.modelPath && fs.existsSync(path.join(path.dirname(options.modelPath), 'parakeet-tdt-0.6b-v3-encoder.mlmodelc'))
+        const source = options.acceleration === 'coreml' && !hasLocalSidecar
+          ? await stageParakeetCoreML({ modelPath: options.modelPath, onProgress })
+          : options.modelPath ?? (options.model === 'transcribepsy' ? TRANSCRIBEPSY_SOURCE : PARAKEET_TDT_0_6B_V3_Q8_0)
+        const config = speechConfiguration(options)
+        if (options.route === 'fabricDirect') {
+          const local = await localSpeechSource(source, options.model === 'parakeet' && options.acceleration !== 'coreml' ? 'PARAKEET_TDT_0_6B_V3_Q8_0' : null, config, onProgress)
+          const model = new FabricSpeech(local, options)
+          try { await model.load() } catch (error) { await model.destroy().catch(() => {}); throw error }
+          directSpeech.transcription = model
+          return `fabric-direct:${options.model}:${options.acceleration}`
+        }
+        return loadModel({
+          modelSrc: source,
+          modelType: 'parakeet-transcription',
+          modelConfig: config,
+          onProgress
+        })
+      }
+    )
+    speechKeys.transcription = key
+    preparedSpeechOptions.transcription = options
+  } finally { if (preparingSpeechKeys.transcription === key) preparingSpeechKeys.transcription = null }
 }
 
 async function transcribeAudio (id, params) {
   if (!loaded.transcription) {
     throw new Error('QVAC transcription model is not loaded.')
+  }
+  applySpeechEnvironment(preparedSpeechOptions.transcription ?? speechOptions())
+  const summary = pcmSummary(fs.readFileSync(params.audioPath))
+  if (summary.silent) {
+    send({ id, type: 'result', segments: [], stats: { totalSamples: summary.samples, audioDurationMs: summary.durationMs },
+      diagnostics: { speechRoute: preparedSpeechOptions.transcription?.route, bypassReason: 'digital-silence' } })
+    return
+  }
+  if (directSpeech.transcription) {
+    send({ id, type: 'result', ...await directSpeech.transcription.transcribe(params.audioPath) })
+    return
   }
   const segments = []
   let stats
@@ -246,35 +322,56 @@ async function transcribeAudio (id, params) {
     id,
     type: 'result',
     segments,
-    stats,
-    diagnostics
+    stats: speechStatsDelta(stats, previousSDKSpeechStats),
+    rawStats: stats,
+    diagnostics: speechDiagnostics(stats, { ...diagnostics, speechRoute: 'sdk', requestedAcceleration: preparedSpeechOptions.transcription?.acceleration })
   })
+  previousSDKSpeechStats = stats
 }
 
-async function prepareDiarization (id) {
-  await prepareModel(
-    'diarization',
-    id,
-    'Downloading QVAC speaker model',
-    onProgress => loadModel({
-      modelSrc: PARAKEET_SORTFORMER_4SPK_V2_1_Q8_0,
-      modelType: 'parakeet-transcription',
-      modelConfig: {
-        useGPU: true,
-        maxThreads: 8,
-        timestampsEnabled: true,
-        streaming: false
-      },
-      onProgress
-    })
-  )
+async function prepareDiarization (id, params = {}) {
+  const options = speechOptions({ ...params, speechModel: 'parakeet', speechAcceleration: params.speechAcceleration === 'cpu' ? 'cpu' : 'metal' })
+  const key = speechFingerprint(options)
+  if (preparingSpeechKeys.diarization && preparingSpeechKeys.diarization !== key) {
+    throw new Error('Another speaker configuration is still loading. Retry after preparation completes.')
+  }
+  preparingSpeechKeys.diarization = key
+  try {
+    if (loaded.diarization && speechKeys.diarization !== key) await unload('diarization')
+    applySpeechEnvironment(options)
+    await prepareModel(
+      'diarization',
+      id,
+      'Downloading QVAC speaker model',
+      async onProgress => {
+        const config = speechConfiguration(options)
+        if (options.route === 'fabricDirect') {
+          const local = await localSpeechSource(PARAKEET_SORTFORMER_4SPK_V2_1_Q8_0, 'PARAKEET_SORTFORMER_4SPK_V2_1_Q8_0', config, onProgress)
+          const model = new FabricSpeech(local, options)
+          try { await model.load() } catch (error) { await model.destroy().catch(() => {}); throw error }
+          directSpeech.diarization = model
+          return 'fabric-direct:sortformer'
+        }
+        return loadModel({
+        modelSrc: PARAKEET_SORTFORMER_4SPK_V2_1_Q8_0,
+        modelType: 'parakeet-transcription',
+        modelConfig: config,
+        onProgress
+      }) }
+    )
+    speechKeys.diarization = key
+    preparedSpeechOptions.diarization = options
+  } finally { if (preparingSpeechKeys.diarization === key) preparingSpeechKeys.diarization = null }
 }
 
 async function diarizeAudio (id, params) {
   if (!loaded.diarization) {
     throw new Error('QVAC diarization model is not loaded.')
   }
-  const result = await transcribe({
+  applySpeechEnvironment(preparedSpeechOptions.diarization ?? speechOptions())
+  const result = directSpeech.diarization
+    ? (await directSpeech.diarization.transcribe(params.audioPath)).segments.map(segment => segment.text).join('\n')
+    : await transcribe({
     modelId: loaded.diarization,
     audioChunk: params.audioPath
   })
@@ -349,7 +446,7 @@ async function handle (request) {
         await transcribeAudio(id, params)
         break
       case 'prepareDiarization':
-        await prepareDiarization(id)
+        await prepareDiarization(id, params)
         break
       case 'diarize':
         await diarizeAudio(id, params)
