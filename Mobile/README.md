@@ -19,6 +19,13 @@ extractive answers remain available on other supported iPhones. The Ask screen
 always shows the resolved engine and offers an explicit choice between
 Automatic, Apple Intelligence, and retrieval-only Local source search.
 
+On iPhone, **Organize → Appearance** offers System, Light and Dark. System is
+the default. The setting stays on the device and does not change the phone's
+system theme. Watch keeps its native dark interface. Both platforms use the
+same QVAC-inspired recall artwork as the Mac, with opaque 1024px icon exports.
+The Mac QVAC speech/LLM runtime is not bundled on iPhone or Watch; the engines
+listed above remain their actual inference paths.
+
 ## Install on your devices
 
 1. Open `DropsiftMobile.xcodeproj` in Xcode.

@@ -1,5 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
+import fs from 'node:fs'
 import { minimumMacOS, versionExceeds, forbiddenPayload, signingArguments } from './macos-bundle.mjs'
 
 test('parses deployment targets, not dylib current versions', () => {
@@ -24,4 +26,18 @@ test('release mode never falls back to ad-hoc signing', () => {
   assert.ok(args.includes('--timestamp'))
   assert.ok(args.includes('runtime'))
   assert.equal(args.includes('--deep'), false)
+})
+test('all icon exports match the shared vector artwork', () => {
+  const output = execFileSync(process.execPath, [new URL('./render-app-icons.mjs', import.meta.url).pathname, '--check'], { encoding: 'utf8' })
+  assert.match(output, /match the SVG source/)
+  for (const [file, colorType] of [
+    ['../Packaging/DropsiftIcon.png', 6],
+    ['../Mobile/Assets/MobileAssets.xcassets/AppIcon.appiconset/AppIcon-1024.png', 2],
+    ['../Mobile/Assets/WatchAssets.xcassets/AppIcon.appiconset/WatchIcon-1024.png', 2]
+  ]) {
+    const png = fs.readFileSync(new URL(file, import.meta.url))
+    assert.equal(png.readUInt32BE(16), 1024)
+    assert.equal(png.readUInt32BE(20), 1024)
+    assert.equal(png[25], colorType, file + ': transparent Mac / opaque mobile')
+  }
 })

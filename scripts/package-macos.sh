@@ -164,11 +164,10 @@ NODE
     "$APP_BUNDLE/Contents/Info.plist"
 
 ICON_WORK=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/dropsift-icon.XXXXXX")
-
-/usr/bin/qlmanage -t -s 1024 -o "$ICON_WORK" "$PROJECT_ROOT/Packaging/DropsiftIcon.svg" >/dev/null
-ICON_SOURCE="$ICON_WORK/DropsiftIcon.svg.png"
+/usr/bin/env node "$SCRIPT_DIR/render-app-icons.mjs" --check
+ICON_SOURCE="$PROJECT_ROOT/Packaging/DropsiftIcon.png"
 if [[ ! -f "$ICON_SOURCE" ]]; then
-    print -u2 "Quick Look did not render the app icon."
+    print -u2 "Missing vector-derived app icon. Run scripts/render-app-icons.mjs."
     exit 1
 fi
 

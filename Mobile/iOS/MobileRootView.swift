@@ -4,6 +4,7 @@ import UIKit
 
 struct MobileRootView: View {
     @ObservedObject var model: MobileAppModel
+    @AppStorage(AppAppearance.preferenceKey) private var storedAppearance = AppAppearance.system.rawValue
 
     var body: some View {
         TabView(selection: $model.selectedTab) {
@@ -38,6 +39,7 @@ struct MobileRootView: View {
             .tag(MobileTab.ask)
         }
         .tint(.indigo)
+        .preferredColorScheme(AppAppearance.resolve(storedAppearance).colorScheme)
         .overlay(alignment: .top) {
             if let label = model.importState.label
                 ?? model.semanticProcessingLabel
@@ -90,6 +92,7 @@ struct MobileRootView: View {
 
 private struct MobileOrganizeView: View {
     @ObservedObject var model: MobileAppModel
+    @AppStorage(AppAppearance.preferenceKey) private var storedAppearance = AppAppearance.system.rawValue
 
     var body: some View {
         List {
@@ -119,6 +122,18 @@ private struct MobileOrganizeView: View {
                         )
                     }
                 }
+            }
+
+            Section("Appearance") {
+                Picker("Theme", selection: $storedAppearance) {
+                    ForEach(AppAppearance.allCases) { appearance in
+                        Text(appearance.title).tag(appearance.rawValue)
+                    }
+                }
+                .accessibilityIdentifier("appearance-picker")
+                Text("System follows your iPhone. This choice applies only to DropSift.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("About") {

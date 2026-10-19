@@ -1,4 +1,5 @@
 import AppKit
+import DropsiftShared
 import SwiftUI
 
 struct SettingsView: View {
@@ -21,6 +22,10 @@ struct SettingsView: View {
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
+
+                    DesktopAppearanceSettings()
+
+                    Divider()
 
                     VStack(alignment: .leading, spacing: 5) {
                         Label(model.deviceProfile.summary, systemImage: "memorychip")

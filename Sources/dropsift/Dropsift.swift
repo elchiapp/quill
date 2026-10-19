@@ -1,5 +1,6 @@
 import AppKit
 import ArgumentParser
+import DropsiftShared
 import Foundation
 
 @main
@@ -48,6 +49,9 @@ struct Run: ParsableCommand {
 
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
+        DesktopAppearance.apply(AppAppearance.resolve(
+            UserDefaults.standard.string(forKey: AppAppearance.preferenceKey)
+        ))
 
         let controller = AppController(root: root)
         app.delegate = controller

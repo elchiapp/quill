@@ -103,6 +103,17 @@ TestFlight/archive instructions.
 
 ## How to use
 
+Appearance follows the system by default. On Mac, open **Settings → Appearance**
+to choose System, Light, or Dark. On iPhone, use **Organize → Appearance**.
+The choice stays local to each app and does not change OS appearance. Watch
+keeps its native dark interface. All three apps use the same QVAC-inspired
+recall icon: a teal Q and layered saved information on charcoal.
+
+Icon exports are checked against `Packaging/DropsiftIcon.svg`. To regenerate,
+install `@resvg/resvg-js@2.6.2` in a local build-tool directory outside iCloud,
+then run `node scripts/render-app-icons.mjs /absolute/build-tool-directory`.
+The renderer is build-only; it is not included in the app.
+
 1. Open `DropSift.app` on **Capture**. The uncluttered capture canvas provides
    five actions: **Add note**, **Add doc**, **Add image**, **Add recording**,
    and **Record**. Files can also be dropped directly onto the canvas.
@@ -261,7 +272,7 @@ Core ML companions. The SDK also supports a staged Core ML encoder
 through `speech-models.mjs`; acceleration must be verified with the per-run
 `encoderUsedCoreml` statistic rather than inferred from a requested setting.
 On the tested M4 Max, Metal is faster than the hybrid Core ML path. TranscribePsy
-is an experimental benchmark candidate, not the app's default: its released
+is an experimental benchmark candidate, not an in-app model option: its released
 on-device model covers eight languages rather than Parakeet's 25.
 
 The bridge preserves timed transcript metadata and requires JSON-schema output

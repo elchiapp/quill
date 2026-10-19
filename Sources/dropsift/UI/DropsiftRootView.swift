@@ -104,6 +104,7 @@ struct DropsiftRootView: View {
         } message: { request in
             Text(request.message)
         }
+        .modifier(DesktopAppearanceModifier())
     }
 
     private func sidebar(compact: Bool) -> some View {
