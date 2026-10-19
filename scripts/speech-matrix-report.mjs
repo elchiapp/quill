@@ -6,6 +6,11 @@ const root = path.resolve(process.argv[2])
 const metrics = JSON.parse(await fs.readFile(path.join(root, 'report/metrics.json'), 'utf8'))
 let provenance = {}
 try { provenance = JSON.parse(await fs.readFile(path.join(root, 'evidence/provenance.json'), 'utf8')) } catch {}
+let uiChecks = [], auxiliary = []
+try { uiChecks = JSON.parse(await fs.readFile(path.join(root,'evidence/ui-checks.json'),'utf8')) } catch {}
+for (const source of ['verification/timeline.json','supplemental-matrix.json']) {
+  try { auxiliary.push(...JSON.parse(await fs.readFile(path.join(root,source),'utf8')).map(row=>({...row,source}))) } catch {}
+}
 const issue = (id, title, severity, owner, state, impact, actual, acceptance) => ({ id, title, severity, owner, state,
   area:'speech', platform:'macos', topology:'desktop-1', model:'parakeet / transcribepsy', impact, actual, acceptance,
   tags:[owner,`severity:${severity}`,`state:${state}`,'platform:macos','area:speech','topology:desktop-1'] })
@@ -37,9 +42,17 @@ const issues = [
   issue('QVAC-0038','Noise-only inputs can produce invented speech','medium','model-behavior','observed',
     'Both routes can insert text without speech. TranscribePsy produced more false-speech runs in this controlled check.',
     'Across 36 nonzero noise-only runs per lane, Parakeet produced text in 6 runs and TranscribePsy in 27. Requests completed without errors. These are not published speech-WER comparisons. Exact digital zero is bypassed separately.',
-    'Evaluate an evidence-backed VAD before treating quiet/noise-only recordings as trustworthy knowledge. Preserve original audio and verify quiet real speech is not dropped.')
+    'Evaluate an evidence-backed VAD before treating quiet/noise-only recordings as trustworthy knowledge. Preserve original audio and verify quiet real speech is not dropped.'),
+  issue('QVAC-0036','Report browser-control validation is partial','low','test-infrastructure','needs-double-check',
+    'An old report-only native prompt could not be dismissed by the browser tools. DropSift itself remained usable.',
+    'Desktop 1280 px and mobile 390 px geometry and filtering passed. The prompt-based invalidation test stalled. The report now uses an inline required reason, with a passing isolated DOM-logic regression. Final browser persistence validation remains incomplete.',
+    'Dismiss the test prompt and close the temporary report tab. Reset the temporary viewport if still applied. Repeat inline invalidation and restoration in a fresh browser session.'),
+  issue('QVAC-0039','Native ASR has a 300 ms minimum input','low','model-behavior','observed',
+    'Native safely rejects 10/100-ms inputs. These are not supported transcription lengths.',
+    'The matrix recorded 18 sub-minimum rejections per native lane, plus three zero-frame controls. A dedicated nine-case rerun passed with these classified as explicit negative controls, followed by successful normal speech.',
+    'Retain the recording, document the minimum, and distinguish supported-domain failures from expected input rejection. No claim that every possible length is supported.')
 ]
-const data = { metrics, provenance, issues }
+const data = { metrics, provenance, issues, uiChecks, auxiliary }
 const encoded = JSON.stringify(data).replaceAll('<','\\u003c')
 const html = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>DropSift · Speech validation</title><style>
@@ -49,6 +62,7 @@ const html = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="v
 <h2>Filters</h2><div class="filters" id="filters"></div><p><button id="quick">Needs double-check</button> <button id="reset">Reset</button> <label><input type="checkbox" id="invalid"> Include invalid findings</label></p>
 <section><h2>Test cases</h2><p class="muted">Each lane: three measured warm runs through 300 s, one above 300 s. Accuracy always uses the first measured run. Model load and warmup are separate. API-only cases have logs but no UI footage and are not packaged-UI certification.</p><div class="scroll"><table><thead><tr><th>ID / lane</th><th>State / coverage</th><th>EN / IT clean WER</th><th>EN / IT speed</th><th>Load / peak RSS</th><th>Evidence</th></tr></thead><tbody id="tests"></tbody></table></div></section>
 <section><h2>Findings</h2><div id="issues"></div></section>
+<section><h2>Installed UI and supporting checks</h2><p class="muted">App-only step time-lapses are labeled as such. API and logic checks have logs, not UI footage. Earlier failed attempts remain retained; later passing reruns do not erase them.</p><div id="ui-checks"></div><div class="scroll"><table><thead><tr><th>Case / attempt</th><th>Exit / duration</th><th>Evidence</th></tr></thead><tbody id="auxiliary"></tbody></table></div></section>
 <section><details><summary>Length and condition results · expand</summary><div class="scroll"><table><thead><tr><th>Lane</th><th>Language / condition</th><th>Samples</th><th>WER</th><th>S / D / I</th><th>Speed</th><th>Errors / routing mismatch</th></tr></thead><tbody id="groups"></tbody></table></div></details></section>
 <section><h2>Skill coverage</h2><p>External skills and account workflows are outside this speech charter. No account credentials were accessed.</p><div class="scroll"><table><tr><th>Surface</th><th>State</th><th>Cleanup</th></tr><tr><td>Asana, Gmail, Calendar, Drive, Notion, Spotify</td><td>not-tested · out of scope</td><td>No account access or mutations</td></tr><tr><td>GitHub</td><td>Source/release workflow only; not a QVAC skill test</td><td>No synthetic account content</td></tr><tr><td>Weather, Reminders, Notes, Obsidian, image generation</td><td>not-tested · out of scope</td><td>No reminders, notes, or vaults created</td></tr></table></div></section>
 <section><h2>Topology and platform verification</h2><p>One Mac, one installed DropSift application, and one isolated sequential benchmark worker at a time. No peer mesh. Public fixtures and SDK homes remain outside iCloud. The new bridge is tested in an isolated copy against the installed native prebuild; later packaged checks are listed separately.</p><pre style="white-space:pre-wrap;overflow-wrap:anywhere" id="provenance"></pre><p>iPhone, Apple Watch, Android, sync, RAG, LLM quality, and real-account tools are not covered by these ASR rates. Published MLS/OpenASR targets use different data and normalization. No claim of parity or hardware-level NPU proof is made.</p><p><a href="https://github.com/tetherto/qvac-fabric-speech.cpp">Fabric Speech source</a> · <a href="https://github.com/tether-ai-research/qvac-transcribepsy">TranscribePsy source</a> · <a href="https://huggingface.co/qvac/TranscribePsy-250M-EU-sub-gguf">Model card</a> · <a href="https://huggingface.co/datasets/google/fleurs">FLEURS dataset</a></p></section></div>
@@ -80,6 +94,8 @@ $('detail').innerHTML='<a href="index.html" target="_top">← Dashboard</a><h1>'
 +'<h2>Acceptance criteria / suggested owner</h2><p>'+esc(i.acceptance)+'</p><p>Owner: '+esc(i.owner)+'. Severity: '+esc(i.severity)+'. State: '+esc(i.state)+'. Frequency and repetitions are in the linked metric rows.</p>'
 +'<h2>Cleanup and limits</h2><p>Only isolated public audio and runtime caches were created. Evidence is retained. User recordings, account data and model preferences are not changed by the benchmark.</p><details><summary>Exact provenance</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere">'+esc(JSON.stringify(D.provenance,null,2))+'</pre></details></section>'}
 $('method').textContent=D.metrics.method;$('limits').innerHTML=D.metrics.limits.map(x=>'<li>'+esc(x)+'</li>').join('');$('provenance').textContent=JSON.stringify(D.provenance,null,2);$('run').textContent='171 fixtures · max 2 hours · local Mac · generated '+new Date().toISOString();$('invalid').onchange=render;$('quick').onclick=()=>{$('f-health').value='needs-double-check';render()};$('reset').onclick=()=>{Object.keys(defs).forEach(k=>$('f-'+k).value='all');$('invalid').checked=false;render()};window.onhashchange=showDetail;render();showDetail();
+$('ui-checks').innerHTML=D.uiChecks.map(c=>'<article class="card"><b>'+esc(c.id)+' · '+esc(c.title)+'</b><p>'+esc(c.state)+' · '+esc(c.boundary)+'</p><p>'+(c.video?'<a href="'+esc(c.video)+'">Canonical footage</a> · ':'')+esc(c.duration??'')+'</p></article>').join('');
+$('auxiliary').innerHTML=D.auxiliary.map(c=>'<tr><td>'+esc(c.name??c.lane)+'<br><span class="muted">'+esc(c.startedAt)+' → '+esc(c.finishedAt)+'</span></td><td>'+esc(c.exitCode)+' / '+Number(c.seconds??c.wallSeconds).toFixed(2)+' s</td><td><a href="../'+esc(c.source)+'">Raw timeline</a>'+(c.exitCode!==0?'<br>Inspect retained failure; check later verification rerun.':'')+'</td></tr>').join('');
 </script></html>`
 new Script(html.match(/<script>([\s\S]*)<\/script>/)[1])
 await fs.mkdir(path.join(root,'report/issues'),{recursive:true})
