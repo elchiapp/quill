@@ -1,15 +1,13 @@
-Tool: built-in imagegen. Raster master, not a vector drawing.
-Edit target: the rejected flat DropSift icon.
-Brand reference: the three QVAC family icons supplied by the user.
+Tool: built-in imagegen. Approved raster master, not a vector drawing.
+Edit target: concept B, the QVAC Q with a brain-shaped inner opening.
+Final selection: B plus a QVAC-style flexing arm, approved by the user.
+The approved pixels are copied unchanged into DropsiftIconMaster.png.
 
-Use case: stylized-concept / logo-brand.
-Asset type: final premium 3D macOS app icon for DropSift, a private QVAC-powered second brain that captures and recalls conversations, notes, and knowledge.
-Image 1 is the existing icon to REPLACE, not a shape to preserve. Image 2 is the user's actual QVAC brand reference. Follow the distinctive wide QVAC Q silhouette from the marks in Image 2: horizontally elongated rounded/angular loop, sloped right shoulder, short diagonal lower-right Q tail. Do NOT reuse the R-shaped glyph or loose bars from Image 1.
+Use case: precise-object-edit / stylized-concept.
+Edit the attached approved B app icon. Add one flexing biceps arm to convey a playful "strong brain" idea, inspired by the familiar 💪 pose but rendered in the icon's own QVAC visual style.
 
-Remake the artwork as one elegant, tactile, sculpted 3D QVAC Q acting as a second brain. The Q itself is the brain: its thick body has two smoothly interlocking curved lobes and just two or three restrained sculptural grooves, suggesting folded memory and intelligence. Keep the Q's recognizable central opening. This is a unified emblem, not a separate anatomical brain placed in or above a letter. Elegant product design, not a medical brain illustration or a sci-fi game badge.
+Preserve B's existing QVAC Q geometry, its exact brain-shaped negative-space opening, translucent turquoise/teal glass-ceramic material, polished bevels, jade shaded edges, lighting, dark obsidian rounded-square tile, framing and transparent space outside the tile. Do not redesign the Q or brain opening.
 
-Material: satin teal/turquoise glass-ceramic with convincing thickness, rounded machined bevels, deep jade shaded sidewalls, subtle polished highlights. Controlled soft studio lighting, realistic ambient occlusion, a soft contact shadow, restrained dimensional depth. A mostly front-facing view with slight elevation to show the top bevel. Strong, readable silhouette at small Dock sizes. Use the mint/cyan family of the QVAC reference, no rainbow iridescence.
+Add a compact sculpted arm emerging naturally from the outer right side of the Q, bending upward into the space above its right shoulder. The pose must clearly read as a flexed biceps: rounded muscular upper-arm bulge, bent elbow, raised forearm and a small clenched fist. Give it the same thick translucent mint/teal glass, bevels, depth, reflections and soft contact shadows as the Q. It should feel like a unified premium 3D emblem or very restrained mascot, with a light humorous touch, not a pasted emoji or human skin. Keep the arm secondary in scale, about one quarter of the emblem's visual mass, so the Q and brain opening stay dominant. Keep the brain cutout completely unobscured. Preserve a readable Q tail.
 
-Place the centered emblem on one luxurious dark charcoal/obsidian macOS squircle tile with a very subtle physical bevel. Balanced generous negative space, emblem occupying about 65% of tile width. Square 1024x1024 composition; tile inset about 6% on each side, all four rounded corners completely visible. Transparent canvas outside the tile, actual alpha, not a white or checkerboard backdrop. The tile is opaque and dark.
-
-No text, lettering other than the Q emblem, wordmark, tiny labels, outer strokes, decorative horizontal bars, circuit nodes, sparkles, funnel, target symbol, extra objects, multiple options, contact sheet, presentation mockup, or surrounding scene. Deliver one coherent finished app icon.
+One arm only. No face, eyes, legs, body, text, emoji typography, labels, badges, glow explosion, extra props, alternate options, or presentation mockup. Keep all parts inside the tile with comfortable padding. Output one coherent finished square app-icon preview. Actual transparency outside the opaque tile.

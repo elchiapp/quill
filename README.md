@@ -107,7 +107,8 @@ Appearance follows the system by default. On Mac, open **Settings → Appearance
 to choose System, Light, or Dark. On iPhone, use **Organize → Appearance**.
 The choice stays local to each app and does not change OS appearance. Watch
 keeps its native dark interface. All three apps use the same QVAC-inspired
-second-brain icon: a sculpted teal Q with folded-memory surfaces on obsidian.
+strong-brain icon: a sculpted teal Q with a brain-shaped opening and a flexing
+glass arm on obsidian.
 
 Icon exports are checked against `Packaging/DropsiftIconMaster.png`. The master
 was created with the built-in image-generation tool; its exact brief is saved
