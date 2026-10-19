@@ -11,10 +11,14 @@ test('report script parses and inline invalidation requires a reason, persists, 
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'dropsift-report-test-'))
   try{
     await fs.mkdir(path.join(root,'report'),{recursive:true});await fs.mkdir(path.join(root,'evidence'))
-    await fs.writeFile(path.join(root,'report/metrics.json'),JSON.stringify({method:'test',limits:[],lanes:{}}))
+    await fs.writeFile(path.join(root,'report/metrics.json'),JSON.stringify({method:'test',limits:[],lanes:{synthetic:{
+      groups:[],measuredRuns:1,expectedRuns:3,coverageComplete:false,
+      samples:[{sampleID:'synthetic',errors:[],expectedInputRejection:false,normalized:{alignment:'ALIGNMENT_EVIDENCE_ONLY'}}]
+    }}}))
     await promisify(execFile)(process.execPath,['scripts/speech-matrix-report.mjs',root])
     const html=await fs.readFile(path.join(root,'report/index.html'),'utf8'),script=html.match(/<script>([\s\S]*)<\/script>/)[1]
     assert.equal(script.includes('prompt('),false);assert.equal(script.includes('alert('),false)
+    assert.equal(html.includes('ALIGNMENT_EVIDENCE_ONLY'),false)
     const elements=new Map(),saved=new Map()
     function element(id){if(!elements.has(id))elements.set(id,{value:id.startsWith('f-')?'all':'',checked:false,hidden:true,innerHTML:'',textContent:'',
       classList:{toggle(){}},append(){},querySelector(){return {}},focus(){this.focused=true}});return elements.get(id)}

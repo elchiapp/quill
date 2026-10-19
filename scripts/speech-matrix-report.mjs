@@ -52,7 +52,11 @@ const issues = [
     'The matrix recorded 18 sub-minimum rejections per native lane, plus three zero-frame controls. A dedicated nine-case rerun passed with these classified as explicit negative controls, followed by successful normal speech.',
     'Retain the recording, document the minimum, and distinguish supported-domain failures from expected input rejection. No claim that every possible length is supported.')
 ]
-const data = { metrics, provenance, issues, uiChecks, auxiliary }
+// Long alignments stay in the linked machine-readable evidence. Embedding
+// repeated multi-hour references made the dashboard unnecessarily large.
+const dashboardMetrics = { ...metrics, lanes: Object.fromEntries(Object.entries(metrics.lanes).map(([name,lane])=>
+  [name,{...lane,samples:lane.samples.map(({sampleID,errors,expectedInputRejection})=>({sampleID,errors,expectedInputRejection}))}])) }
+const data = { metrics:dashboardMetrics, provenance, issues, uiChecks, auxiliary }
 const encoded = JSON.stringify(data).replaceAll('<','\\u003c')
 const html = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>DropSift · Speech validation</title><style>
